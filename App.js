@@ -93,6 +93,19 @@ const LIBRARY_FILTERS = ['Playlists', 'Podcasts', 'Albums', 'Downloaded'];
 
 const LIKED_FILTERS = ['Aggressive', 'Pop', 'Gaming', 'Calm', 'Beats', 'Funk'];
 
+const SEARCH_CATEGORIES = [
+  { key: 'podcasts', title: 'Podcasts', color: '#E13300' },
+  { key: 'made-for-you', title: 'Made For You', color: '#1E3264' },
+  { key: 'charts', title: 'Charts', color: '#8D67AB' },
+  { key: 'new-releases', title: 'New Releases', color: '#E8115B' },
+  { key: 'discover', title: 'Discover', color: '#8C1932' },
+  { key: 'concerts', title: 'Concerts', color: '#1E3264' },
+  { key: 'pop', title: 'Pop', color: '#148A08' },
+  { key: 'hip-hop', title: 'Hip-Hop', color: '#BC5900' },
+  { key: 'rock', title: 'Rock', color: '#E91429' },
+  { key: 'dance', title: 'Dance / Electronic', color: '#D84000' },
+];
+
 const LIBRARY_ROWS = [
   { key: 'chill', title: 'Chill Vibes', color: '#1E3264', subtitle: 'Playlist • SA' },
   { key: 'road', title: 'Road Trip', color: '#E13300', subtitle: 'Playlist • SA', downloaded: true },
@@ -618,10 +631,12 @@ function SearchScreen() {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
-  const [modalTrack, setModalTrack] = useState(null);
+  const [sheetTrack, setSheetTrack] = useState(null);
+  const [playlistTrack, setPlaylistTrack] = useState(null);
   const debounceRef = useRef(null);
   const { playTrack } = usePlayer();
   const { isLiked, toggleLike } = useLibrary();
+  const { isDownloaded, toggleDownload } = useDownloads();
 
   useEffect(() => {
     return () => clearTimeout(debounceRef.current);
@@ -652,48 +667,108 @@ function SearchScreen() {
     debounceRef.current = setTimeout(() => runSearch(text), 450);
   };
 
+  const searchingNow = query.trim() !== '';
+
   return (
     <View style={styles.searchContainer}>
-      <View style={styles.searchBox}>
-        <Search size={16} color="#121212" />
+      <View style={styles.searchHeader}>
+        <Text style={styles.searchTitle}>Search</Text>
+        <Pressable style={styles.searchCamera} hitSlop={8}>
+          <Feather name="camera" size={24} color="#FFFFFF" />
+        </Pressable>
+      </View>
+      <View style={styles.searchPill}>
+        <Ionicons name="search" size={22} color="#121212" />
         <TextInput
-          style={styles.searchInput}
+          style={styles.searchPillInput}
           value={query}
           onChangeText={handleChange}
           placeholder="What do you want to play?"
-          placeholderTextColor="#7a7a7a"
+          placeholderTextColor="#535353"
           autoCorrect={false}
           returnKeyType="search"
           onSubmitEditing={() => runSearch(query)}
         />
       </View>
-      {searching && <Activity size={16} color={COLORS.white} style={styles.searchLoading} />}
-      {error ? <Text style={styles.searchError}>{error}</Text> : null}
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.searchResults}
-        ListHeaderComponent={query.trim() !== '' ? <SectionTitle title="Top result" /> : null}
-        ListEmptyComponent={
-          !searching && !error && query.trim() !== '' ? (
-            <Text style={styles.searchEmpty}>No results found. Try a different search.</Text>
-          ) : null
-        }
-        renderItem={({ item }) => (
-          <TrackRow
-            track={item}
-            liked={isLiked(item.id)}
-            onPlay={() => playTrack(item, results)}
-            onToggleLike={() => toggleLike(item)}
-            onMore={() => setModalTrack(item)}
-          />
-        )}
+      {searchingNow ? (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.searchResults}
+          ListHeaderComponent={
+            searching ? (
+              <Activity size={16} color={COLORS.white} style={styles.searchLoading} />
+            ) : null
+          }
+          ListEmptyComponent={
+            error ? (
+              <Text style={styles.searchError}>{error}</Text>
+            ) : !searching ? (
+              <Text style={styles.searchEmpty}>No results found. Try a different search.</Text>
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <TrackRow
+              track={item}
+              liked={isLiked(item.id)}
+              onPlay={() => playTrack(item, results)}
+              onToggleLike={() => toggleLike(item)}
+              onMore={() => setSheetTrack(item)}
+            />
+          )}
+        />
+      ) : (
+        <ScrollView
+          style={styles.searchBrowse}
+          contentContainerStyle={styles.searchBrowseContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.browseTitle}>Browse all</Text>
+          <View style={styles.browseGrid}>
+            {SEARCH_CATEGORIES.map((cat) => (
+              <View key={cat.key} style={[styles.browseCard, { backgroundColor: cat.color }]}>
+                <Text style={styles.browseCardTitle} numberOfLines={2}>
+                  {cat.title}
+                </Text>
+                <View style={styles.browseArt} />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      )}
+      <TrackOptionsSheet
+        track={sheetTrack}
+        visible={!!sheetTrack}
+        onClose={() => setSheetTrack(null)}
+        downloaded={!!sheetTrack && isDownloaded(sheetTrack.id)}
+        onToggleDownload={() => {
+          if (sheetTrack) {
+            toggleDownload(sheetTrack);
+          }
+          setSheetTrack(null);
+        }}
+        onAddToPlaylist={() => {
+          setPlaylistTrack(sheetTrack);
+          setSheetTrack(null);
+        }}
+        onRemove={() => {
+          if (sheetTrack) {
+            toggleLike(sheetTrack);
+          }
+          setSheetTrack(null);
+        }}
+        onQueue={() => {
+          if (sheetTrack) {
+            playTrack(sheetTrack, results);
+          }
+          setSheetTrack(null);
+        }}
       />
       <AddToPlaylistModal
-        track={modalTrack}
-        visible={!!modalTrack}
-        onClose={() => setModalTrack(null)}
+        track={playlistTrack}
+        visible={!!playlistTrack}
+        onClose={() => setPlaylistTrack(null)}
       />
     </View>
   );
@@ -1928,31 +2003,48 @@ disabled: {
   },
   searchContainer: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
   },
-  searchBox: {
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  searchTitle: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '700',
+  },
+  searchCamera: {
+    padding: 4,
+  },
+  searchPill: {
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.white,
-    borderRadius: 20,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginBottom: 16,
     paddingHorizontal: 12,
-    gap: 8,
   },
-  searchInput: {
+  searchPillInput: {
     flex: 1,
     color: '#121212',
     fontSize: 15,
-    paddingVertical: 8,
+    fontWeight: '600',
+    marginLeft: 8,
+    paddingVertical: 0,
   },
   searchLoading: {
-    marginTop: 16,
     alignSelf: 'center',
+    marginVertical: 16,
   },
   searchError: {
     color: '#F15E6C',
-    marginTop: 16,
+    marginTop: 24,
     textAlign: 'center',
   },
   searchEmpty: {
@@ -1962,6 +2054,54 @@ disabled: {
   },
   searchResults: {
     paddingBottom: 24,
+  },
+  searchBrowse: {
+    flex: 1,
+  },
+  searchBrowseContent: {
+    paddingBottom: 24,
+  },
+  browseTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  browseGrid: {
+    width: '100%',
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 12,
+    columnGap: 12,
+  },
+  browseCard: {
+    width: '48%',
+    height: 100,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    padding: 12,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+  },
+  browseCardTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    maxWidth: '70%',
+  },
+  browseArt: {
+    position: 'absolute',
+    bottom: -6,
+    right: -12,
+    width: 64,
+    height: 64,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    transform: [{ rotate: '25deg' }],
+    elevation: 4,
   },
   libraryScreen: {
     flex: 1,
