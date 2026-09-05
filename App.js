@@ -31,6 +31,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -60,24 +61,96 @@ const HERO_GRADIENT = ['#D84000', '#503750'];
 
 const FILTERS = ['All', 'Music', 'Podcasts'];
 
+const quickTrack = (id, title, artist, album, artwork) => ({
+  id,
+  title,
+  artist,
+  album,
+  artwork,
+  previewUrl: '',
+});
+
 const QUICK_PICKS = [
   { key: 'liked', title: 'Liked Songs' },
-  { key: 'dailymix1', title: 'Daily Mix 1', color: '#8D67AB' },
-  { key: 'episodes', title: 'Your Episodes', color: '#E13300' },
-  { key: 'discover', title: 'Discover Weekly', color: '#27856A' },
-  { key: 'chill', title: 'Chill Vibes', color: '#503750' },
-  { key: 'focus', title: 'Focus', color: '#D84000' },
-  { key: 'sleep', title: 'Sleep', color: '#C39687' },
-  { key: 'partymix', title: 'Party Mix', color: '#7358FF' },
+  {
+    key: 'blinding',
+    track: quickTrack(
+      'quick-blinding-lights',
+      'Blinding Lights',
+      'The Weeknd',
+      'After Hours',
+      'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/6f/bc/e6/6fbce6c4-c38c-72d8-4fd0-66cfff32f679/20UMGIM12176.rgb.jpg/600x600bb.jpg'
+    ),
+  },
+  {
+    key: 'levitating',
+    track: quickTrack(
+      'quick-levitating',
+      'Levitating',
+      'Dua Lipa',
+      'Future Nostalgia',
+      'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/6c/11/d6/6c11d681-aa3a-d59e-4c2e-f77e181026ab/190295092665.jpg/600x600bb.jpg'
+    ),
+  },
+  {
+    key: 'heat-waves',
+    track: quickTrack(
+      'quick-heat-waves',
+      'Heat Waves',
+      'Glass Animals',
+      'Dreamland',
+      'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/da/8b/77/da8b7731-6f4f-eacf-5e74-8b23389eefa1/20UMGIM03371.rgb.jpg/600x600bb.jpg'
+    ),
+  },
+  {
+    key: 'believer',
+    track: quickTrack(
+      'quick-believer',
+      'Believer',
+      'Imagine Dragons',
+      'Evolve',
+      'https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/11/7a/b8/117ab805-6811-8929-18b9-0fad7baf0c25/17UMGIM98210.rgb.jpg/600x600bb.jpg'
+    ),
+  },
+  {
+    key: 'shivers',
+    track: quickTrack(
+      'quick-shivers',
+      'Shivers',
+      'Ed Sheeran',
+      '=',
+      'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c5/d8/c6/c5d8c675-63e3-6632-33db-2401eabe574d/190296491412.jpg/600x600bb.jpg'
+    ),
+  },
+  {
+    key: 'uptown-funk',
+    track: quickTrack(
+      'quick-uptown-funk',
+      'Uptown Funk',
+      'Mark Ronson',
+      'Uptown Special',
+      'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/7e/30/c5/7e30c572-aa47-5f7b-c6fd-42d50cd2c56d/886444959797.jpg/600x600bb.jpg'
+    ),
+  },
+  {
+    key: 'watermelon-sugar',
+    track: quickTrack(
+      'quick-watermelon-sugar',
+      'Watermelon Sugar',
+      'Harry Styles',
+      'Fine Line',
+      'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/2b/c4/c9/2bc4c9d4-3bc6-ab13-3f71-df0b89b173de/886448022213.jpg/600x600bb.jpg'
+    ),
+  },
 ];
 
-const SPOTLIGHT = {
-  artist: 'Lady Gaga',
-  artistInitial: 'L',
-  sublabel: 'Single',
-  title: 'Paparazzi',
-  artistName: 'Lady Gaga',
-};
+const SPOTLIGHT_TARGET = quickTrack(
+  'spotlight-paparazzi',
+  'Paparazzi',
+  'Lady Gaga',
+  'Paparazzi - Single',
+  'https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/69/3b/50/693b50e2-ad6c-452e-4d5a-2ba2780ef5b5/612891078893.jpg/600x600bb.jpg'
+);
 
 const carouselData = (prefix, count) => {
   const colors = ['#8D67AB', '#E13300', '#27856A', '#503750', '#D84000', '#C39687', '#7358FF'];
@@ -211,11 +284,12 @@ function TrackCarousel({ title, fetchTracks }) {
   );
 }
 
-function FilterChips({ active, onChange }) {
+function FilterChips({ active, onChange, style }) {
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={style}
       contentContainerStyle={styles.chipRow}
     >
       {FILTERS.map((filter) => {
@@ -234,10 +308,14 @@ function FilterChips({ active, onChange }) {
   );
 }
 
-function QuickPickTile({ item }) {
+function QuickPickTile({ item, onPress }) {
   if (item.key === 'liked') {
     return (
-      <Pressable style={[styles.quickTile, styles.quickTileLiked]}>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        style={[styles.quickTile, styles.quickTileLiked]}
+        onPress={onPress}
+      >
         <LinearGradient
           colors={LIKED_GRADIENT}
           style={styles.quickArtwork}
@@ -249,30 +327,34 @@ function QuickPickTile({ item }) {
         <Text style={styles.quickTitle} numberOfLines={2}>
           {item.title}
         </Text>
-      </Pressable>
+      </TouchableOpacity>
     );
   }
   return (
-    <Pressable style={styles.quickTile}>
-      <View style={[styles.quickArtwork, { backgroundColor: item.color }]} />
+    <TouchableOpacity activeOpacity={0.7} style={styles.quickTile} onPress={onPress}>
+      <Image source={{ uri: item.track.artwork }} style={styles.quickArtwork} />
       <Text style={styles.quickTitle} numberOfLines={2}>
-        {item.title}
+        {item.track.title}
       </Text>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
 function HeroSpotlight() {
+  const { playTrack } = usePlayer();
+  const { isLiked, toggleLike } = useLibrary();
+  const liked = isLiked(SPOTLIGHT_TARGET.id);
+
   return (
     <View style={styles.heroSection}>
       <View style={styles.heroHeader}>
         <View style={styles.heroAvatar}>
-          <Text style={styles.heroAvatarLetter}>{SPOTLIGHT.artistInitial}</Text>
+          <Text style={styles.heroAvatarLetter}>L</Text>
         </View>
         <View style={styles.heroHeaderText}>
           <Text style={styles.heroKicker}>New release from</Text>
           <Text style={styles.heroArtist} numberOfLines={1}>
-            {SPOTLIGHT.artist}
+            {SPOTLIGHT_TARGET.artist}
           </Text>
         </View>
       </View>
@@ -282,21 +364,27 @@ function HeroSpotlight() {
           style={styles.heroArtwork}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-        />
+        >
+          <Image source={{ uri: SPOTLIGHT_TARGET.artwork }} style={styles.heroArtwork} />
+        </LinearGradient>
         <View style={styles.heroMeta}>
-          <Text style={styles.heroSublabel}>{SPOTLIGHT.sublabel}</Text>
+          <Text style={styles.heroSublabel}>Single</Text>
           <Text style={styles.heroTitle} numberOfLines={2}>
-            {SPOTLIGHT.title}
+            {SPOTLIGHT_TARGET.title}
           </Text>
           <Text style={styles.heroArtistName} numberOfLines={1}>
-            {SPOTLIGHT.artistName}
+            {SPOTLIGHT_TARGET.artist}
           </Text>
         </View>
         <View style={styles.heroActions}>
-          <Pressable style={styles.heroAdd} hitSlop={8}>
-            <Plus size={20} color={COLORS.white} />
+          <Pressable style={styles.heroAdd} hitSlop={8} onPress={() => toggleLike(SPOTLIGHT_TARGET)}>
+            {liked ? (
+              <Heart size={20} color={COLORS.green} fill={COLORS.green} />
+            ) : (
+              <Plus size={20} color={COLORS.white} />
+            )}
           </Pressable>
-          <Pressable style={styles.heroPlay}>
+          <Pressable style={styles.heroPlay} onPress={() => playTrack(SPOTLIGHT_TARGET)}>
             <Play size={22} color="#121212" fill="#121212" />
           </Pressable>
         </View>
@@ -305,7 +393,22 @@ function HeroSpotlight() {
   );
 }
 
-function HomeScreen({ activeFilter, onFilterChange }) {
+function HomeScreen({ activeFilter, onFilterChange, onOpenLibrary }) {
+  const { playTrack } = usePlayer();
+  const { likedSongs } = useLibrary();
+
+  const handleQuickPress = (item) => {
+    if (item.key === 'liked') {
+      if (likedSongs.length > 0) {
+        playTrack(likedSongs[0], likedSongs);
+      } else {
+        onOpenLibrary();
+      }
+      return;
+    }
+    playTrack(item.track);
+  };
+
   return (
     <FlatList
       data={QUICK_PICKS}
@@ -315,20 +418,23 @@ function HomeScreen({ activeFilter, onFilterChange }) {
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={
-        <View>
-          <View style={styles.header}>
-            <Pressable style={styles.userAvatar}>
-              <Text style={styles.avatarLetter}>S</Text>
-            </Pressable>
-          </View>
-          <FilterChips active={activeFilter} onChange={onFilterChange} />
-          <HeroSpotlight />
-          <SectionTitle title="Your quick picks" />
+        <View style={styles.header}>
+          <Pressable style={styles.userAvatar}>
+            <Text style={styles.avatarLetter}>S</Text>
+          </Pressable>
+          <FilterChips
+            active={activeFilter}
+            onChange={onFilterChange}
+            style={styles.chipsScroll}
+          />
         </View>
       }
-      renderItem={({ item }) => <QuickPickTile item={item} />}
+      renderItem={({ item }) => (
+        <QuickPickTile item={item} onPress={() => handleQuickPress(item)} />
+      )}
       ListFooterComponent={
         <View>
+          <HeroSpotlight />
           <TrackCarousel title="Trending Now" fetchTracks={fetchTrendingNow} />
           <TrackCarousel title="Popular Hits" fetchTracks={fetchPopularHits} />
           <HorizontalRow title="Jump back in" data={JUMP_BACK_IN} />
@@ -957,7 +1063,11 @@ function AppShell() {
     <View style={styles.container}>
       <View style={styles.screenContent}>
         {activeTab === 'home' ? (
-          <HomeScreen activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+          <HomeScreen
+            activeFilter={activeFilter}
+            onFilterChange={setActiveFilter}
+            onOpenLibrary={() => setActiveTab('library')}
+          />
         ) : activeTab === 'search' ? (
           <SearchScreen />
         ) : activeTab === 'create' ? (
@@ -1007,7 +1117,12 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     marginBottom: 10,
+  },
+  chipsScroll: {
+    flex: 1,
+    marginVertical: -2,
   },
   userAvatar: {
     width: 34,
@@ -1130,6 +1245,7 @@ const styles = StyleSheet.create({
     width: 115,
     height: 115,
     borderRadius: 6,
+    overflow: 'hidden',
   },
   heroMeta: {
     flex: 1,
@@ -1517,10 +1633,6 @@ disabled: {
     gap: 10,
     overflow: 'hidden',
     elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
   },
   miniPlayerMain: {
     flex: 1,
@@ -1595,11 +1707,7 @@ disabled: {
     marginTop: 4,
   },
   npArtworkWrap: {
-    shadowColor: '#000',
-    shadowOpacity: 0.6,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 16,
+    elevation: 6,
   },
   npArtwork: {
     borderRadius: 12,
