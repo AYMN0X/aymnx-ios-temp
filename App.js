@@ -313,7 +313,7 @@ function QuickPickTile({ item, onPress }) {
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        style={[styles.quickTile, styles.quickTileLiked]}
+        style={styles.quickTile}
         onPress={onPress}
       >
         <LinearGradient
@@ -385,7 +385,7 @@ function HeroSpotlight() {
             )}
           </Pressable>
           <Pressable style={styles.heroPlay} onPress={() => playTrack(SPOTLIGHT_TARGET)}>
-            <Play size={22} color="#121212" fill="#121212" />
+            <Play size={20} color="#000000" fill="#000000" />
           </Pressable>
         </View>
       </View>
@@ -1048,7 +1048,7 @@ function TabBar({ active, onChange }) {
         const Icon = tab.icon;
         return (
           <Pressable key={tab.key} style={styles.tabItem} onPress={() => onChange(tab.key)}>
-            <Icon size={22} color={isActive ? COLORS.white : COLORS.textSecondary} />
+            <Icon size={24} color={isActive ? COLORS.white : COLORS.textSecondary} />
             <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
           </Pressable>
         );
@@ -1113,106 +1113,110 @@ const styles = StyleSheet.create({
   screenContent: {
     flex: 1,
   },
-  listContent: {
-    paddingHorizontal: 16,
+listContent: {
     paddingTop: 12,
   },
-  header: {
+header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    height: 48,
+    marginBottom: 16,
   },
   chipsScroll: {
     flex: 1,
-    marginVertical: -2,
   },
   userAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: COLORS.cardPress,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 8,
   },
   avatarLetter: {
     color: COLORS.white,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   chipRow: {
-    gap: 8,
-    paddingVertical: 2,
+    paddingVertical: 0,
   },
   chip: {
+    height: 32,
     paddingHorizontal: 16,
-    paddingVertical: 8,
     borderRadius: 16,
     backgroundColor: COLORS.pill,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipActive: {
     backgroundColor: COLORS.green,
   },
   chipText: {
     color: COLORS.textPrimary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   chipTextActive: {
     color: '#000000',
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   sectionTitle: {
     color: COLORS.textPrimary,
-    fontSize: 17,
-    fontWeight: 'bold',
-    marginTop: 12,
-    marginBottom: 8,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
   gridRow: {
     justifyContent: 'space-between',
     gap: 8,
     marginBottom: 8,
+    paddingHorizontal: 16,
   },
   quickTile: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.pill,
+    backgroundColor: '#282828',
     borderRadius: 4,
     height: 56,
-    padding: 2,
-  },
-  quickTileLiked: {
-    paddingRight: 8,
+    padding: 0,
   },
   quickArtwork: {
-    width: 52,
-    height: 52,
-    borderRadius: 4,
+    width: 56,
+    height: 56,
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickTitle: {
     color: COLORS.textPrimary,
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '700',
+    lineHeight: 16,
     flexShrink: 1,
-    marginLeft: 8,
+    paddingHorizontal: 8,
   },
   heroSection: {
-    marginTop: 16,
+    marginTop: 24,
   },
   heroHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginBottom: 10,
+    paddingHorizontal: 16,
   },
   heroAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: COLORS.cardPress,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1232,7 +1236,7 @@ const styles = StyleSheet.create({
   },
   heroArtist: {
     color: COLORS.textPrimary,
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: 'bold',
     marginTop: 1,
   },
@@ -1241,18 +1245,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.elevated,
     borderRadius: 8,
-    padding: 8,
-    gap: 12,
+    marginHorizontal: 16,
+    height: 140,
+    overflow: 'hidden',
   },
   heroArtwork: {
-    width: 115,
-    height: 115,
-    borderRadius: 6,
-    overflow: 'hidden',
+    width: 140,
+    height: 140,
   },
   heroMeta: {
     flex: 1,
     justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   heroSublabel: {
     color: COLORS.textSecondary,
@@ -1273,7 +1277,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     alignSelf: 'stretch',
-    paddingVertical: 2,
+    paddingVertical: 12,
+    paddingRight: 12,
   },
   heroAdd: {
     width: 36,
@@ -1285,9 +1290,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroPlay: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1305,16 +1310,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   rowContent: {
+    paddingLeft: 16,
     paddingRight: 16,
-    gap: 14,
+    gap: 16,
   },
   card: {
-    width: 140,
+    width: 152,
   },
   cardArtwork: {
-    width: 140,
-    height: 140,
-    borderRadius: 8,
+    width: 152,
+    height: 152,
+    borderRadius: 4,
     marginBottom: 8,
   },
   cardTitle: {
@@ -1624,7 +1630,7 @@ disabled: {
   },
   miniPlayer: {
     position: 'absolute',
-    bottom: 58,
+    bottom: 56,
     left: 8,
     right: 8,
     height: 56,
@@ -1632,8 +1638,6 @@ disabled: {
     alignItems: 'center',
     backgroundColor: COLORS.card,
     borderRadius: 8,
-    paddingHorizontal: 10,
-    gap: 10,
     overflow: 'hidden',
     elevation: 10,
   },
@@ -1641,18 +1645,19 @@ disabled: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
   miniPlayerArtwork: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     borderRadius: 4,
+    marginLeft: 8,
   },
   miniPlayerArtworkFallback: {
     backgroundColor: '#7358FF',
   },
   miniPlayerInfo: {
     flex: 1,
+    paddingLeft: 8,
   },
   miniPlayerTitle: {
     color: COLORS.textPrimary,
@@ -1668,6 +1673,7 @@ disabled: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+    paddingRight: 12,
   },
   miniPlayerPlay: {
     width: 34,
@@ -1684,10 +1690,12 @@ disabled: {
     height: 2,
     width: '100%',
     backgroundColor: '#565656',
+    borderRadius: 1,
   },
   miniProgressFill: {
     height: 2,
     backgroundColor: COLORS.green,
+    borderRadius: 1,
   },
   npRoot: {
     flex: 1,
@@ -1784,6 +1792,7 @@ disabled: {
   tabBar: {
     flexDirection: 'row',
     backgroundColor: COLORS.background,
+    height: 56,
     paddingTop: 8,
     paddingBottom: 4,
   },
