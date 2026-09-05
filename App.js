@@ -920,7 +920,6 @@ function NowPlayingModal({ visible, onClose }) {
     isPlaying,
     playbackPosition,
     duration,
-    isLoadingAudio,
     playbackError,
     togglePlayPause,
     seekTo,
@@ -999,13 +998,20 @@ function NowPlayingModal({ visible, onClose }) {
               <Pressable onPress={playPrevious} hitSlop={10}>
                 <SkipBack size={34} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
               </Pressable>
-              <Pressable style={styles.npPlay} onPress={togglePlayPause} disabled={isLoadingAudio}>
-                {isLoadingAudio ? (
-                  <Activity size={34} color="#121212" />
-                ) : isPlaying ? (
-                  <Pause size={34} color="#121212" fill="#121212" />
+              <Pressable
+                style={styles.npPlay}
+                onPress={togglePlayPause}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {isPlaying ? (
+                  <Pause size={34} color="#000000" fill="#000000" />
                 ) : (
-                  <Play size={34} color="#121212" fill="#121212" />
+                  <Play
+                    size={34}
+                    color="#000000"
+                    fill="#000000"
+                    style={styles.npPlayToken}
+                  />
                 )}
               </Pressable>
               <Pressable onPress={playNext} hitSlop={10}>
@@ -1754,6 +1760,9 @@ disabled: {
     backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  npPlayToken: {
+    marginLeft: 3,
   },
   npUtilities: {
     flexDirection: 'row',
