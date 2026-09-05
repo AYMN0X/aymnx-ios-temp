@@ -26,7 +26,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const queueRef = useRef<Track[]>([]);
   const indexRef = useRef(-1);
   const resolvingRef = useRef(false);
-  const sourceRef = useRef<{ piped: boolean; trackId: string } | null>(null);
+  const sourceRef = useRef<{ nonPreview: boolean; trackId: string } | null>(null);
 
   useEffect(() => {
     setAudioModeAsync({
@@ -48,7 +48,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queueRef.current = queue;
     indexRef.current = index;
     let resolvedUrl = '';
-    let resolvedProvider: 'soundcloud' | 'piped' | 'itunes' | undefined;
+    let resolvedProvider: 'invidious' | 'soundcloud' | 'piped' | 'itunes' | undefined;
     try {
       const result = await resolveStream(track.title, track.artist, track.previewUrl);
       resolvedUrl = result.url;
@@ -73,8 +73,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         artworkUrl: track.artwork,
       });
       player.replace({ uri: resolvedUrl });
+      player.seekTo(0);
       player.play();
-      sourceRef.current = { piped: resolvedProvider !== 'itunes', trackId: track.id };
+      sourceRef.current = { nonPreview: resolvedProvider !== 'itunes', trackId: track.id };
       console.warn(
         `[audio] Playing "${track.title}" via ${resolvedProvider ?? 'unknown'} stream source.`
       );
@@ -84,7 +85,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         try {
           player.replace({ uri: track.previewUrl });
           player.play();
-          sourceRef.current = { piped: false, trackId: track.id };
+          sourceRef.current = { nonPreview: false, trackId: track.id };
         } catch (fallbackError) {
           console.error('[audio] iTunes preview fallback failed.', fallbackError);
         }
@@ -148,7 +149,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       status.playbackState === 'error' &&
       currentTrack &&
       source &&
-      source.piped &&
+      source.nonPreview &&
       source.trackId === currentTrack.id &&
       currentTrack.previewUrl
     ) {
@@ -156,7 +157,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       try {
         player.replace({ uri: currentTrack.previewUrl });
         player.play();
-        sourceRef.current = { piped: false, trackId: currentTrack.id };
+        sourceRef.current = { nonPreview: false, trackId: currentTrack.id };
       } catch (error) {
         console.error('[audio] iTunes preview fallback failed.', error);
       }
