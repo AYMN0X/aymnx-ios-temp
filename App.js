@@ -53,6 +53,7 @@ import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
 import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
 import { fetchPopularHits, fetchTrendingNow, searchITunes } from './src/services/musicApi';
+import { importSpotifyPlaylist } from './src/services/spotifyImportService';
 
 const COLORS = {
   background: '#121212',
@@ -1074,7 +1075,7 @@ function LikedSongsScreen({ onBack }) {
   );
 }
 
-function LibraryScreen({ onOpenAccount }) {
+function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
   const {
     likedSongs,
     playlists,
@@ -1104,6 +1105,18 @@ function LibraryScreen({ onOpenAccount }) {
     setCreating(false);
     setName('');
   };
+
+  useEffect(() => {
+    if (initialDetail && initialDetail.type === 'playlist' && !detail) {
+      const playlist = playlists.find((item) => item.id === initialDetail.id);
+      if (playlist) {
+        setDetail({ type: 'playlist', id: playlist.id, title: playlist.name });
+        if (onDetailConsumed) {
+          onDetailConsumed();
+        }
+      }
+    }
+  }, [initialDetail, playlists, detail, onDetailConsumed]);
 
   const submitCreate = async () => {
     const trimmed = name.trim();
@@ -1135,6 +1148,9 @@ function LibraryScreen({ onOpenAccount }) {
             </Pressable>
           ) : null}
         </View>
+        {selectedPlaylist && selectedPlaylist.coverUrl ? (
+          <Image source={{ uri: selectedPlaylist.coverUrl }} style={styles.libDetailCover} />
+        ) : null}
         <Text style={styles.librarySubtitle}>
           {tracks.length === 1 ? '1 song' : `${tracks.length} songs`}
         </Text>
@@ -1178,6 +1194,7 @@ function LibraryScreen({ onOpenAccount }) {
       title: item.name,
       subtitle: `Playlist • ${item.tracks.length} songs`,
       playlistId: item.id,
+      coverUrl: item.coverUrl,
     })),
   ];
 
@@ -1335,12 +1352,16 @@ function LibraryScreen({ onOpenAccount }) {
             );
           }
           return (
-            <Pressable
-              style={styles.libRow}
-              onPress={() => setDetail({ type: 'playlist', id: item.playlistId, title: item.title })}
-            >
-              <View style={[styles.libCover, { backgroundColor: COLORS.card }]} />
-              <View style={styles.libRowInfo}>
+<Pressable
+                style={styles.libRow}
+                onPress={() => setDetail({ type: 'playlist', id: item.playlistId, title: item.title })}
+              >
+                <View style={[styles.libCover, { backgroundColor: COLORS.card }]}>
+                  {item.coverUrl ? (
+                    <Image source={{ uri: item.coverUrl }} style={styles.libCover} />
+                  ) : null}
+                </View>
+                <View style={styles.libRowInfo}>
                 <Text style={styles.libRowTitle} numberOfLines={1}>
                   {item.title}
                 </Text>
@@ -1356,8 +1377,106 @@ function LibraryScreen({ onOpenAccount }) {
   );
 }
 
-function CreateScreen() {
-  return <View style={styles.createEmpty} />;
+function ImportScreen({ onOpenImportedPlaylist }) {
+  const { createImportedPlaylist } = useLibrary();
+  const [link, setLink] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState('');
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const handleImport = async () => {
+    if (!link.trim() || importing) {
+      return;
+    }
+    setImporting(true);
+    setProgress('Fetching playlist metadata...');
+    setError('');
+    setResult(null);
+    try {
+      const { promise } = importSpotifyPlaylist(link, (matched, total) => {
+        setProgress(`Importing ${matched} of ${total} tracks...`);
+      });
+      const playlist = await promise;
+      const created = await createImportedPlaylist(
+        playlist.title,
+        playlist.artwork,
+        playlist.tracks
+      );
+      if (created) {
+        setResult({
+          id: created.id,
+          name: created.name,
+          coverUrl: created.coverUrl || '',
+          count: created.tracks.length,
+        });
+      } else {
+        setError('Could not save the imported playlist.');
+      }
+    } catch (e) {
+      setError(e.message || 'Import failed. Please check the link.');
+    } finally {
+      setImporting(false);
+      setProgress('');
+    }
+  };
+
+  return (
+    <View style={styles.importContainer}>
+      <Text style={styles.importTitle}>Import Spotify Playlist</Text>
+      <TextInput
+        style={styles.importInput}
+        value={link}
+        onChangeText={setLink}
+        placeholder="Paste Spotify Playlist Link here..."
+        placeholderTextColor="#777777"
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="go"
+        onSubmitEditing={handleImport}
+      />
+      <Pressable
+        style={[styles.importButton, (!link.trim() || importing) && styles.importButtonDisabled]}
+        onPress={handleImport}
+        disabled={!link.trim() || importing}
+      >
+        {importing ? (
+          <Activity size={18} color="#000000" />
+        ) : (
+          <Feather name="download" size={20} color="#000000" />
+        )}
+        <Text style={styles.importButtonLabel}>{importing ? 'Importing...' : 'Import'}</Text>
+      </Pressable>
+      {progress ? <Text style={styles.importProgress}>{progress}</Text> : null}
+      {error ? <Text style={styles.importError}>{error}</Text> : null}
+      <Text style={styles.importHint}>
+        Paste any Spotify playlist link (e.g. open.spotify.com/playlist/...). We will fetch the
+        playlist, match each track to a playable stream, and save it to Your Library.
+      </Text>
+      {result ? (
+        <View style={styles.importSuccess}>
+          <View style={styles.importSuccessRow}>
+            {result.coverUrl ? (
+              <Image source={{ uri: result.coverUrl }} style={styles.importSuccessArt} />
+            ) : (
+              <View style={[styles.importSuccessArt, styles.importSuccessArtFallback]} />
+            )}
+            <View style={styles.importSuccessMeta}>
+              <Text style={styles.importSuccessName} numberOfLines={2}>
+                {result.name}
+              </Text>
+              <Text style={styles.importSuccessCount}>
+                {result.count === 1 ? '1 track' : `${result.count} tracks`}
+              </Text>
+            </View>
+          </View>
+          <Pressable style={styles.importOpenBtn} onPress={() => onOpenImportedPlaylist(result.id)}>
+            <Text style={styles.importOpenLabel}>Open Playlist</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function Scrubber({ position, duration, onSeek, large }) {
@@ -1694,6 +1813,12 @@ function AppShell() {
   const [activeFilter, setActiveFilter] = useState('All');
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [pendingPlaylistId, setPendingPlaylistId] = useState(null);
+
+  const openImportedPlaylist = (id) => {
+    setPendingPlaylistId(id);
+    setActiveTab('library');
+  };
 
   return (
     <View style={styles.container}>
@@ -1708,9 +1833,15 @@ function AppShell() {
         ) : activeTab === 'search' ? (
           <SearchScreen />
         ) : activeTab === 'create' ? (
-          <CreateScreen />
+          <ImportScreen onOpenImportedPlaylist={openImportedPlaylist} />
         ) : (
-          <LibraryScreen onOpenAccount={() => setAccountOpen(true)} />
+          <LibraryScreen
+            onOpenAccount={() => setAccountOpen(true)}
+            initialDetail={
+              pendingPlaylistId ? { type: 'playlist', id: pendingPlaylistId } : null
+            }
+            onDetailConsumed={() => setPendingPlaylistId(null)}
+          />
         )}
       </View>
       <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
@@ -2358,9 +2489,111 @@ disabled: {
     marginTop: 16,
     textAlign: 'center',
   },
-  createEmpty: {
+  importContainer: {
     flex: 1,
-    backgroundColor: '#121212',
+    padding: 16,
+    paddingTop: 8,
+  },
+  importTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  importInput: {
+    height: 50,
+    backgroundColor: '#282828',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    color: COLORS.textPrimary,
+    fontSize: 15,
+  },
+  importButton: {
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1ED760',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+  },
+  importButtonDisabled: {
+    opacity: 0.5,
+  },
+  importButtonLabel: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  importProgress: {
+    color: '#1ED760',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 14,
+  },
+  importError: {
+    color: '#F15E6C',
+    fontSize: 13,
+    marginTop: 14,
+  },
+  importHint: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 14,
+  },
+  importSuccess: {
+    backgroundColor: '#282828',
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 24,
+  },
+  importSuccessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  importSuccessArt: {
+    width: 64,
+    height: 64,
+    borderRadius: 4,
+  },
+  importSuccessArtFallback: {
+    backgroundColor: COLORS.cardPress,
+  },
+  importSuccessMeta: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  importSuccessName: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  importSuccessCount: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  importOpenBtn: {
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  importOpenLabel: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  libDetailCover: {
+    width: 120,
+    height: 120,
+    borderRadius: 8,
+    alignSelf: 'center',
+    marginBottom: 14,
+    backgroundColor: COLORS.card,
   },
   loginRoot: {
     flex: 1,

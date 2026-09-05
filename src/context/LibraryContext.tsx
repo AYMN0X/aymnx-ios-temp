@@ -11,6 +11,7 @@ interface LibraryContextValue {
   isLiked: (trackId: string) => boolean;
   toggleLike: (track: Track) => Promise<void>;
   createPlaylist: (name: string) => Promise<void>;
+  createImportedPlaylist: (name: string, coverUrl: string, tracks: Track[]) => Promise<SavedPlaylist | null>;
   removePlaylist: (playlistId: string) => Promise<void>;
   addToPlaylist: (playlistId: string, track: Track) => Promise<void>;
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
@@ -72,6 +73,24 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setPlaylists(next);
   };
 
+  const createImportedPlaylist = async (name: string, coverUrl: string, tracks: Track[]) => {
+    if (!userId) {
+      return null;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const { playlists: next, created } = await storage.createImportedPlaylist(
+      userId,
+      trimmed,
+      coverUrl,
+      tracks
+    );
+    setPlaylists(next);
+    return created;
+  };
+
   const removePlaylist = async (playlistId: string) => {
     if (!userId) {
       return;
@@ -103,6 +122,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       isLiked,
       toggleLike,
       createPlaylist,
+      createImportedPlaylist,
       removePlaylist,
       addToPlaylist,
       removeTrackFromPlaylist,

@@ -6,6 +6,7 @@ export interface SavedPlaylist {
   id: string;
   name: string;
   tracks: Track[];
+  coverUrl?: string;
 }
 
 export interface StoredUserData {
@@ -18,6 +19,9 @@ export interface StoredUserData {
 export function getUserDataKey(userId: string): string {
   return `@spotify_user_data_${userId}`;
 }
+
+const playlistId = () =>
+  `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 async function readUserData(userId: string): Promise<StoredUserData> {
   try {
@@ -80,13 +84,32 @@ export async function getPlaylists(userId: string): Promise<SavedPlaylist[]> {
 export async function createPlaylist(userId: string, name: string): Promise<SavedPlaylist[]> {
   const data = await updateUserData(userId, (d) => {
     const playlist: SavedPlaylist = {
-      id: `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      id: playlistId(),
       name,
       tracks: [],
     };
     return { ...d, playlists: [...(d.playlists ?? []), playlist] };
   });
   return data.playlists ?? [];
+}
+
+export async function createImportedPlaylist(
+  userId: string,
+  name: string,
+  coverUrl: string,
+  tracks: Track[]
+): Promise<{ playlists: SavedPlaylist[]; created: SavedPlaylist }> {
+  const created: SavedPlaylist = {
+    id: playlistId(),
+    name,
+    coverUrl,
+    tracks,
+  };
+  const data = await updateUserData(userId, (d) => ({
+    ...d,
+    playlists: [...(d.playlists ?? []), created],
+  }));
+  return { playlists: data.playlists ?? [], created };
 }
 
 export async function removePlaylist(userId: string, playlistId: string): Promise<SavedPlaylist[]> {
