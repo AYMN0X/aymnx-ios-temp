@@ -1394,8 +1394,12 @@ function ImportScreen({ onOpenImportedPlaylist }) {
     setError('');
     setResult(null);
     try {
-      const { promise } = importSpotifyPlaylist(link, (matched, total) => {
-        setProgress(`Importing ${matched} of ${total} tracks...`);
+      const { promise } = importSpotifyPlaylist(link, (current, total, currentTitle) => {
+        setProgress(
+          currentTitle
+            ? `Importing track ${current} of ${total}: ${currentTitle}...`
+            : `Importing track ${current} of ${total}...`
+        );
       });
       const playlist = await promise;
       const created = await createImportedPlaylist(
