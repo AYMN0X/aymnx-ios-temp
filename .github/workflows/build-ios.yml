@@ -64,6 +64,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            CONFIGURATION_BUILD_DIR=build/output \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -72,14 +73,15 @@ jobs:
       - name: Package unsigned .ipa
         run: |
           set -euxo pipefail
-          APP_PATH=$(find ios/build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "::error::No .app bundle found in ios/build/Build/Products/Release-iphoneos" && exit 1
-          fi
-          echo "App bundle: $APP_PATH"
           mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
-          zip -r -q SpotifyWhite.ipa Payload
+          APP_PATH=$(find ios/build -maxdepth 5 -name "*.app" | head -n 1)
+          echo "Found app at: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No .app bundle found anywhere in ios/build"
+            exit 1
+          fi
+          cp -r "$APP_PATH" Payload/
+          zip -r SpotifyWhite.ipa Payload
           rm -rf Payload
 
       - name: Upload .ipa artifact
