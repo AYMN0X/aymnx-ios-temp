@@ -1,23 +1,24 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import {
   Activity,
+  Cast,
   ChevronDown,
   ChevronLeft,
   Heart,
   Home,
   Library,
   ListMusic,
-  Mic2,
   MoreHorizontal,
   Pause,
   Play,
   Plus,
-  Radio,
+  Repeat,
   Search,
+  Shuffle,
   SkipBack,
   SkipForward,
   Trash2,
-  TrendingUp,
   X,
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
@@ -44,29 +45,39 @@ import { fetchPopularHits, fetchTrendingNow, searchITunes } from './src/services
 
 const COLORS = {
   background: '#121212',
+  elevated: '#242424',
   card: '#282828',
-  cardHover: '#3E3E3E',
+  cardPress: '#333333',
+  pill: '#2A2A2A',
+  green: '#1ED760',
   white: '#FFFFFF',
   textPrimary: '#FFFFFF',
   textSecondary: '#B3B3B3',
-  chipInactive: '#282828',
 };
 
-const greeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-};
+const LIKED_GRADIENT = ['#450AF5', '#8E8EE5'];
+const HERO_GRADIENT = ['#D84000', '#503750'];
 
 const FILTERS = ['All', 'Music', 'Podcasts'];
 
-const QUICK_ACCESS = [
-  { title: 'Liked Songs', icon: Heart },
-  { title: 'Daily Mix 1', icon: Radio },
-  { title: 'Your Episodes', icon: Mic2 },
-  { title: 'Discover Weekly', icon: TrendingUp },
+const QUICK_PICKS = [
+  { key: 'liked', title: 'Liked Songs' },
+  { key: 'dailymix1', title: 'Daily Mix 1', color: '#8D67AB' },
+  { key: 'episodes', title: 'Your Episodes', color: '#E13300' },
+  { key: 'discover', title: 'Discover Weekly', color: '#27856A' },
+  { key: 'chill', title: 'Chill Vibes', color: '#503750' },
+  { key: 'focus', title: 'Focus', color: '#D84000' },
+  { key: 'sleep', title: 'Sleep', color: '#C39687' },
+  { key: 'partymix', title: 'Party Mix', color: '#7358FF' },
 ];
+
+const SPOTLIGHT = {
+  artist: 'Lady Gaga',
+  artistInitial: 'L',
+  sublabel: 'Single',
+  title: 'Paparazzi',
+  artistName: 'Lady Gaga',
+};
 
 const carouselData = (prefix, count) => {
   const colors = ['#8D67AB', '#E13300', '#27856A', '#503750', '#D84000', '#C39687', '#7358FF'];
@@ -78,14 +89,13 @@ const carouselData = (prefix, count) => {
   }));
 };
 
-const PLAYLISTS = carouselData('Chill Vibes', 8);
-const ALBUMS = carouselData('Album', 8);
-const PODCASTS = carouselData('Podcast', 8);
+const JUMP_BACK_IN = carouselData('Jump back in', 8);
 
 const TABS = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'search', label: 'Search', icon: Search },
   { key: 'library', label: 'Your Library', icon: Library },
+  { key: 'create', label: 'Create', icon: Plus },
 ];
 
 function formatMillis(ms) {
@@ -224,11 +234,82 @@ function FilterChips({ active, onChange }) {
   );
 }
 
+function QuickPickTile({ item }) {
+  if (item.key === 'liked') {
+    return (
+      <Pressable style={[styles.quickTile, styles.quickTileLiked]}>
+        <LinearGradient
+          colors={LIKED_GRADIENT}
+          style={styles.quickArtwork}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <Heart size={26} color={COLORS.white} fill={COLORS.white} />
+        </LinearGradient>
+        <Text style={styles.quickTitle} numberOfLines={2}>
+          {item.title}
+        </Text>
+      </Pressable>
+    );
+  }
+  return (
+    <Pressable style={styles.quickTile}>
+      <View style={[styles.quickArtwork, { backgroundColor: item.color }]} />
+      <Text style={styles.quickTitle} numberOfLines={2}>
+        {item.title}
+      </Text>
+    </Pressable>
+  );
+}
+
+function HeroSpotlight() {
+  return (
+    <View style={styles.heroSection}>
+      <View style={styles.heroHeader}>
+        <View style={styles.heroAvatar}>
+          <Text style={styles.heroAvatarLetter}>{SPOTLIGHT.artistInitial}</Text>
+        </View>
+        <View style={styles.heroHeaderText}>
+          <Text style={styles.heroKicker}>New release from</Text>
+          <Text style={styles.heroArtist} numberOfLines={1}>
+            {SPOTLIGHT.artist}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.heroCard}>
+        <LinearGradient
+          colors={HERO_GRADIENT}
+          style={styles.heroArtwork}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <View style={styles.heroMeta}>
+          <Text style={styles.heroSublabel}>{SPOTLIGHT.sublabel}</Text>
+          <Text style={styles.heroTitle} numberOfLines={2}>
+            {SPOTLIGHT.title}
+          </Text>
+          <Text style={styles.heroArtistName} numberOfLines={1}>
+            {SPOTLIGHT.artistName}
+          </Text>
+        </View>
+        <View style={styles.heroActions}>
+          <Pressable style={styles.heroAdd} hitSlop={8}>
+            <Plus size={20} color={COLORS.white} />
+          </Pressable>
+          <Pressable style={styles.heroPlay}>
+            <Play size={22} color="#121212" fill="#121212" />
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function HomeScreen({ activeFilter, onFilterChange }) {
   return (
     <FlatList
-      data={QUICK_ACCESS}
-      keyExtractor={(item) => item.title}
+      data={QUICK_PICKS}
+      keyExtractor={(item) => item.key}
       numColumns={2}
       columnWrapperStyle={styles.gridRow}
       contentContainerStyle={styles.listContent}
@@ -236,32 +317,21 @@ function HomeScreen({ activeFilter, onFilterChange }) {
       ListHeaderComponent={
         <View>
           <View style={styles.header}>
-            <Text style={styles.greeting}>{greeting()}</Text>
             <Pressable style={styles.userAvatar}>
               <Text style={styles.avatarLetter}>S</Text>
             </Pressable>
           </View>
           <FilterChips active={activeFilter} onChange={onFilterChange} />
+          <HeroSpotlight />
           <SectionTitle title="Your quick picks" />
         </View>
       }
-      renderItem={({ item }) => (
-        <Pressable style={styles.quickCard}>
-          <View style={styles.quickIconWrap}>
-            <item.icon size={18} color={COLORS.white} strokeWidth={2} />
-          </View>
-          <Text style={styles.quickTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-        </Pressable>
-      )}
+      renderItem={({ item }) => <QuickPickTile item={item} />}
       ListFooterComponent={
         <View>
           <TrackCarousel title="Trending Now" fetchTracks={fetchTrendingNow} />
           <TrackCarousel title="Popular Hits" fetchTracks={fetchPopularHits} />
-          <HorizontalRow title="Made for you" data={PLAYLISTS} />
-          <HorizontalRow title="Popular albums" data={ALBUMS} />
-          <HorizontalRow title="Podcasts to try" data={PODCASTS} />
+          <HorizontalRow title="Jump back in" data={JUMP_BACK_IN} />
           <View style={styles.bottomSpacer} />
         </View>
       }
@@ -421,13 +491,13 @@ function SearchScreen() {
   return (
     <View style={styles.searchContainer}>
       <View style={styles.searchBox}>
-        <Search size={16} color={COLORS.textSecondary} />
+        <Search size={16} color="#121212" />
         <TextInput
           style={styles.searchInput}
           value={query}
           onChangeText={handleChange}
           placeholder="What do you want to play?"
-          placeholderTextColor={COLORS.textSecondary}
+          placeholderTextColor="#7a7a7a"
           autoCorrect={false}
           returnKeyType="search"
           onSubmitEditing={() => runSearch(query)}
@@ -440,9 +510,7 @@ function SearchScreen() {
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.searchResults}
-        ListHeaderComponent={
-          query.trim() !== '' ? <SectionTitle title="Top result" /> : null
-        }
+        ListHeaderComponent={query.trim() !== '' ? <SectionTitle title="Top result" /> : null}
         ListEmptyComponent={
           !searching && !error && query.trim() !== '' ? (
             <Text style={styles.searchEmpty}>No results found. Try a different search.</Text>
@@ -486,8 +554,15 @@ function LibraryRow({ icon: Icon, title, subtitle, onPress }) {
 }
 
 function LibraryScreen() {
-  const { likedSongs, playlists, createPlaylist, removePlaylist, toggleLike, isLiked, removeTrackFromPlaylist } =
-    useLibrary();
+  const {
+    likedSongs,
+    playlists,
+    createPlaylist,
+    removePlaylist,
+    toggleLike,
+    isLiked,
+    removeTrackFromPlaylist,
+  } = useLibrary();
   const { playTrack } = usePlayer();
   const [detail, setDetail] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -515,7 +590,8 @@ function LibraryScreen() {
   };
 
   if (detail) {
-    const tracks = detail.type === 'liked' ? likedSongs : selectedPlaylist ? selectedPlaylist.tracks : [];
+    const tracks =
+      detail.type === 'liked' ? likedSongs : selectedPlaylist ? selectedPlaylist.tracks : [];
     return (
       <View style={styles.libraryScreen}>
         <View style={styles.libraryHeader}>
@@ -621,6 +697,27 @@ function LibraryScreen() {
   );
 }
 
+function CreateScreen() {
+  const { createPlaylist, playlists } = useLibrary();
+  const [created, setCreated] = useState(false);
+
+  const handleCreate = async () => {
+    await createPlaylist(`My Playlist #${playlists.length + 1}`);
+    setCreated(true);
+  };
+
+  return (
+    <View style={styles.createContainer}>
+      <Pressable style={styles.createButton} onPress={handleCreate}>
+        <Plus size={44} color="#121212" />
+      </Pressable>
+      <Text style={styles.createTitle}>Create a playlist</Text>
+      <Text style={styles.createSubtitle}>Build your own collection of songs.</Text>
+      {created ? <Text style={styles.createDone}>Created! Find it in Your Library.</Text> : null}
+    </View>
+  );
+}
+
 function Scrubber({ position, duration, onSeek, large }) {
   const [width, setWidth] = useState(0);
   const progress = duration > 0 ? Math.min(Math.max(position / duration, 0), 1) : 0;
@@ -659,66 +756,57 @@ function MiniPlayer({ onOpen }) {
     isLoadingAudio,
     playbackError,
     togglePlayPause,
-    seekTo,
   } = usePlayer();
   const { isLiked, toggleLike } = useLibrary();
+  const progress = duration > 0 ? Math.min(Math.max(playbackPosition / duration, 0), 1) : 0;
 
   return (
     <View style={styles.miniPlayer}>
-      <Pressable
-        style={styles.miniPlayerMain}
-        onPress={currentTrack ? onOpen : null}
-      >
+      <Pressable style={styles.miniPlayerMain} onPress={currentTrack ? onOpen : null}>
         {currentTrack && currentTrack.artwork ? (
           <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
         ) : (
-          <View style={styles.miniPlayerArtwork} />
+          <View style={[styles.miniPlayerArtwork, styles.miniPlayerArtworkFallback]} />
         )}
         <View style={styles.miniPlayerInfo}>
           <Text style={styles.miniPlayerTitle} numberOfLines={1}>
             {currentTrack ? currentTrack.title : 'Nothing playing'}
           </Text>
           {currentTrack ? (
-            <>
-              <Text style={styles.miniPlayerArtist} numberOfLines={1}>
-                {currentTrack.artist}
-              </Text>
-              {playbackError ? (
-                <Text style={styles.miniPlayerError} numberOfLines={1}>
-                  {playbackError}
-                </Text>
-              ) : null}
-              <Scrubber position={playbackPosition} duration={duration} onSeek={seekTo} />
-            </>
+            <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+              {playbackError || currentTrack.artist}
+            </Text>
           ) : null}
         </View>
       </Pressable>
       {currentTrack ? (
-        <Pressable
-          style={styles.miniPlayerAction}
-          onPress={() => toggleLike(currentTrack)}
-          hitSlop={8}
-        >
-          <Heart
-            size={18}
-            color={COLORS.white}
-            fill={isLiked(currentTrack.id) ? COLORS.white : 'transparent'}
-          />
-        </Pressable>
+        <View style={styles.miniPlayerActions}>
+          <Cast size={20} color={COLORS.green} />
+          <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={8}>
+            <Heart
+              size={18}
+              color={COLORS.white}
+              fill={isLiked(currentTrack.id) ? COLORS.white : 'transparent'}
+            />
+          </Pressable>
+          <Pressable
+            style={styles.miniPlayerPlay}
+            onPress={togglePlayPause}
+            disabled={isLoadingAudio}
+          >
+            {isLoadingAudio ? (
+              <Activity size={16} color="#121212" />
+            ) : isPlaying ? (
+              <Pause size={17} color="#121212" fill="#121212" />
+            ) : (
+              <Play size={17} color="#121212" fill="#121212" />
+            )}
+          </Pressable>
+        </View>
       ) : null}
-      <Pressable
-        style={styles.miniPlayerPlay}
-        onPress={togglePlayPause}
-        disabled={!currentTrack || isLoadingAudio}
-      >
-        {!currentTrack ? null : isLoadingAudio ? (
-          <Activity size={18} color="#121212" />
-        ) : isPlaying ? (
-          <Pause size={18} color="#121212" fill="#121212" />
-        ) : (
-          <Play size={18} color="#121212" fill="#121212" />
-        )}
-      </Pressable>
+      <View style={styles.miniProgressTrack}>
+        <View style={[styles.miniProgressFill, { width: `${progress * 100}%` }]} />
+      </View>
     </View>
   );
 }
@@ -751,12 +839,15 @@ function NowPlayingModal({ visible, onClose }) {
       <View
         style={[
           styles.npRoot,
-          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 },
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 },
         ]}
       >
-        <Pressable style={styles.npDismiss} onPress={onClose} hitSlop={12}>
-          <ChevronDown size={26} color={COLORS.textPrimary} />
-        </Pressable>
+        <View style={styles.npTopBar}>
+          <Pressable style={styles.npChevron} onPress={onClose} hitSlop={12}>
+            <ChevronDown size={26} color={COLORS.textPrimary} />
+          </Pressable>
+          <Text style={styles.npContext}>PLAYING FROM PLAYLIST</Text>
+        </View>
         {currentTrack ? (
           <>
             <View style={styles.npArtworkWrap}>
@@ -783,9 +874,6 @@ function NowPlayingModal({ visible, onClose }) {
                 <Text style={styles.npArtist} numberOfLines={1}>
                   {currentTrack.artist}
                 </Text>
-                <Text style={styles.npAlbum} numberOfLines={1}>
-                  {currentTrack.album}
-                </Text>
                 {playbackError ? (
                   <Text style={styles.npError} numberOfLines={1}>
                     {playbackError}
@@ -800,15 +888,13 @@ function NowPlayingModal({ visible, onClose }) {
                 />
               </Pressable>
             </View>
-            <Scrubber
-              position={playbackPosition}
-              duration={duration}
-              onSeek={seekTo}
-              large
-            />
+            <Scrubber position={playbackPosition} duration={duration} onSeek={seekTo} large />
             <View style={styles.npControls}>
+              <Pressable hitSlop={10}>
+                <Shuffle size={24} color={COLORS.textSecondary} />
+              </Pressable>
               <Pressable onPress={playPrevious} hitSlop={10}>
-                <SkipBack size={32} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
+                <SkipBack size={34} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
               </Pressable>
               <Pressable style={styles.npPlay} onPress={togglePlayPause} disabled={isLoadingAudio}>
                 {isLoadingAudio ? (
@@ -820,7 +906,18 @@ function NowPlayingModal({ visible, onClose }) {
                 )}
               </Pressable>
               <Pressable onPress={playNext} hitSlop={10}>
-                <SkipForward size={32} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
+                <SkipForward size={34} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
+              </Pressable>
+              <Pressable hitSlop={10}>
+                <Repeat size={24} color={COLORS.textSecondary} />
+              </Pressable>
+            </View>
+            <View style={styles.npUtilities}>
+              <Pressable hitSlop={10}>
+                <Cast size={26} color={COLORS.textSecondary} />
+              </Pressable>
+              <Pressable hitSlop={10}>
+                <ListMusic size={26} color={COLORS.textSecondary} />
               </Pressable>
             </View>
           </>
@@ -863,6 +960,8 @@ function AppShell() {
           <HomeScreen activeFilter={activeFilter} onFilterChange={setActiveFilter} />
         ) : activeTab === 'search' ? (
           <SearchScreen />
+        ) : activeTab === 'create' ? (
+          <CreateScreen />
         ) : (
           <LibraryScreen />
         )}
@@ -908,23 +1007,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  greeting: {
-    color: COLORS.textPrimary,
-    fontSize: 24,
-    fontWeight: 'bold',
-    flexShrink: 1,
+    marginBottom: 10,
   },
   userAvatar: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: COLORS.card,
+    backgroundColor: COLORS.cardPress,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 12,
   },
   avatarLetter: {
     color: COLORS.white,
@@ -933,24 +1024,25 @@ const styles = StyleSheet.create({
   },
   chipRow: {
     gap: 8,
-    paddingVertical: 8,
+    paddingVertical: 2,
   },
   chip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: COLORS.chipInactive,
+    borderRadius: 16,
+    backgroundColor: COLORS.pill,
   },
   chipActive: {
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.green,
   },
   chipText: {
     color: COLORS.textPrimary,
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   chipTextActive: {
-    color: '#121212',
+    color: '#000000',
+    fontWeight: 'bold',
   },
   sectionTitle: {
     color: COLORS.textPrimary,
@@ -964,27 +1056,122 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
-  quickCard: {
+  quickTile: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    gap: 8,
+    backgroundColor: COLORS.pill,
+    borderRadius: 4,
+    height: 56,
+    padding: 2,
   },
-  quickIconWrap: {
-    width: 24,
-    height: 24,
+  quickTileLiked: {
+    paddingRight: 8,
+  },
+  quickArtwork: {
+    width: 52,
+    height: 52,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickTitle: {
     color: COLORS.textPrimary,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: 'bold',
     flexShrink: 1,
+    marginLeft: 8,
+  },
+  heroSection: {
+    marginTop: 16,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  heroAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.cardPress,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroAvatarLetter: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  heroHeaderText: {
+    flex: 1,
+  },
+  heroKicker: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  heroArtist: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 1,
+  },
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.elevated,
+    borderRadius: 8,
+    padding: 8,
+    gap: 12,
+  },
+  heroArtwork: {
+    width: 115,
+    height: 115,
+    borderRadius: 6,
+  },
+  heroMeta: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  heroSublabel: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  heroTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  heroArtistName: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  heroActions: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    paddingVertical: 2,
+  },
+  heroAdd: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.textSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroPlay: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rowSection: {
     marginTop: 20,
@@ -1014,48 +1201,18 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: COLORS.textPrimary,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   cardSubtitle: {
     color: COLORS.textSecondary,
     fontSize: 12,
     marginTop: 2,
   },
-  searchContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+  bottomSpacer: {
+    height: 24,
   },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.white,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    color: '#121212',
-    fontSize: 15,
-    paddingVertical: 8,
-  },
-  searchLoading: {
-    marginTop: 16,
-    alignSelf: 'center',
-  },
-  searchError: {
-    color: '#F15E6C',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  searchEmpty: {
-    color: COLORS.textSecondary,
-    marginTop: 24,
-    textAlign: 'center',
-  },
-  searchResults: {
-    paddingBottom: 24,
+disabled: {
+    opacity: 0.5,
   },
   trackRow: {
     flexDirection: 'row',
@@ -1096,7 +1253,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   atpCard: {
-    backgroundColor: '#1e1e1e',
+    backgroundColor: COLORS.elevated,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 16,
@@ -1152,10 +1309,48 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 12,
   },
+  searchContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#121212',
+    fontSize: 15,
+    paddingVertical: 8,
+  },
+  searchLoading: {
+    marginTop: 16,
+    alignSelf: 'center',
+  },
+  searchError: {
+    color: '#F15E6C',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  searchEmpty: {
+    color: COLORS.textSecondary,
+    marginTop: 24,
+    textAlign: 'center',
+  },
+  searchResults: {
+    paddingBottom: 24,
+  },
   libraryScreen: {
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 8,
+    paddingBottom: 8,
   },
   libraryHeader: {
     flexDirection: 'row',
@@ -1187,6 +1382,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginTop: 8,
     marginBottom: 8,
   },
   libraryCreateInput: {
@@ -1239,58 +1435,37 @@ const styles = StyleSheet.create({
     marginTop: 16,
     textAlign: 'center',
   },
-  disabled: {
-    opacity: 0.5,
-  },
-  miniPlayer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#1f1f1f',
-  },
-  miniPlayerMain: {
+  createContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  miniPlayerArtwork: {
-    width: 40,
-    height: 40,
-    borderRadius: 4,
-    backgroundColor: '#7358FF',
-  },
-  miniPlayerInfo: {
-    flex: 1,
-  },
-  miniPlayerTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  miniPlayerArtist: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  miniPlayerError: {
-    color: '#F15E6C',
-    fontSize: 11,
-    marginTop: 1,
-  },
-  miniPlayerAction: {
-    marginHorizontal: 2,
-  },
-  miniPlayerPlay: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  createButton: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: COLORS.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  createTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  createSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  createDone: {
+    color: COLORS.green,
+    fontSize: 14,
+    marginTop: 16,
+    textAlign: 'center',
   },
   scrubTrack: {
     height: 4,
@@ -1326,7 +1501,78 @@ const styles = StyleSheet.create({
   },
   scrubTime: {
     color: COLORS.textSecondary,
-    fontSize: 10,
+    fontSize: 11,
+  },
+  miniPlayer: {
+    position: 'absolute',
+    bottom: 58,
+    left: 8,
+    right: 8,
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    gap: 10,
+    overflow: 'hidden',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  miniPlayerMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  miniPlayerArtwork: {
+    width: 44,
+    height: 44,
+    borderRadius: 4,
+  },
+  miniPlayerArtworkFallback: {
+    backgroundColor: '#7358FF',
+  },
+  miniPlayerInfo: {
+    flex: 1,
+  },
+  miniPlayerTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  miniPlayerArtist: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  miniPlayerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  miniPlayerPlay: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniProgressTrack: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    height: 2,
+    width: '100%',
+    backgroundColor: '#565656',
+  },
+  miniProgressFill: {
+    height: 2,
+    backgroundColor: COLORS.green,
   },
   npRoot: {
     flex: 1,
@@ -1334,9 +1580,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     alignItems: 'center',
   },
-  npDismiss: {
-    alignSelf: 'flex-start',
-    marginBottom: 12,
+  npTopBar: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  npChevron: {
+    padding: 4,
+  },
+  npContext: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1,
+    marginTop: 4,
   },
   npArtworkWrap: {
     shadowColor: '#000',
@@ -1357,7 +1613,7 @@ const styles = StyleSheet.create({
   npMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 32,
+    marginTop: 28,
     width: '100%',
     gap: 16,
   },
@@ -1374,11 +1630,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 4,
   },
-  npAlbum: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    marginTop: 2,
-  },
   npError: {
     color: '#F15E6C',
     fontSize: 14,
@@ -1387,8 +1638,7 @@ const styles = StyleSheet.create({
   npControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 48,
+    justifyContent: 'space-between',
     marginTop: 36,
     width: '100%',
   },
@@ -1399,6 +1649,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  npUtilities: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 'auto',
+    paddingBottom: 8,
   },
   npEmpty: {
     flex: 1,
@@ -1411,11 +1669,9 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: COLORS.card,
+    backgroundColor: COLORS.background,
     paddingTop: 8,
-    paddingBottom: 2,
-    borderTopWidth: 1,
-    borderTopColor: '#1f1f1f',
+    paddingBottom: 4,
   },
   tabItem: {
     flex: 1,
@@ -1424,13 +1680,10 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     color: COLORS.textSecondary,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
   },
   tabLabelActive: {
     color: COLORS.textPrimary,
-  },
-  bottomSpacer: {
-    height: 24,
   },
 });
