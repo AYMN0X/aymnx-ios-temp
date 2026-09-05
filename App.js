@@ -420,6 +420,7 @@ function HomeScreen({ activeFilter, onFilterChange, onOpenLibrary }) {
       numColumns={2}
       columnWrapperStyle={styles.gridRow}
       contentContainerStyle={styles.listContent}
+      style={styles.homeList}
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={
         <View style={styles.header}>
@@ -1106,18 +1107,26 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+safeArea: {
     flex: 1,
+    width: '100%',
     backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
+    width: '100%',
     backgroundColor: COLORS.background,
   },
   screenContent: {
     flex: 1,
+    width: '100%',
   },
-listContent: {
+  homeList: {
+    flex: 1,
+    width: '100%',
+  },
+  listContent: {
+    width: '100%',
     paddingTop: 12,
   },
 header: {
@@ -1639,7 +1648,7 @@ disabled: {
   },
   miniPlayer: {
     position: 'absolute',
-    bottom: 60,
+    bottom: 58,
     left: 8,
     right: 8,
     height: 56,
@@ -1799,11 +1808,12 @@ disabled: {
     fontSize: 16,
   },
   tabBar: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.background,
+    width: '100%',
     height: 56,
-    paddingTop: 8,
-    paddingBottom: 4,
+    backgroundColor: '#121212',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
   },
   tabItem: {
     flex: 1,
