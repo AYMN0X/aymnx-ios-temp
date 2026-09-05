@@ -10,6 +10,8 @@ import {
 import * as downloads from '../services/downloadService';
 import { DownloadedTrack } from '../services/downloadService';
 import { Track } from '../services/musicApi';
+import * as storage from '../services/storage';
+import { useAuth } from './AuthContext';
 
 interface BatchProgress {
   downloaded: number;
@@ -31,30 +33,39 @@ interface DownloadContextValue {
     onProgress?: (progress: { done: number; total: number; failed: number }) => void
   ) => Promise<void>;
   toggleDownload: (track: Track) => Promise<void>;
-  refreshDownloads: () => Promise<void>;
 }
 
 const DownloadContext = createContext<DownloadContextValue | undefined>(undefined);
 
 export function DownloadProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [downloadedTracks, setDownloadedTracks] = useState<DownloadedTrack[]>([]);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [isBatchDownloading, setIsBatchDownloading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
 
+  useEffect(() => {
+    let active = true;
+    if (!userId) {
+      setDownloadedTracks([]);
+      return;
+    }
+    (async () => {
+      const tracks = await storage.getDownloadedTracks(userId);
+      if (active) {
+        setDownloadedTracks(tracks);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
   const downloadedIds = useMemo(
     () => new Set(downloadedTracks.map((track) => track.id)),
     [downloadedTracks]
   );
-
-  const refreshDownloads = useCallback(async () => {
-    const tracks = await downloads.getDownloadedTracks();
-    setDownloadedTracks(tracks);
-  }, []);
-
-  useEffect(() => {
-    refreshDownloads();
-  }, [refreshDownloads]);
 
   const isDownloaded = useCallback(
     (trackId: string) => downloadedIds.has(trackId),
@@ -63,17 +74,18 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
   const downloadTrack = useCallback(
     async (track: Track) => {
-      if (downloadedIds.has(track.id) || downloadingIds.has(track.id)) {
+      if (!userId || downloadedIds.has(track.id) || downloadingIds.has(track.id)) {
         return;
       }
       setDownloadingIds((current) => new Set(current).add(track.id));
       try {
         const downloaded = await downloads.downloadTrack(track);
-        setDownloadedTracks((current) =>
-          current.some((item) => item.id === track.id)
-            ? current
-            : [...current, downloaded]
-        );
+        const current = await storage.getDownloadedTracks(userId);
+        const next = current.some((item) => item.id === downloaded.id)
+          ? current
+          : [...current, downloaded];
+        await storage.writeDownloadedTracks(userId, next);
+        setDownloadedTracks(next);
       } finally {
         setDownloadingIds((current) => {
           const next = new Set(current);
@@ -82,29 +94,40 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [downloadedIds, downloadingIds]
+    [userId, downloadedIds, downloadingIds]
   );
 
-  const deleteDownload = useCallback(async (trackId: string) => {
-    await downloads.deleteDownloadedTrack(trackId);
-    setDownloadedTracks((current) => current.filter((item) => item.id !== trackId));
-  }, []);
+  const deleteDownload = useCallback(
+    async (trackId: string) => {
+      if (!userId) {
+        return;
+      }
+      await downloads.deleteTrackFiles(trackId);
+      const current = await storage.getDownloadedTracks(userId);
+      const next = current.filter((item) => item.id !== trackId);
+      await storage.writeDownloadedTracks(userId, next);
+      setDownloadedTracks(next);
+    },
+    [userId]
+  );
 
   const downloadAll = useCallback(
     async (
       tracks: Track[],
       onProgress?: (progress: { done: number; total: number; failed: number }) => void
     ) => {
-      if (isBatchDownloading || tracks.length === 0) {
+      if (!userId || isBatchDownloading || tracks.length === 0) {
         return;
       }
       setIsBatchDownloading(true);
       setBatchProgress({ downloaded: 0, total: tracks.length, failed: 0 });
       let done = 0;
       let failed = 0;
+      const metas: DownloadedTrack[] = [];
       for (const track of tracks) {
         try {
-          await downloads.downloadTrack(track);
+          const meta = await downloads.downloadTrack(track);
+          metas.push(meta);
           done += 1;
         } catch (error) {
           console.warn('[downloads] Failed to download track:', track.title, error);
@@ -115,10 +138,16 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           onProgress({ done, total: tracks.length, failed });
         }
       }
-      await refreshDownloads();
+      const current = await storage.getDownloadedTracks(userId);
+      const merged = [
+        ...current.filter((item) => !metas.some((meta) => meta.id === item.id)),
+        ...metas,
+      ];
+      await storage.writeDownloadedTracks(userId, merged);
+      setDownloadedTracks(merged);
       setIsBatchDownloading(false);
     },
-    [isBatchDownloading, refreshDownloads]
+    [userId, isBatchDownloading]
   );
 
   const toggleDownload = useCallback(
@@ -144,7 +173,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       deleteDownload,
       downloadAll,
       toggleDownload,
-      refreshDownloads,
     }),
     [
       downloadedTracks,
@@ -157,7 +185,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       deleteDownload,
       downloadAll,
       toggleDownload,
-      refreshDownloads,
     ]
   );
 

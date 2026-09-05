@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { DownloadedTrack } from './downloadService';
 import type { Track } from './musicApi';
 
 export interface SavedPlaylist {
@@ -7,98 +8,143 @@ export interface SavedPlaylist {
   tracks: Track[];
 }
 
-const LIKED_SONGS_KEY = '@spotify_white/liked_songs';
-const PLAYLISTS_KEY = '@spotify_white/playlists';
+export interface StoredUserData {
+  likedSongs?: Track[];
+  playlists?: SavedPlaylist[];
+  downloadedTracks?: DownloadedTrack[];
+  lastPlayedTrack?: Track | null;
+}
 
-async function readJSON<T>(key: string, fallback: T): Promise<T> {
-  const raw = await AsyncStorage.getItem(key);
-  if (!raw) {
-    return fallback;
-  }
+export function getUserDataKey(userId: string): string {
+  return `@spotify_user_data_${userId}`;
+}
+
+async function readUserData(userId: string): Promise<StoredUserData> {
   try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
+    const raw = await AsyncStorage.getItem(getUserDataKey(userId));
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as StoredUserData;
+  } catch (error) {
+    console.warn('[storage] Failed to read user data.', error);
+    return {};
   }
 }
 
-async function writeJSON<T>(key: string, value: T): Promise<void> {
-  await AsyncStorage.setItem(key, JSON.stringify(value));
+async function writeUserData(userId: string, data: StoredUserData): Promise<void> {
+  await AsyncStorage.setItem(getUserDataKey(userId), JSON.stringify(data));
 }
 
-export async function getLikedSongs(): Promise<Track[]> {
-  return readJSON<Track[]>(LIKED_SONGS_KEY, []);
-}
-
-export async function addLikedSong(track: Track): Promise<Track[]> {
-  const current = await getLikedSongs();
-  if (current.some((item) => item.id === track.id)) {
-    return current;
-  }
-  const next = [track, ...current];
-  await writeJSON(LIKED_SONGS_KEY, next);
+async function updateUserData(
+  userId: string,
+  updater: (data: StoredUserData) => StoredUserData
+): Promise<StoredUserData> {
+  const data = await readUserData(userId);
+  const next = updater(data);
+  await writeUserData(userId, next);
   return next;
 }
 
-export async function removeLikedSong(trackId: string): Promise<Track[]> {
-  const current = await getLikedSongs();
-  const next = current.filter((item) => item.id !== trackId);
-  await writeJSON(LIKED_SONGS_KEY, next);
-  return next;
+export async function getLikedSongs(userId: string): Promise<Track[]> {
+  return (await readUserData(userId)).likedSongs ?? [];
 }
 
-export async function isLiked(trackId: string): Promise<boolean> {
-  return (await getLikedSongs()).some((item) => item.id === trackId);
-}
-
-export async function getPlaylists(): Promise<SavedPlaylist[]> {
-  return readJSON<SavedPlaylist[]>(PLAYLISTS_KEY, []);
-}
-
-export async function createPlaylist(name: string): Promise<SavedPlaylist[]> {
-  const current = await getPlaylists();
-  const playlist: SavedPlaylist = {
-    id: `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    name,
-    tracks: [],
-  };
-  const next = [...current, playlist];
-  await writeJSON(PLAYLISTS_KEY, next);
-  return next;
-}
-
-export async function removePlaylist(playlistId: string): Promise<SavedPlaylist[]> {
-  const current = await getPlaylists();
-  const next = current.filter((playlist) => playlist.id !== playlistId);
-  await writeJSON(PLAYLISTS_KEY, next);
-  return next;
-}
-
-export async function addTrackToPlaylist(playlistId: string, track: Track): Promise<SavedPlaylist[]> {
-  const current = await getPlaylists();
-  const next = current.map((playlist) => {
-    if (playlist.id !== playlistId) {
-      return playlist;
+export async function addLikedSong(userId: string, track: Track): Promise<Track[]> {
+  const data = await updateUserData(userId, (d) => {
+    const current = d.likedSongs ?? [];
+    if (current.some((item) => item.id === track.id)) {
+      return d;
     }
-    if (playlist.tracks.some((item) => item.id === track.id)) {
-      return playlist;
-    }
-    return { ...playlist, tracks: [track, ...playlist.tracks] };
+    return { ...d, likedSongs: [track, ...current] };
   });
-  await writeJSON(PLAYLISTS_KEY, next);
-  return next;
+  return data.likedSongs ?? [];
+}
+
+export async function removeLikedSong(userId: string, trackId: string): Promise<Track[]> {
+  const data = await updateUserData(userId, (d) => ({
+    ...d,
+    likedSongs: (d.likedSongs ?? []).filter((item) => item.id !== trackId),
+  }));
+  return data.likedSongs ?? [];
+}
+
+export async function isLiked(userId: string, trackId: string): Promise<boolean> {
+  return (await getLikedSongs(userId)).some((item) => item.id === trackId);
+}
+
+export async function getPlaylists(userId: string): Promise<SavedPlaylist[]> {
+  return (await readUserData(userId)).playlists ?? [];
+}
+
+export async function createPlaylist(userId: string, name: string): Promise<SavedPlaylist[]> {
+  const data = await updateUserData(userId, (d) => {
+    const playlist: SavedPlaylist = {
+      id: `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      tracks: [],
+    };
+    return { ...d, playlists: [...(d.playlists ?? []), playlist] };
+  });
+  return data.playlists ?? [];
+}
+
+export async function removePlaylist(userId: string, playlistId: string): Promise<SavedPlaylist[]> {
+  const data = await updateUserData(userId, (d) => ({
+    ...d,
+    playlists: (d.playlists ?? []).filter((playlist) => playlist.id !== playlistId),
+  }));
+  return data.playlists ?? [];
+}
+
+export async function addTrackToPlaylist(
+  userId: string,
+  playlistId: string,
+  track: Track
+): Promise<SavedPlaylist[]> {
+  const data = await updateUserData(userId, (d) => {
+    const playlists = (d.playlists ?? []).map((playlist) => {
+      if (playlist.id !== playlistId) {
+        return playlist;
+      }
+      if (playlist.tracks.some((item) => item.id === track.id)) {
+        return playlist;
+      }
+      return { ...playlist, tracks: [track, ...playlist.tracks] };
+    });
+    return { ...d, playlists };
+  });
+  return data.playlists ?? [];
 }
 
 export async function removeTrackFromPlaylist(
+  userId: string,
   playlistId: string,
   trackId: string
 ): Promise<SavedPlaylist[]> {
-  const current = await getPlaylists();
-  const next = current.map((playlist) =>
-    playlist.id === playlistId
-      ? { ...playlist, tracks: playlist.tracks.filter((item) => item.id !== trackId) }
-      : playlist
-  );
-  await writeJSON(PLAYLISTS_KEY, next);
-  return next;
+  const data = await updateUserData(userId, (d) => {
+    const playlists = (d.playlists ?? []).map((playlist) =>
+      playlist.id === playlistId
+        ? { ...playlist, tracks: playlist.tracks.filter((item) => item.id !== trackId) }
+        : playlist
+    );
+    return { ...d, playlists };
+  });
+  return data.playlists ?? [];
+}
+
+export async function getDownloadedTracks(userId: string): Promise<DownloadedTrack[]> {
+  return (await readUserData(userId)).downloadedTracks ?? [];
+}
+
+export async function writeDownloadedTracks(userId: string, tracks: DownloadedTrack[]): Promise<void> {
+  await updateUserData(userId, (d) => ({ ...d, downloadedTracks: tracks }));
+}
+
+export async function getLastPlayedTrack(userId: string): Promise<Track | null> {
+  return (await readUserData(userId)).lastPlayedTrack ?? null;
+}
+
+export async function writeLastPlayedTrack(userId: string, track: Track | null): Promise<void> {
+  await updateUserData(userId, (d) => ({ ...d, lastPlayedTrack: track }));
 }

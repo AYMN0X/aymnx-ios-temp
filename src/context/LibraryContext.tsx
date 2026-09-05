@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import type { Track } from '../services/musicApi';
 import * as storage from '../services/storage';
+import { useAuth } from './AuthContext';
 
 type SavedPlaylist = storage.SavedPlaylist;
 
@@ -18,52 +19,80 @@ interface LibraryContextValue {
 const LibraryContext = createContext<LibraryContextValue | undefined>(undefined);
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [likedSongs, setLikedSongs] = useState<Track[]>([]);
   const [playlists, setPlaylists] = useState<SavedPlaylist[]>([]);
 
   useEffect(() => {
+    let active = true;
+    if (!userId) {
+      setLikedSongs([]);
+      setPlaylists([]);
+      return;
+    }
     (async () => {
       const [songs, savedPlaylists] = await Promise.all([
-        storage.getLikedSongs(),
-        storage.getPlaylists(),
+        storage.getLikedSongs(userId),
+        storage.getPlaylists(userId),
       ]);
-      setLikedSongs(songs);
-      setPlaylists(savedPlaylists);
+      if (active) {
+        setLikedSongs(songs);
+        setPlaylists(savedPlaylists);
+      }
     })();
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   const likedIds = useMemo(() => new Set(likedSongs.map((track) => track.id)), [likedSongs]);
 
   const isLiked = (trackId: string) => likedIds.has(trackId);
 
   const toggleLike = async (track: Track) => {
+    if (!userId) {
+      return;
+    }
     const next = likedIds.has(track.id)
-      ? await storage.removeLikedSong(track.id)
-      : await storage.addLikedSong(track);
+      ? await storage.removeLikedSong(userId, track.id)
+      : await storage.addLikedSong(userId, track);
     setLikedSongs(next);
   };
 
   const createPlaylist = async (name: string) => {
+    if (!userId) {
+      return;
+    }
     const trimmed = name.trim();
     if (!trimmed) {
       return;
     }
-    const next = await storage.createPlaylist(trimmed);
+    const next = await storage.createPlaylist(userId, trimmed);
     setPlaylists(next);
   };
 
   const removePlaylist = async (playlistId: string) => {
-    const next = await storage.removePlaylist(playlistId);
+    if (!userId) {
+      return;
+    }
+    const next = await storage.removePlaylist(userId, playlistId);
     setPlaylists(next);
   };
 
   const addToPlaylist = async (playlistId: string, track: Track) => {
-    const next = await storage.addTrackToPlaylist(playlistId, track);
+    if (!userId) {
+      return;
+    }
+    const next = await storage.addTrackToPlaylist(userId, playlistId, track);
     setPlaylists(next);
   };
 
   const removeTrackFromPlaylist = async (playlistId: string, trackId: string) => {
-    const next = await storage.removeTrackFromPlaylist(playlistId, trackId);
+    if (!userId) {
+      return;
+    }
+    const next = await storage.removeTrackFromPlaylist(userId, playlistId, trackId);
     setPlaylists(next);
   };
 

@@ -1,7 +1,9 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { getDownloadedTrack } from '../services/downloadService';
 import { resolveStream, Track } from '../services/musicApi';
+import * as storage from '../services/storage';
+import { useAuth } from './AuthContext';
+import { useDownloads } from './DownloadContext';
 
 interface PlayerContextValue {
   currentTrack: Track | null;
@@ -22,6 +24,8 @@ const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const player = useAudioPlayer(null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
+  const { user } = useAuth();
+  const { downloadedTracks } = useDownloads();
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
@@ -56,11 +60,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | undefined;
     let artworkUri = track.artwork;
     try {
-      const downloaded = await getDownloadedTrack(track.id);
-      if (downloaded) {
-        resolvedUrl = downloaded.localAudioUri;
+      const local = downloadedTracks.find((item) => item.id === track.id);
+      if (local) {
+        resolvedUrl = local.localAudioUri;
         resolvedProvider = 'local';
-        artworkUri = downloaded.localArtworkUri || track.artwork;
+        artworkUri = local.localArtworkUri || track.artwork;
       } else {
         const result = await resolveStream(track.title, track.artist);
         resolvedUrl = result.url;
@@ -138,6 +142,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [status.didJustFinish]);
 
   useEffect(() => {
+    if (user && currentTrack) {
+      storage
+        .writeLastPlayedTrack(user.id, currentTrack)
+        .catch((error) => console.warn('[player] Could not save last played track.', error));
+    }
+  }, [user, currentTrack]);
+
+  useEffect(() => {
+    if (user) {
+      return;
+    }
+    setCurrentTrack(null);
+    setPlaybackError(null);
+    reportedErrorRef.current = null;
+    queueRef.current = [];
+    indexRef.current = -1;
+    player.pause();
+  }, [user]);
+
+  useEffect(() => {
     if (!currentTrack) {
       return;
     }
@@ -200,6 +224,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       status.duration,
       isLoadingAudio,
       playbackError,
+      downloadedTracks,
     ]
   );
 

@@ -48,6 +48,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
 import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
@@ -464,9 +465,11 @@ function HeroSpotlight() {
   );
 }
 
-function HomeScreen({ activeFilter, onFilterChange, onOpenLibrary }) {
+function HomeScreen({ activeFilter, onFilterChange, onOpenLibrary, onOpenAccount }) {
   const { playTrack } = usePlayer();
   const { likedSongs } = useLibrary();
+  const { user } = useAuth();
+  const userInitial = (user?.name || user?.username || 'S').charAt(0).toUpperCase();
 
   const handleQuickPress = (item) => {
     if (item.key === 'liked') {
@@ -489,8 +492,8 @@ function HomeScreen({ activeFilter, onFilterChange, onOpenLibrary }) {
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={
         <View style={styles.header}>
-          <Pressable style={styles.userAvatar}>
-            <Text style={styles.avatarLetter}>S</Text>
+          <Pressable style={styles.userAvatar} onPress={onOpenAccount}>
+            <Text style={styles.avatarLetter}>{userInitial}</Text>
           </Pressable>
           <FilterChips
             active={activeFilter}
@@ -1071,7 +1074,7 @@ function LikedSongsScreen({ onBack }) {
   );
 }
 
-function LibraryScreen() {
+function LibraryScreen({ onOpenAccount }) {
   const {
     likedSongs,
     playlists,
@@ -1083,6 +1086,8 @@ function LibraryScreen() {
   } = useLibrary();
   const { playTrack } = usePlayer();
   const { downloadedTracks, deleteDownload } = useDownloads();
+  const { user } = useAuth();
+  const userInitial = (user?.name || user?.username || 'S').charAt(0).toUpperCase();
   const [detail, setDetail] = useState(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -1189,9 +1194,9 @@ function LibraryScreen() {
   return (
     <View style={styles.libraryScreen}>
       <View style={styles.libraryHeader}>
-        <View style={styles.libraryAvatar}>
-          <Text style={styles.libraryAvatarLetter}>S</Text>
-        </View>
+        <Pressable style={styles.libraryAvatar} onPress={onOpenAccount}>
+          <Text style={styles.libraryAvatarLetter}>{userInitial}</Text>
+        </Pressable>
         <Text style={styles.libraryTitle}>Your Library</Text>
         <View style={styles.libraryHeaderActions}>
           <Pressable style={styles.libraryHeaderBtn} hitSlop={8}>
@@ -1592,10 +1597,103 @@ function TabBar({ active, onChange }) {
   );
 }
 
+function LoginScreen() {
+  const { login } = useAuth();
+  const [username, setUsername] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleLogin = async () => {
+    if (!username.trim() || submitting) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await login(username);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <View style={styles.loginRoot}>
+      <MaterialCommunityIcons
+        name="spotify"
+        size={88}
+        color="#1ED760"
+        style={styles.loginLogo}
+      />
+      <Text style={styles.loginTitle}>{"Millions of songs.\nFree on Spotify."}</Text>
+      <TextInput
+        style={styles.loginInput}
+        value={username}
+        onChangeText={setUsername}
+        placeholder="Username or Email"
+        placeholderTextColor="#777777"
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="go"
+        onSubmitEditing={handleLogin}
+      />
+      <Pressable
+        style={[styles.loginButton, !username.trim() && styles.disabled]}
+        onPress={handleLogin}
+        disabled={!username.trim() || submitting}
+      >
+        <Text style={styles.loginButtonLabel}>{submitting ? 'Logging in\u2026' : 'Log In'}</Text>
+      </Pressable>
+      <Pressable style={styles.loginGuest} onPress={() => login('Guest')} hitSlop={8}>
+        <Text style={styles.loginGuestLabel}>Continue as Guest</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function AccountSheet({ visible, onClose }) {
+  const { user, logout } = useAuth();
+  const userInitial = (user?.name || user?.username || '?').charAt(0).toUpperCase();
+
+  const handleLogout = () => {
+    onClose();
+    logout();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.acctBackdrop} onPress={onClose}>
+        <Pressable style={styles.acctSheet} onPress={() => {}}>
+          <View style={styles.tosPill} />
+          <View style={styles.acctProfile}>
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={styles.acctAvatar} />
+            ) : (
+              <View style={[styles.acctAvatar, styles.acctAvatarFallback]}>
+                <Text style={styles.acctAvatarLetter}>{userInitial}</Text>
+              </View>
+            )}
+            <View style={styles.acctMeta}>
+              <Text style={styles.acctName} numberOfLines={1}>
+                {user?.name}
+              </Text>
+              <Text style={styles.acctUsername} numberOfLines={1}>
+                @{user?.username}
+              </Text>
+            </View>
+          </View>
+          <Pressable style={styles.acctLogoutBtn} onPress={handleLogout}>
+            <Feather name="log-out" size={20} color="#B3B3B3" />
+            <Text style={styles.acctLogoutLabel}>Log out</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function AppShell() {
   const [activeTab, setActiveTab] = useState('home');
   const [activeFilter, setActiveFilter] = useState('All');
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -1605,35 +1703,55 @@ function AppShell() {
             activeFilter={activeFilter}
             onFilterChange={setActiveFilter}
             onOpenLibrary={() => setActiveTab('library')}
+            onOpenAccount={() => setAccountOpen(true)}
           />
         ) : activeTab === 'search' ? (
           <SearchScreen />
         ) : activeTab === 'create' ? (
           <CreateScreen />
         ) : (
-          <LibraryScreen />
+          <LibraryScreen onOpenAccount={() => setAccountOpen(true)} />
         )}
       </View>
       <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
       <TabBar active={activeTab} onChange={setActiveTab} />
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
+      <AccountSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
     </View>
+  );
+}
+
+function AuthGate() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <StatusBar style="light" />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <DownloadProvider>
+      <PlayerProvider>
+        <LibraryProvider>
+          <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+            <StatusBar style="light" />
+            {isAuthenticated ? <AppShell /> : <LoginScreen />}
+          </SafeAreaView>
+        </LibraryProvider>
+      </PlayerProvider>
+    </DownloadProvider>
   );
 }
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <DownloadProvider>
-        <PlayerProvider>
-          <LibraryProvider>
-            <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-              <StatusBar style="light" />
-              <AppShell />
-            </SafeAreaView>
-          </LibraryProvider>
-        </PlayerProvider>
-      </DownloadProvider>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
@@ -2243,6 +2361,117 @@ disabled: {
   createEmpty: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  loginRoot: {
+    flex: 1,
+    backgroundColor: '#121212',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  loginLogo: {
+    marginBottom: 28,
+  },
+  loginTitle: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 36,
+  },
+  loginInput: {
+    width: '100%',
+    height: 50,
+    backgroundColor: '#282828',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
+  loginButton: {
+    width: '100%',
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1ED760',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  loginButtonLabel: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  loginGuest: {
+    marginTop: 24,
+    padding: 8,
+  },
+  loginGuestLabel: {
+    color: '#B3B3B3',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  acctBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  acctSheet: {
+    backgroundColor: '#282828',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    paddingBottom: 32,
+    maxHeight: '85%',
+  },
+  acctProfile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  acctAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  acctAvatarFallback: {
+    backgroundColor: '#1ED760',
+  },
+  acctAvatarLetter: {
+    color: '#000000',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  acctMeta: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  acctName: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  acctUsername: {
+    color: '#B3B3B3',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  acctLogoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  acctLogoutLabel: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 16,
   },
   scrubTrack: {
     height: 4,
