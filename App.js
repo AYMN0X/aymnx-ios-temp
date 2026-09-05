@@ -321,21 +321,25 @@ function QuickPickTile({ item, onPress }) {
           style={styles.quickArtwork}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-        >
+>
           <Heart size={26} color={COLORS.white} fill={COLORS.white} />
         </LinearGradient>
-        <Text style={styles.quickTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
+        <View style={styles.quickTextWrap}>
+          <Text style={styles.quickTitle} numberOfLines={2}>
+            {item.title}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   }
   return (
     <TouchableOpacity activeOpacity={0.7} style={styles.quickTile} onPress={onPress}>
       <Image source={{ uri: item.track.artwork }} style={styles.quickArtwork} />
-      <Text style={styles.quickTitle} numberOfLines={2}>
-        {item.track.title}
-      </Text>
+      <View style={styles.quickTextWrap}>
+        <Text style={styles.quickTitle} numberOfLines={2}>
+          {item.track.title}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -865,48 +869,48 @@ function MiniPlayer({ onOpen }) {
   const { isLiked, toggleLike } = useLibrary();
   const progress = duration > 0 ? Math.min(Math.max(playbackPosition / duration, 0), 1) : 0;
 
+  if (!currentTrack) {
+    return null;
+  }
+
   return (
     <View style={styles.miniPlayer}>
-      <Pressable style={styles.miniPlayerMain} onPress={currentTrack ? onOpen : null}>
-        {currentTrack && currentTrack.artwork ? (
+      <Pressable style={styles.miniPlayerMain} onPress={onOpen}>
+        {currentTrack.artwork ? (
           <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
         ) : (
           <View style={[styles.miniPlayerArtwork, styles.miniPlayerArtworkFallback]} />
         )}
         <View style={styles.miniPlayerInfo}>
           <Text style={styles.miniPlayerTitle} numberOfLines={1}>
-            {currentTrack ? currentTrack.title : 'Nothing playing'}
+            {currentTrack.title}
           </Text>
-          {currentTrack ? (
-            <Text style={styles.miniPlayerArtist} numberOfLines={1}>
-              {playbackError || currentTrack.artist}
-            </Text>
-          ) : null}
+          <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+            {playbackError || currentTrack.artist}
+          </Text>
         </View>
       </Pressable>
-      {currentTrack ? (
-        <View style={styles.miniPlayerActions}>
-          <Cast size={20} color={COLORS.green} />
-          <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={8}>
-            <Heart
-              size={18}
-              color={COLORS.white}
-              fill={isLiked(currentTrack.id) ? COLORS.white : 'transparent'}
-            />
-          </Pressable>
-          <Pressable
-            style={styles.miniPlayerPlay}
-            onPress={togglePlayPause}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            {isPlaying ? (
-              <Pause size={22} color="#FFFFFF" fill="#FFFFFF" />
-            ) : (
-              <Play size={22} color="#FFFFFF" fill="#FFFFFF" />
-            )}
-          </Pressable>
-        </View>
-      ) : null}
+      <View style={styles.miniPlayerActions}>
+        <Cast size={20} color={COLORS.green} />
+        <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={8}>
+          <Heart
+            size={18}
+            color={COLORS.white}
+            fill={isLiked(currentTrack.id) ? COLORS.white : 'transparent'}
+          />
+        </Pressable>
+        <Pressable
+          style={styles.miniPlayerPlay}
+          onPress={togglePlayPause}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          {isPlaying ? (
+            <Pause size={22} color="#FFFFFF" fill="#FFFFFF" />
+          ) : (
+            <Play size={22} color="#FFFFFF" fill="#FFFFFF" />
+          )}
+        </Pressable>
+      </View>
       <View style={styles.miniProgressTrack}>
         <View style={[styles.miniProgressFill, { width: `${progress * 100}%` }]} />
       </View>
@@ -1173,19 +1177,21 @@ header: {
     paddingHorizontal: 16,
   },
   gridRow: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 8,
     paddingHorizontal: 16,
   },
   quickTile: {
-    flex: 1,
+    width: '48.5%',
+    height: 56,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#282828',
-    borderRadius: 4,
-    height: 56,
-    padding: 0,
+    overflow: 'hidden',
+    marginBottom: 8,
   },
   quickArtwork: {
     width: 56,
@@ -1195,13 +1201,16 @@ header: {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  quickTextWrap: {
+    flex: 1,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+  },
   quickTitle: {
-    color: COLORS.textPrimary,
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 16,
-    flexShrink: 1,
-    paddingHorizontal: 8,
   },
   heroSection: {
     marginTop: 24,
@@ -1243,20 +1252,20 @@ header: {
   heroCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.elevated,
-    borderRadius: 8,
     marginHorizontal: 16,
-    height: 140,
+    backgroundColor: '#242424',
+    borderRadius: 8,
     overflow: 'hidden',
+    height: 120,
   },
   heroArtwork: {
-    width: 140,
-    height: 140,
+    width: 120,
+    height: 120,
   },
   heroMeta: {
     flex: 1,
-    justifyContent: 'center',
     paddingHorizontal: 12,
+    justifyContent: 'center',
   },
   heroSublabel: {
     color: COLORS.textSecondary,
@@ -1630,14 +1639,15 @@ disabled: {
   },
   miniPlayer: {
     position: 'absolute',
-    bottom: 56,
+    bottom: 60,
     left: 8,
     right: 8,
     height: 56,
+    backgroundColor: '#282828',
+    borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
+    paddingHorizontal: 8,
     overflow: 'hidden',
     elevation: 10,
   },
@@ -1650,7 +1660,6 @@ disabled: {
     width: 42,
     height: 42,
     borderRadius: 4,
-    marginLeft: 8,
   },
   miniPlayerArtworkFallback: {
     backgroundColor: '#7358FF',
