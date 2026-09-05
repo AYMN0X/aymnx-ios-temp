@@ -8,7 +8,13 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#121212",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.spotifywhite.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -20,6 +26,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
+      ]
+    ]
   }
 }

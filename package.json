@@ -4,6 +4,7 @@
   "main": "index.js",
   "dependencies": {
     "expo": "~57.0.20",
+    "expo-audio": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "lucide-react-native": "^1.41.0",
     "react": "19.2.3",
@@ -16,5 +17,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "typescript": "^7.0.2"
+  }
 }
