@@ -27,7 +27,6 @@ import {
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   Image,
   Modal,
@@ -53,19 +52,36 @@ const COLORS = {
   background: '#121212',
   elevated: '#242424',
   card: '#282828',
-  cardPress: '#333333',
+  cardPress: '#3E3E3E',
   pill: '#2A2A2A',
   green: '#1ED760',
   white: '#FFFFFF',
   textPrimary: '#FFFFFF',
   textSecondary: '#B3B3B3',
+  textSubdued: '#6A6A6A',
+};
+
+const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+  xxxl: 48,
+  xxxxl: 56,
+};
+
+const TYPE = {
+  display: { fontSize: 24, fontWeight: '700', letterSpacing: -0.5 },
+  sectionTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4 },
+  cardTile: { fontSize: 13, fontWeight: '700', lineHeight: 16 },
+  body: { fontSize: 11, fontWeight: '400', color: '#B3B3B3' },
+  micro: { fontSize: 10, fontWeight: '400', color: '#B3B3B3' },
 };
 
 const LIKED_GRADIENT = ['#450AF5', '#8E8EE5'];
 const HERO_GRADIENT = ['#D84000', '#503750'];
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const QUICK_TILE_WIDTH = Math.floor((SCREEN_WIDTH - 40) / 2);
 
 const FILTERS = ['All', 'Music', 'Podcasts'];
 
@@ -337,7 +353,7 @@ function QuickPickTile({ item, onPress }) {
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        style={[styles.quickTile, { width: QUICK_TILE_WIDTH }]}
+        style={styles.quickTile}
         onPress={onPress}
       >
         <LinearGradient
@@ -357,7 +373,7 @@ function QuickPickTile({ item, onPress }) {
     );
   }
   return (
-    <TouchableOpacity activeOpacity={0.7} style={[styles.quickTile, { width: QUICK_TILE_WIDTH }]} onPress={onPress}>
+    <TouchableOpacity activeOpacity={0.7} style={styles.quickTile} onPress={onPress}>
       <Image source={{ uri: item.track.artwork }} style={styles.quickArtwork} />
       <View style={styles.quickTextWrap}>
         <Text style={styles.quickTitle} numberOfLines={2}>
@@ -420,7 +436,7 @@ function HeroSpotlight() {
             )}
           </Pressable>
           <Pressable style={styles.heroPlay} onPress={() => playTrack(SPOTLIGHT_TARGET)}>
-            <Play size={22} color="#000000" fill="#000000" />
+            <Play size={20} color="#000000" fill="#000000" />
           </Pressable>
         </View>
       </View>
@@ -446,10 +462,8 @@ function HomeScreen({ activeFilter, onFilterChange, onOpenLibrary }) {
 
   return (
     <FlatList
-      data={QUICK_PICKS}
-      keyExtractor={(item) => item.key}
-      numColumns={2}
-      columnWrapperStyle={styles.gridRow}
+      data={[]}
+      keyExtractor={() => 'sections'}
       contentContainerStyle={styles.listContent}
       style={styles.homeList}
       showsVerticalScrollIndicator={false}
@@ -465,11 +479,13 @@ function HomeScreen({ activeFilter, onFilterChange, onOpenLibrary }) {
           />
         </View>
       }
-      renderItem={({ item }) => (
-        <QuickPickTile item={item} onPress={() => handleQuickPress(item)} />
-      )}
-      ListFooterComponent={
+      ListEmptyComponent={
         <View>
+          <View style={styles.quickGrid}>
+            {QUICK_PICKS.map((item) => (
+              <QuickPickTile key={item.key} item={item} onPress={() => handleQuickPress(item)} />
+            ))}
+          </View>
           <HeroSpotlight />
           <TrackCarousel title="Trending Now" fetchTracks={fetchTrendingNow} />
           <TrackCarousel title="Popular Hits" fetchTracks={fetchPopularHits} />
@@ -787,7 +803,7 @@ function LibraryScreen() {
         <View style={styles.libraryAvatar}>
           <Text style={styles.libraryAvatarLetter}>S</Text>
         </View>
-        <Text style={[styles.libraryTitle, { fontSize: 24, flex: 1 }]}>Your Library</Text>
+        <Text style={styles.libraryTitle}>Your Library</Text>
         <View style={styles.libraryHeaderActions}>
           <Pressable style={styles.libraryHeaderBtn} hitSlop={8}>
             <Ionicons name="search" size={22} color={COLORS.white} />
@@ -1307,23 +1323,23 @@ header: {
     fontWeight: '600',
   },
   sectionTitle: {
+    ...TYPE.sectionTitle,
     color: COLORS.textPrimary,
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.4,
     marginBottom: 12,
     paddingHorizontal: 16,
   },
-  gridRow: {
+  quickGrid: {
     width: '100%',
+    paddingHorizontal: 16,
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    marginBottom: 24,
   },
   quickTile: {
+    width: '48.5%',
     height: 56,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: COLORS.card,
     borderRadius: 4,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1344,10 +1360,8 @@ header: {
     justifyContent: 'center',
   },
   quickTitle: {
+    ...TYPE.cardTile,
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 16,
   },
   heroSection: {
     marginTop: 24,
@@ -1394,6 +1408,8 @@ header: {
     borderRadius: 8,
     overflow: 'hidden',
     height: 140,
+    paddingRight: 16,
+    marginBottom: 24,
   },
   heroArtwork: {
     width: 140,
@@ -1424,7 +1440,6 @@ header: {
     justifyContent: 'space-between',
     alignSelf: 'stretch',
     paddingVertical: 16,
-    paddingRight: 16,
   },
   heroMore: {
     width: 28,
@@ -1476,13 +1491,11 @@ header: {
     marginBottom: 8,
   },
   cardTitle: {
+    ...TYPE.cardTile,
     color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: 'bold',
   },
   cardSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
+    ...TYPE.body,
     marginTop: 2,
   },
   bottomSpacer: {
@@ -1517,8 +1530,7 @@ disabled: {
     fontWeight: '600',
   },
   trackArtist: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
+    ...TYPE.body,
     marginTop: 1,
   },
   trackAction: {
@@ -1649,9 +1661,8 @@ disabled: {
     fontWeight: 'bold',
   },
   libraryTitle: {
+    ...TYPE.display,
     color: COLORS.textPrimary,
-    fontSize: 24,
-    fontWeight: 'bold',
     flex: 1,
   },
   libraryHeaderActions: {
@@ -1736,8 +1747,7 @@ disabled: {
     marginTop: 2,
   },
   libRowSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
+    ...TYPE.body,
   },
   librarySubtitle: {
     color: COLORS.textSecondary,
@@ -1843,8 +1853,7 @@ disabled: {
     marginTop: 4,
   },
   scrubTime: {
-    color: '#888888',
-    fontSize: 12,
+    ...TYPE.micro,
   },
   miniPlayer: {
     position: 'absolute',
@@ -1883,8 +1892,7 @@ disabled: {
     fontWeight: 'bold',
   },
   miniPlayerArtist: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
+    ...TYPE.body,
     marginTop: 1,
   },
   miniPlayerActions: {
@@ -2047,6 +2055,7 @@ disabled: {
     width: '100%',
     height: 56,
     backgroundColor: '#121212',
+    borderTopWidth: 0,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
@@ -2054,12 +2063,10 @@ disabled: {
   tabItem: {
     flex: 1,
     alignItems: 'center',
-    gap: 3,
   },
   tabLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 10,
-    fontWeight: '500',
+    ...TYPE.micro,
+    marginTop: 4,
   },
   tabLabelActive: {
     color: COLORS.textPrimary,
