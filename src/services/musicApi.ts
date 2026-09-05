@@ -4,6 +4,7 @@ export interface Track {
   artist: string;
   album: string;
   artwork: string;
+  previewUrl: string;
 }
 
 export interface StreamResult {
@@ -18,6 +19,7 @@ interface ITunesResult {
     artistName: string;
     collectionName: string;
     artworkUrl100?: string;
+    previewUrl?: string;
   }>;
 }
 
@@ -68,6 +70,7 @@ export async function searchITunes(query: string, limit = 25): Promise<Track[]> 
     artist: result.artistName,
     album: result.collectionName,
     artwork: (result.artworkUrl100 ?? '').replace('100x100bb.jpg', ARTWORK_HIRES_SUFFIX),
+    previewUrl: result.previewUrl ?? '',
   }));
 }
 
@@ -77,12 +80,22 @@ const PIPED_INSTANCES = [
   'https://pipedapi.adminforge.de',
 ];
 
+const PIPED_TIMEOUT_MS = 3500;
+
+const PIPED_HEADERS = {
+  Accept: 'application/json',
+  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+};
+
 async function pipedFetch<T>(path: string, instances: string[] = PIPED_INSTANCES): Promise<T> {
   let lastError: unknown;
   for (const instance of instances) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PIPED_TIMEOUT_MS);
     try {
       const response = await fetch(`${instance}${path}`, {
-        headers: { Accept: 'application/json' },
+        headers: PIPED_HEADERS,
+        signal: controller.signal,
       });
       if (!response.ok) {
         throw new Error(`${instance} responded with status ${response.status}`);
@@ -90,6 +103,8 @@ async function pipedFetch<T>(path: string, instances: string[] = PIPED_INSTANCES
       return (await response.json()) as T;
     } catch (error) {
       lastError = error;
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw new Error(`All Piped API instances failed: ${String(lastError)}`);
@@ -114,22 +129,32 @@ function pickAudioStream(audioStreams: PipedAudioStream[]): PipedAudioStream | u
   );
 }
 
-export async function resolveStream(track: Track): Promise<StreamResult> {
-  const query = encodeURIComponent(`${track.title} ${track.artist}`);
-  const search = await pipedFetch<PipedSearchResponse>(
-    `/search?q=${query}&filter=music_songs`
-  );
-  const items = search.items ?? [];
-  const match = items.find((item) => item.url?.includes('/watch?v=')) ?? items[0];
-  const videoId = match ? extractVideoId(match) : null;
-  if (!videoId) {
-    throw new Error('No matching song found on Piped instances');
+export async function resolveStream(
+  title: string,
+  artist: string,
+  previewUrl: string
+): Promise<StreamResult> {
+  try {
+    const query = encodeURIComponent(`${title} ${artist}`.trim());
+    const search = await pipedFetch<PipedSearchResponse>(
+      `/search?q=${query}&filter=music_songs`
+    );
+    const items = search.items ?? [];
+    const match = items.find((item) => item.url?.includes('/watch?v=')) ?? items[0];
+    const videoId = match ? extractVideoId(match) : null;
+    if (videoId) {
+      const streams = await pipedFetch<PipedStreamsResponse>(`/streams/${videoId}`);
+      const stream = pickAudioStream(streams.audioStreams ?? []);
+      const url = stream?.url?.startsWith('http') ? stream.url : null;
+      if (url) {
+        return { url, mimeType: stream?.mimeType ?? '' };
+      }
+    }
+  } catch (error) {
+    console.warn('[audio] Piped resolution failed, falling back to iTunes preview.', error);
   }
-  const streams = await pipedFetch<PipedStreamsResponse>(`/streams/${videoId}`);
-  const stream = pickAudioStream(streams.audioStreams ?? []);
-  const url = stream?.url ?? streams.videoStreams?.[0]?.url;
-  if (!url) {
-    throw new Error('No playable audio stream found');
+  if (previewUrl) {
+    return { url: previewUrl, mimeType: 'audio/mp4' };
   }
-  return { url, mimeType: stream?.mimeType ?? '' };
+  throw new Error('No playable audio stream found');
 }
