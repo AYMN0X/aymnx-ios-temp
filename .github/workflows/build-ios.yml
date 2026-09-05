@@ -1,0 +1,58 @@
+name: Build iOS (unsigned)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build unsigned SpotifyWhite.ipa
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Prebuild iOS project
+        run: npx expo prebuild --platform ios
+
+      - name: Compile .app with xcodebuild (no code signing)
+        run: |
+          set -euxo pipefail
+          cd ios
+          xcodebuild \
+            -workspace SpotifyWhite.xcworkspace \
+            -scheme SpotifyWhite \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned .ipa
+        run: |
+          set -euxo pipefail
+          APP_PATH=$(find ios/build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -n 1)
+          echo "Found app bundle: $APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r SpotifyWhite.ipa Payload
+          rm -rf Payload
+
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpotifyWhite-unsigned
+          path: SpotifyWhite.ipa
+          if-no-files-found: error
