@@ -1,28 +1,44 @@
 import { StatusBar } from 'expo-status-bar';
 import {
   Activity,
+  ChevronDown,
+  ChevronLeft,
   Heart,
   Home,
   Library,
+  ListMusic,
   Mic2,
+  MoreHorizontal,
   Pause,
   Play,
+  Plus,
   Radio,
   Search,
+  SkipBack,
+  SkipForward,
+  Trash2,
   TrendingUp,
+  X,
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
 import { searchITunes } from './src/services/musicApi';
 
@@ -180,26 +196,113 @@ function HomeScreen({ activeFilter, onFilterChange }) {
   );
 }
 
-function TrackRow({ track, onPlay }) {
+function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove }) {
   return (
-    <Pressable style={styles.trackRow} onPress={onPlay}>
-      {track.artwork ? (
-        <Image source={{ uri: track.artwork }} style={styles.trackArtwork} />
-      ) : (
-        <View style={styles.trackArtwork} />
-      )}
-      <View style={styles.trackInfo}>
-        <Text style={styles.trackTitle} numberOfLines={1}>
-          {track.title}
-        </Text>
-        <Text style={styles.trackArtist} numberOfLines={1}>
-          {track.artist}
-        </Text>
-      </View>
-      <View style={styles.trackPlay}>
-        <Play size={16} color="#121212" fill="#121212" />
-      </View>
-    </Pressable>
+    <View style={styles.trackRow}>
+      <Pressable style={styles.trackRowMain} onPress={onPlay}>
+        {track.artwork ? (
+          <Image source={{ uri: track.artwork }} style={styles.trackArtwork} />
+        ) : (
+          <View style={styles.trackArtwork} />
+        )}
+        <View style={styles.trackInfo}>
+          <Text style={styles.trackTitle} numberOfLines={1}>
+            {track.title}
+          </Text>
+          <Text style={styles.trackArtist} numberOfLines={1}>
+            {track.artist}
+          </Text>
+        </View>
+      </Pressable>
+      <Pressable onPress={onToggleLike} hitSlop={8} style={styles.trackAction}>
+        <Heart size={18} color={COLORS.white} fill={liked ? COLORS.white : 'transparent'} />
+      </Pressable>
+      {onMore ? (
+        <Pressable onPress={onMore} hitSlop={8} style={styles.trackAction}>
+          <MoreHorizontal size={18} color={COLORS.textSecondary} />
+        </Pressable>
+      ) : onRemove ? (
+        <Pressable onPress={onRemove} hitSlop={8} style={styles.trackAction}>
+          <X size={18} color={COLORS.textSecondary} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function AddToPlaylistModal({ track, visible, onClose }) {
+  const { playlists, createPlaylist, addToPlaylist } = useLibrary();
+  const [name, setName] = useState('');
+
+  useEffect(() => {
+    if (!visible) {
+      setName('');
+    }
+  }, [visible]);
+
+  const saveTo = async (playlistId) => {
+    if (!track) {
+      return;
+    }
+    await addToPlaylist(playlistId, track);
+    onClose();
+  };
+
+  const handleCreate = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+    await createPlaylist(trimmed);
+    setName('');
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.atpBackdrop} onPress={onClose}>
+        <Pressable style={styles.atpCard} onPress={() => {}}>
+          <Text style={styles.atpTitle} numberOfLines={1}>
+            {track ? `Save "${track.title}"` : 'Add to playlist'}
+          </Text>
+          <View style={styles.atpCreate}>
+            <TextInput
+              style={styles.atpInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="New playlist name"
+              placeholderTextColor={COLORS.textSecondary}
+              returnKeyType="done"
+              onSubmitEditing={handleCreate}
+            />
+            <Pressable
+              style={[styles.atpCreateBtn, !name.trim() && styles.disabled]}
+              onPress={handleCreate}
+              disabled={!name.trim()}
+            >
+              <Text style={styles.atpCreateLabel}>Create</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.atpList} bounces={false}>
+            {playlists.length === 0 ? (
+              <Text style={styles.atpEmpty}>No playlists yet</Text>
+            ) : (
+              playlists.map((playlist) => (
+                <Pressable
+                  key={playlist.id}
+                  style={styles.atpRow}
+                  onPress={() => saveTo(playlist.id)}
+                >
+                  <ListMusic size={18} color={COLORS.white} />
+                  <Text style={styles.atpRowLabel} numberOfLines={1}>
+                    {playlist.name}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -208,8 +311,10 @@ function SearchScreen() {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
+  const [modalTrack, setModalTrack] = useState(null);
   const debounceRef = useRef(null);
   const { playTrack } = usePlayer();
+  const { isLiked, toggleLike } = useLibrary();
 
   useEffect(() => {
     return () => clearTimeout(debounceRef.current);
@@ -270,31 +375,190 @@ function SearchScreen() {
             <Text style={styles.searchEmpty}>No results found. Try a different search.</Text>
           ) : null
         }
-        renderItem={({ item }) => <TrackRow track={item} onPlay={() => playTrack(item)} />}
+        renderItem={({ item }) => (
+          <TrackRow
+            track={item}
+            liked={isLiked(item.id)}
+            onPlay={() => playTrack(item, results)}
+            onToggleLike={() => toggleLike(item)}
+            onMore={() => setModalTrack(item)}
+          />
+        )}
+      />
+      <AddToPlaylistModal
+        track={modalTrack}
+        visible={!!modalTrack}
+        onClose={() => setModalTrack(null)}
       />
     </View>
   );
 }
 
+function LibraryRow({ icon: Icon, title, subtitle, onPress }) {
+  return (
+    <Pressable style={styles.libraryRow} onPress={onPress}>
+      <View style={styles.libraryRowIcon}>
+        <Icon size={18} color={COLORS.white} />
+      </View>
+      <View style={styles.libraryRowText}>
+        <Text style={styles.libraryRowTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={styles.libraryRowSubtitle} numberOfLines={1}>
+          {subtitle}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function LibraryScreen() {
+  const { likedSongs, playlists, createPlaylist, removePlaylist, toggleLike, isLiked, removeTrackFromPlaylist } =
+    useLibrary();
+  const { playTrack } = usePlayer();
+  const [detail, setDetail] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+
+  const selectedPlaylist =
+    detail && detail.type === 'playlist'
+      ? playlists.find((playlist) => playlist.id === detail.id)
+      : null;
+
+  const backToRoot = () => {
+    setDetail(null);
+    setCreating(false);
+    setName('');
+  };
+
+  const submitCreate = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+    await createPlaylist(trimmed);
+    setName('');
+    setCreating(false);
+  };
+
+  if (detail) {
+    const tracks = detail.type === 'liked' ? likedSongs : selectedPlaylist ? selectedPlaylist.tracks : [];
+    return (
+      <View style={styles.libraryScreen}>
+        <View style={styles.libraryHeader}>
+          <Pressable onPress={backToRoot} hitSlop={10}>
+            <ChevronLeft size={24} color={COLORS.white} />
+          </Pressable>
+          <Text style={styles.libraryTitle} numberOfLines={1}>
+            {detail.type === 'liked' ? 'Liked Songs' : detail.name}
+          </Text>
+          {detail.type === 'playlist' && selectedPlaylist ? (
+            <Pressable onPress={() => removePlaylist(detail.id)} hitSlop={10}>
+              <Trash2 size={20} color={COLORS.textSecondary} />
+            </Pressable>
+          ) : null}
+        </View>
+        <Text style={styles.librarySubtitle}>
+          {tracks.length === 1 ? '1 song' : `${tracks.length} songs`}
+        </Text>
+        <FlatList
+          data={tracks}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.libraryList}
+          ListEmptyComponent={<Text style={styles.libraryEmpty}>No songs yet</Text>}
+          renderItem={({ item }) => (
+            <TrackRow
+              track={item}
+              liked={isLiked(item.id)}
+              onPlay={() => playTrack(item, tracks)}
+              onToggleLike={() => toggleLike(item)}
+              onRemove={
+                detail.type === 'playlist'
+                  ? () => removeTrackFromPlaylist(detail.id, item.id)
+                  : null
+              }
+            />
+          )}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.libraryScreen}>
-      <Text style={styles.libraryTitle}>Your Library</Text>
-      <Text style={styles.libraryEmpty}>
-        Liked songs and saved music will live here.
-      </Text>
+      <View style={styles.libraryHeader}>
+        <Text style={[styles.libraryTitle, styles.libraryRootTitle]}>Your Library</Text>
+        <Pressable
+          style={styles.libraryAdd}
+          onPress={() => setCreating((value) => !value)}
+          hitSlop={10}
+        >
+          <Plus size={22} color={COLORS.white} />
+        </Pressable>
+      </View>
+      {creating ? (
+        <View style={styles.libraryCreateRow}>
+          <TextInput
+            style={styles.libraryCreateInput}
+            value={name}
+            onChangeText={setName}
+            placeholder="Playlist name"
+            placeholderTextColor={COLORS.textSecondary}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={submitCreate}
+          />
+          <Pressable
+            style={[styles.libraryCreateBtn, !name.trim() && styles.disabled]}
+            onPress={submitCreate}
+            disabled={!name.trim()}
+          >
+            <Text style={styles.libraryCreateLabel}>Create</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      <FlatList
+        data={playlists}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.libraryList}
+        ListHeaderComponent={
+          <LibraryRow
+            icon={Heart}
+            title="Liked Songs"
+            subtitle={
+              likedSongs.length === 1 ? 'Playlist · 1 song' : `Playlist · ${likedSongs.length} songs`
+            }
+            onPress={() => setDetail({ type: 'liked' })}
+          />
+        }
+        renderItem={({ item }) => (
+          <LibraryRow
+            icon={ListMusic}
+            title={item.name}
+            subtitle={
+              item.tracks.length === 1
+                ? 'Playlist · 1 song'
+                : `Playlist · ${item.tracks.length} songs`
+            }
+            onPress={() => setDetail({ type: 'playlist', id: item.id, name: item.name })}
+          />
+        )}
+      />
     </View>
   );
 }
 
-function MiniScrubber({ position, duration, onSeek }) {
+function Scrubber({ position, duration, onSeek, large }) {
   const [width, setWidth] = useState(0);
   const progress = duration > 0 ? Math.min(Math.max(position / duration, 0), 1) : 0;
+  const trackStyle = large ? styles.scrubTrackLarge : styles.scrubTrack;
+  const fillStyle = large ? styles.scrubFillLarge : styles.scrubFill;
+  const wrapStyle = large ? styles.scrubWrapLarge : undefined;
 
   return (
-    <View>
+    <View style={wrapStyle}>
       <Pressable
-        style={styles.scrubTrack}
+        style={trackStyle}
         onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
         onPress={(event) => {
           if (width > 0 && onSeek) {
@@ -303,7 +567,7 @@ function MiniScrubber({ position, duration, onSeek }) {
           }
         }}
       >
-        <View style={[styles.scrubFill, { width: `${progress * 100}%` }]} />
+        <View style={[fillStyle, { width: `${progress * 100}%` }]} />
       </Pressable>
       <View style={styles.scrubLabels}>
         <Text style={styles.scrubTime}>{formatMillis(position)}</Text>
@@ -313,7 +577,7 @@ function MiniScrubber({ position, duration, onSeek }) {
   );
 }
 
-function MiniPlayer() {
+function MiniPlayer({ onOpen }) {
   const {
     currentTrack,
     isPlaying,
@@ -323,47 +587,165 @@ function MiniPlayer() {
     togglePlayPause,
     seekTo,
   } = usePlayer();
+  const { isLiked, toggleLike } = useLibrary();
 
   return (
     <View style={styles.miniPlayer}>
-      {currentTrack && currentTrack.artwork ? (
-        <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
-      ) : (
-        <View style={styles.miniPlayerArtwork} />
-      )}
-      <View style={styles.miniPlayerInfo}>
-        <Text style={styles.miniPlayerTitle} numberOfLines={1}>
-          {currentTrack ? currentTrack.title : 'Nothing playing'}
-        </Text>
+      <Pressable
+        style={styles.miniPlayerMain}
+        onPress={currentTrack ? onOpen : null}
+      >
+        {currentTrack && currentTrack.artwork ? (
+          <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
+        ) : (
+          <View style={styles.miniPlayerArtwork} />
+        )}
+        <View style={styles.miniPlayerInfo}>
+          <Text style={styles.miniPlayerTitle} numberOfLines={1}>
+            {currentTrack ? currentTrack.title : 'Nothing playing'}
+          </Text>
+          {currentTrack ? (
+            <>
+              <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+                {currentTrack.artist}
+              </Text>
+              <Scrubber position={playbackPosition} duration={duration} onSeek={seekTo} />
+            </>
+          ) : null}
+        </View>
+      </Pressable>
+      {currentTrack ? (
+        <Pressable
+          style={styles.miniPlayerAction}
+          onPress={() => toggleLike(currentTrack)}
+          hitSlop={8}
+        >
+          <Heart
+            size={18}
+            color={COLORS.white}
+            fill={isLiked(currentTrack.id) ? COLORS.white : 'transparent'}
+          />
+        </Pressable>
+      ) : null}
+      <Pressable
+        style={styles.miniPlayerPlay}
+        onPress={togglePlayPause}
+        disabled={!currentTrack || isLoadingAudio}
+      >
+        {!currentTrack ? null : isLoadingAudio ? (
+          <Activity size={18} color="#121212" />
+        ) : isPlaying ? (
+          <Pause size={18} color="#121212" fill="#121212" />
+        ) : (
+          <Play size={18} color="#121212" fill="#121212" />
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+function NowPlayingModal({ visible, onClose }) {
+  const {
+    currentTrack,
+    isPlaying,
+    playbackPosition,
+    duration,
+    isLoadingAudio,
+    togglePlayPause,
+    seekTo,
+    playNext,
+    playPrevious,
+  } = usePlayer();
+  const { isLiked, toggleLike } = useLibrary();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const artSize = Math.min(width - 48, 380);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View
+        style={[
+          styles.npRoot,
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 },
+        ]}
+      >
+        <Pressable style={styles.npDismiss} onPress={onClose} hitSlop={12}>
+          <ChevronDown size={26} color={COLORS.textPrimary} />
+        </Pressable>
         {currentTrack ? (
-          <View style={styles.miniPlayerContent}>
-            <Text style={styles.miniPlayerArtist} numberOfLines={1}>
-              {currentTrack.artist}
-            </Text>
-            <MiniScrubber
+          <>
+            <View style={styles.npArtworkWrap}>
+              {currentTrack.artwork ? (
+                <Image
+                  source={{ uri: currentTrack.artwork }}
+                  style={[styles.npArtwork, { width: artSize, height: artSize }]}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.npArtwork,
+                    styles.npArtworkFallback,
+                    { width: artSize, height: artSize },
+                  ]}
+                />
+              )}
+            </View>
+            <View style={styles.npMeta}>
+              <View style={styles.npMetaText}>
+                <Text style={styles.npTitle} numberOfLines={1}>
+                  {currentTrack.title}
+                </Text>
+                <Text style={styles.npArtist} numberOfLines={1}>
+                  {currentTrack.artist}
+                </Text>
+                <Text style={styles.npAlbum} numberOfLines={1}>
+                  {currentTrack.album}
+                </Text>
+              </View>
+              <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={10}>
+                <Heart
+                  size={26}
+                  color={COLORS.textPrimary}
+                  fill={isLiked(currentTrack.id) ? COLORS.textPrimary : 'transparent'}
+                />
+              </Pressable>
+            </View>
+            <Scrubber
               position={playbackPosition}
               duration={duration}
               onSeek={seekTo}
+              large
             />
+            <View style={styles.npControls}>
+              <Pressable onPress={playPrevious} hitSlop={10}>
+                <SkipBack size={32} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
+              </Pressable>
+              <Pressable style={styles.npPlay} onPress={togglePlayPause} disabled={isLoadingAudio}>
+                {isLoadingAudio ? (
+                  <Activity size={34} color="#121212" />
+                ) : isPlaying ? (
+                  <Pause size={34} color="#121212" fill="#121212" />
+                ) : (
+                  <Play size={34} color="#121212" fill="#121212" />
+                )}
+              </Pressable>
+              <Pressable onPress={playNext} hitSlop={10}>
+                <SkipForward size={32} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <View style={styles.npEmpty}>
+            <Text style={styles.npEmptyText}>Nothing is playing</Text>
           </View>
-        ) : null}
+        )}
       </View>
-      <View style={styles.miniPlayerControls}>
-        <Pressable
-          style={styles.miniPlayerPlay}
-          onPress={togglePlayPause}
-          disabled={!currentTrack || isLoadingAudio}
-        >
-          {!currentTrack ? null : isLoadingAudio ? (
-            <Activity size={18} color="#121212" />
-          ) : isPlaying ? (
-            <Pause size={18} color="#121212" fill="#121212" />
-          ) : (
-            <Play size={18} color="#121212" fill="#121212" />
-          )}
-        </Pressable>
-      </View>
-    </View>
+    </Modal>
   );
 }
 
@@ -387,6 +769,7 @@ function TabBar({ active, onChange }) {
 function AppShell() {
   const [activeTab, setActiveTab] = useState('home');
   const [activeFilter, setActiveFilter] = useState('All');
+  const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -399,8 +782,9 @@ function AppShell() {
           <LibraryScreen />
         )}
       </View>
-      <MiniPlayer />
+      <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
       <TabBar active={activeTab} onChange={setActiveTab} />
+      <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
     </View>
   );
 }
@@ -409,10 +793,12 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <PlayerProvider>
-        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-          <StatusBar style="light" />
-          <AppShell />
-        </SafeAreaView>
+        <LibraryProvider>
+          <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+            <StatusBar style="light" />
+            <AppShell />
+          </SafeAreaView>
+        </LibraryProvider>
       </PlayerProvider>
     </SafeAreaProvider>
   );
@@ -581,6 +967,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
+  },
+  trackRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
   trackArtwork: {
@@ -602,38 +993,176 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
-  trackPlay: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: COLORS.white,
+  trackAction: {
+    marginLeft: 12,
+  },
+  atpBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  atpCard: {
+    backgroundColor: '#1e1e1e',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    paddingBottom: 32,
+    maxHeight: '70%',
+  },
+  atpTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  atpCreate: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  atpInput: {
+    flex: 1,
+    backgroundColor: COLORS.card,
+    color: COLORS.textPrimary,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  atpCreateBtn: {
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  atpCreateLabel: {
+    color: '#121212',
+    fontWeight: '600',
+  },
+  atpList: {
+    marginTop: 4,
+  },
+  atpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  atpRowLabel: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    flex: 1,
+  },
+  atpEmpty: {
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    paddingVertical: 12,
   },
   libraryScreen: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 8,
+  },
+  libraryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
+  libraryRootTitle: {
+    flex: 1,
   },
   libraryTitle: {
     color: COLORS.textPrimary,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
+    flex: 1,
+  },
+  libraryAdd: {
+    padding: 4,
+  },
+  librarySubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  libraryList: {
+    paddingBottom: 24,
+  },
+  libraryCreateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  libraryCreateInput: {
+    flex: 1,
+    backgroundColor: COLORS.card,
+    color: COLORS.textPrimary,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  libraryCreateBtn: {
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  libraryCreateLabel: {
+    color: '#121212',
+    fontWeight: '600',
+  },
+  libraryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  libraryRowIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: COLORS.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  libraryRowText: {
+    flex: 1,
+  },
+  libraryRowTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  libraryRowSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 1,
   },
   libraryEmpty: {
     color: COLORS.textSecondary,
-    fontSize: 14,
-    marginTop: 8,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  disabled: {
+    opacity: 0.5,
   },
   miniPlayer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     backgroundColor: COLORS.card,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    gap: 12,
+    gap: 10,
     borderTopWidth: 1,
     borderTopColor: '#1f1f1f',
+  },
+  miniPlayerMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   miniPlayerArtwork: {
     width: 40,
@@ -644,9 +1173,6 @@ const styles = StyleSheet.create({
   miniPlayerInfo: {
     flex: 1,
   },
-  miniPlayerContent: {
-    marginTop: 2,
-  },
   miniPlayerTitle: {
     color: COLORS.textPrimary,
     fontSize: 14,
@@ -656,8 +1182,8 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
   },
-  miniPlayerControls: {
-    justifyContent: 'center',
+  miniPlayerAction: {
+    marginHorizontal: 2,
   },
   miniPlayerPlay: {
     width: 34,
@@ -679,6 +1205,21 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: COLORS.white,
   },
+  scrubWrapLarge: {
+    width: '100%',
+    marginTop: 28,
+  },
+  scrubTrackLarge: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4d4d4d',
+    overflow: 'hidden',
+  },
+  scrubFillLarge: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.white,
+  },
   scrubLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -687,6 +1228,82 @@ const styles = StyleSheet.create({
   scrubTime: {
     color: COLORS.textSecondary,
     fontSize: 10,
+  },
+  npRoot: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  npDismiss: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  npArtworkWrap: {
+    shadowColor: '#000',
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
+  },
+  npArtwork: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: COLORS.card,
+  },
+  npArtworkFallback: {
+    backgroundColor: '#503750',
+  },
+  npMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 32,
+    width: '100%',
+    gap: 16,
+  },
+  npMetaText: {
+    flex: 1,
+  },
+  npTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  npArtist: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
+    marginTop: 4,
+  },
+  npAlbum: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    marginTop: 2,
+  },
+  npControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 48,
+    marginTop: 36,
+    width: '100%',
+  },
+  npPlay: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  npEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  npEmptyText: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
   },
   tabBar: {
     flexDirection: 'row',

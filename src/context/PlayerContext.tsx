@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { resolveStream, Track } from '../services/musicApi';
 
@@ -8,19 +8,23 @@ interface PlayerContextValue {
   playbackPosition: number;
   duration: number;
   isLoadingAudio: boolean;
-  playTrack: (track: Track) => Promise<void>;
+  playTrack: (track: Track, queue?: Track[]) => Promise<void>;
   togglePlayPause: () => void;
   seekTo: (millis: number) => Promise<void>;
+  playNext: () => Promise<void>;
+  playPrevious: () => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const player = useAudioPlayer(null, { updateInterval: 500 });
+  const player = useAudioPlayer(null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const queueRef = useRef<Track[]>([]);
+  const indexRef = useRef(-1);
 
   useEffect(() => {
     setAudioModeAsync({
@@ -35,9 +39,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const playbackPosition = Number.isFinite(status.currentTime) ? status.currentTime * 1000 : 0;
   const duration = Number.isFinite(status.duration) ? status.duration * 1000 : 0;
 
-  const playTrack = async (track: Track) => {
+  const startTrack = async (track: Track, queue: Track[], index: number) => {
     setCurrentTrack(track);
     setIsLoadingAudio(true);
+    queueRef.current = queue;
+    indexRef.current = index;
     try {
       const { url } = await resolveStream(track);
       player.replace(url);
@@ -53,6 +59,43 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setIsLoadingAudio(false);
     }
   };
+
+  const playTrack = async (track: Track, queue: Track[] = []) => {
+    if (queue.length > 0) {
+      const index = Math.max(queue.findIndex((item) => item.id === track.id), 0);
+      await startTrack(track, queue, index);
+    } else {
+      await startTrack(track, [track], 0);
+    }
+  };
+
+  const playNext = async () => {
+    const queue = queueRef.current;
+    if (queue.length === 0 || !currentTrack) {
+      return;
+    }
+    const nextIndex = indexRef.current < queue.length - 1 ? indexRef.current + 1 : 0;
+    await startTrack(queue[nextIndex], queue, nextIndex);
+  };
+
+  const playPrevious = async () => {
+    const queue = queueRef.current;
+    if (queue.length === 0 || !currentTrack) {
+      return;
+    }
+    if (playbackPosition > 3000) {
+      await player.seekTo(0);
+      return;
+    }
+    const prevIndex = indexRef.current > 0 ? indexRef.current - 1 : queue.length - 1;
+    await startTrack(queue[prevIndex], queue, prevIndex);
+  };
+
+  useEffect(() => {
+    if (status.didJustFinish) {
+      playNext();
+    }
+  }, [status.didJustFinish]);
 
   const togglePlayPause = () => {
     if (!currentTrack) {
@@ -82,6 +125,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playTrack,
       togglePlayPause,
       seekTo,
+      playNext,
+      playPrevious,
     }),
     [currentTrack, status.playing, status.currentTime, status.duration, isLoadingAudio]
   );
