@@ -10,6 +10,7 @@ export interface Track {
 export interface StreamResult {
   url: string;
   mimeType: string;
+  provider?: 'soundcloud' | 'piped' | 'itunes';
 }
 
 interface ITunesResult {
@@ -129,11 +130,117 @@ function pickAudioStream(audioStreams: PipedAudioStream[]): PipedAudioStream | u
   );
 }
 
+const SOUNDCLOUD_CLIENT_ID = 'bU3a3c2P7yYk4wZ1Mv5sHjJ9QdE8lR6t';
+
+interface SoundCloudTranscoding {
+  url?: string;
+  format?: {
+    protocol?: string;
+    mime_type?: string;
+  };
+}
+
+interface SoundCloudTrack {
+  id: number;
+  title?: string;
+  user?: { username?: string };
+  media?: {
+    transcodings?: SoundCloudTranscoding[];
+  };
+}
+
+interface SoundCloudSearchResponse {
+  collection?: SoundCloudTrack[];
+}
+
+interface SoundCloudTranscodingResponse {
+  url?: string;
+}
+
+async function soundCloudFetch<T>(url: string): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PIPED_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: PIPED_HEADERS,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`SoundCloud responded with status ${response.status}`);
+    }
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function scoreSoundCloudMatch(track: SoundCloudTrack, title: string, artist: string): number {
+  const haystack = `${track.title ?? ''} ${track.user?.username ?? ''}`.toLowerCase();
+  const terms = `${title} ${artist}`
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 2);
+  return terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0);
+}
+
+function pickSoundCloudTranscoding(
+  track: SoundCloudTrack
+): SoundCloudTranscoding | undefined {
+  const transcodings = track.media?.transcodings ?? [];
+  return (
+    transcodings.find((item) => item.format?.protocol === 'progressive') ??
+    transcodings.find((item) => item.format?.protocol === 'hls') ??
+    transcodings[0]
+  );
+}
+
+export async function resolveSoundCloudStream(
+  title: string,
+  artist: string
+): Promise<StreamResult | null> {
+  try {
+    const query = encodeURIComponent(`${title} ${artist}`.trim());
+    const search = await soundCloudFetch<SoundCloudSearchResponse>(
+      `https://api-v2.soundcloud.com/search/tracks?q=${query}&limit=3&client_id=${SOUNDCLOUD_CLIENT_ID}`
+    );
+    const tracks = search.collection ?? [];
+    if (tracks.length === 0) {
+      return null;
+    }
+    const best = tracks.reduce((current, next) =>
+      scoreSoundCloudMatch(next, title, artist) > scoreSoundCloudMatch(current, title, artist)
+        ? next
+        : current
+    );
+    const transcoding = pickSoundCloudTranscoding(best);
+    const transcodingUrl = transcoding?.url;
+    if (!transcodingUrl) {
+      return null;
+    }
+    const separator = transcodingUrl.includes('?') ? '&' : '?';
+    const result = await soundCloudFetch<SoundCloudTranscodingResponse>(
+      `${transcodingUrl}${separator}client_id=${SOUNDCLOUD_CLIENT_ID}`
+    );
+    const url = result.url;
+    if (!url) {
+      return null;
+    }
+    return { url, mimeType: transcoding?.format?.mime_type ?? 'audio/mpeg', provider: 'soundcloud' };
+  } catch (error) {
+    console.warn('[audio] SoundCloud resolution failed.', error);
+    return null;
+  }
+}
+
 export async function resolveStream(
   title: string,
   artist: string,
   previewUrl: string
 ): Promise<StreamResult> {
+  const soundCloud = await resolveSoundCloudStream(title, artist);
+  if (soundCloud) {
+    return soundCloud;
+  }
   try {
     const query = encodeURIComponent(`${title} ${artist}`.trim());
     const search = await pipedFetch<PipedSearchResponse>(
@@ -147,14 +254,14 @@ export async function resolveStream(
       const stream = pickAudioStream(streams.audioStreams ?? []);
       const url = stream?.url?.startsWith('http') ? stream.url : null;
       if (url) {
-        return { url, mimeType: stream?.mimeType ?? '' };
+        return { url, mimeType: stream?.mimeType ?? '', provider: 'piped' };
       }
     }
   } catch (error) {
     console.warn('[audio] Piped resolution failed, falling back to iTunes preview.', error);
   }
   if (previewUrl) {
-    return { url: previewUrl, mimeType: 'audio/mp4' };
+    return { url: previewUrl, mimeType: 'audio/mp4', provider: 'itunes' };
   }
   throw new Error('No playable audio stream found');
 }

@@ -48,12 +48,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queueRef.current = queue;
     indexRef.current = index;
     let resolvedUrl = '';
+    let resolvedProvider: 'soundcloud' | 'piped' | 'itunes' | undefined;
     try {
       const result = await resolveStream(track.title, track.artist, track.previewUrl);
       resolvedUrl = result.url;
+      resolvedProvider = result.provider;
     } catch (error) {
       console.warn('[audio] Stream resolution failed, falling back to iTunes preview URL.', error);
       resolvedUrl = track.previewUrl;
+      resolvedProvider = 'itunes';
     } finally {
       resolvingRef.current = false;
     }
@@ -71,10 +74,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       });
       player.replace({ uri: resolvedUrl });
       player.play();
-      sourceRef.current = { piped: resolvedUrl !== track.previewUrl, trackId: track.id };
-      if (resolvedUrl !== track.previewUrl) {
-        console.warn(`[audio] Playing ${track.title} via Piped stream.`);
-      }
+      sourceRef.current = { piped: resolvedProvider !== 'itunes', trackId: track.id };
+      console.warn(
+        `[audio] Playing "${track.title}" via ${resolvedProvider ?? 'unknown'} stream source.`
+      );
     } catch (error) {
       console.warn('[audio] Playback start failed, retrying with iTunes preview URL.', error);
       if (resolvedUrl !== track.previewUrl && track.previewUrl) {
