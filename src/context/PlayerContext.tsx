@@ -8,6 +8,7 @@ interface PlayerContextValue {
   playbackPosition: number;
   duration: number;
   isLoadingAudio: boolean;
+  playbackError: string | null;
   playTrack: (track: Track, queue?: Track[]) => Promise<void>;
   togglePlayPause: () => void;
   seekTo: (millis: number) => Promise<void>;
@@ -23,10 +24,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const queueRef = useRef<Track[]>([]);
   const indexRef = useRef(-1);
   const resolvingRef = useRef(false);
-  const sourceRef = useRef<{ nonPreview: boolean; trackId: string } | null>(null);
+  const reportedErrorRef = useRef<string | null>(null);
 
   useEffect(() => {
     setAudioModeAsync({
@@ -43,25 +45,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const startTrack = async (track: Track, queue: Track[], index: number) => {
     setCurrentTrack(track);
+    setPlaybackError(null);
+    reportedErrorRef.current = null;
     setIsLoadingAudio(true);
     resolvingRef.current = true;
     queueRef.current = queue;
     indexRef.current = index;
     let resolvedUrl = '';
-    let resolvedProvider: 'invidious' | 'soundcloud' | 'piped' | 'itunes' | undefined;
+    let resolvedProvider: 'jiosaavn' | 'soundcloud' | undefined;
     try {
-      const result = await resolveStream(track.title, track.artist, track.previewUrl);
+      const result = await resolveStream(track.title, track.artist);
       resolvedUrl = result.url;
       resolvedProvider = result.provider;
     } catch (error) {
-      console.warn('[audio] Stream resolution failed, falling back to iTunes preview URL.', error);
-      resolvedUrl = track.previewUrl;
-      resolvedProvider = 'itunes';
+      console.error('[audio] No playable stream found for:', track.title, track.artist, error);
+      setPlaybackError('Could not find a playable source for this track.');
+      setIsLoadingAudio(false);
+      return;
     } finally {
       resolvingRef.current = false;
     }
     if (!resolvedUrl) {
       console.error('[audio] No playable URL available for track:', track.title, track.artist);
+      setPlaybackError('Could not find a playable source for this track.');
       setIsLoadingAudio(false);
       return;
     }
@@ -75,22 +81,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       player.replace({ uri: resolvedUrl });
       player.seekTo(0);
       player.play();
-      sourceRef.current = { nonPreview: resolvedProvider !== 'itunes', trackId: track.id };
       console.warn(
         `[audio] Playing "${track.title}" via ${resolvedProvider ?? 'unknown'} stream source.`
       );
     } catch (error) {
-      console.warn('[audio] Playback start failed, retrying with iTunes preview URL.', error);
-      if (resolvedUrl !== track.previewUrl && track.previewUrl) {
-        try {
-          player.replace({ uri: track.previewUrl });
-          player.play();
-          sourceRef.current = { nonPreview: false, trackId: track.id };
-        } catch (fallbackError) {
-          console.error('[audio] iTunes preview fallback failed.', fallbackError);
-        }
-      }
-    } finally {
+      console.error('[audio] Playback failed to start:', error);
+      setPlaybackError('Playback failed to start.');
       setIsLoadingAudio(false);
     }
   };
@@ -144,25 +140,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [status.isBuffering, status.isLoaded, currentTrack]);
 
   useEffect(() => {
-    const source = sourceRef.current;
-    if (
-      status.playbackState === 'error' &&
-      currentTrack &&
-      source &&
-      source.nonPreview &&
-      source.trackId === currentTrack.id &&
-      currentTrack.previewUrl
-    ) {
-      console.warn('[audio] Stream playback error, switching to iTunes preview URL.');
-      try {
-        player.replace({ uri: currentTrack.previewUrl });
-        player.play();
-        sourceRef.current = { nonPreview: false, trackId: currentTrack.id };
-      } catch (error) {
-        console.error('[audio] iTunes preview fallback failed.', error);
+    if (status.playbackState === 'error' && currentTrack) {
+      console.error('[audio] Playback error for track:', currentTrack.title);
+      if (reportedErrorRef.current !== currentTrack.id) {
+        reportedErrorRef.current = currentTrack.id;
+        setPlaybackError('Stream failed during playback.');
       }
     }
-  }, [status.playbackState, currentTrack, player]);
+  }, [status.playbackState, currentTrack]);
 
   const togglePlayPause = () => {
     if (!currentTrack) {
@@ -189,13 +174,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playbackPosition,
       duration,
       isLoadingAudio,
+      playbackError,
       playTrack,
       togglePlayPause,
       seekTo,
       playNext,
       playPrevious,
     }),
-    [currentTrack, status.playing, status.currentTime, status.duration, isLoadingAudio]
+    [
+      currentTrack,
+      status.playing,
+      status.currentTime,
+      status.duration,
+      isLoadingAudio,
+      playbackError,
+    ]
   );
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;

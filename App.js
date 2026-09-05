@@ -657,6 +657,7 @@ function MiniPlayer({ onOpen }) {
     playbackPosition,
     duration,
     isLoadingAudio,
+    playbackError,
     togglePlayPause,
     seekTo,
   } = usePlayer();
@@ -682,6 +683,11 @@ function MiniPlayer({ onOpen }) {
               <Text style={styles.miniPlayerArtist} numberOfLines={1}>
                 {currentTrack.artist}
               </Text>
+              {playbackError ? (
+                <Text style={styles.miniPlayerError} numberOfLines={1}>
+                  {playbackError}
+                </Text>
+              ) : null}
               <Scrubber position={playbackPosition} duration={duration} onSeek={seekTo} />
             </>
           ) : null}
@@ -724,6 +730,7 @@ function NowPlayingModal({ visible, onClose }) {
     playbackPosition,
     duration,
     isLoadingAudio,
+    playbackError,
     togglePlayPause,
     seekTo,
     playNext,
@@ -779,6 +786,11 @@ function NowPlayingModal({ visible, onClose }) {
                 <Text style={styles.npAlbum} numberOfLines={1}>
                   {currentTrack.album}
                 </Text>
+                {playbackError ? (
+                  <Text style={styles.npError} numberOfLines={1}>
+                    {playbackError}
+                  </Text>
+                ) : null}
               </View>
               <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={10}>
                 <Heart
@@ -1264,6 +1276,11 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
   },
+  miniPlayerError: {
+    color: '#F15E6C',
+    fontSize: 11,
+    marginTop: 1,
+  },
   miniPlayerAction: {
     marginHorizontal: 2,
   },
@@ -1361,6 +1378,11 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 14,
     marginTop: 2,
+  },
+  npError: {
+    color: '#F15E6C',
+    fontSize: 14,
+    marginTop: 6,
   },
   npControls: {
     flexDirection: 'row',

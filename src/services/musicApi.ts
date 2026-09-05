@@ -10,7 +10,7 @@ export interface Track {
 export interface StreamResult {
   url: string;
   mimeType: string;
-  provider?: 'invidious' | 'soundcloud' | 'piped' | 'itunes';
+  provider?: 'jiosaavn' | 'soundcloud';
 }
 
 interface ITunesResult {
@@ -22,26 +22,6 @@ interface ITunesResult {
     artworkUrl100?: string;
     previewUrl?: string;
   }>;
-}
-
-interface PipedSearchItem {
-  url?: string;
-  title?: string;
-}
-
-interface PipedSearchResponse {
-  items?: PipedSearchItem[];
-}
-
-interface PipedAudioStream {
-  url?: string;
-  mimeType?: string;
-  format?: string;
-}
-
-interface PipedStreamsResponse {
-  audioStreams?: PipedAudioStream[];
-  videoStreams?: Array<{ url?: string }>;
 }
 
 const ARTWORK_HIRES_SUFFIX = '600x600bb.jpg';
@@ -75,27 +55,21 @@ export async function searchITunes(query: string, limit = 25): Promise<Track[]> 
   }));
 }
 
-const PIPED_INSTANCES = [
-  'https://pipedapi.kavin.rocks',
-  'https://api.piped.yt',
-  'https://pipedapi.adminforge.de',
-];
+const API_TIMEOUT_MS = 3500;
 
-const PIPED_TIMEOUT_MS = 3500;
-
-const PIPED_HEADERS = {
+const API_HEADERS = {
   Accept: 'application/json',
   'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
 };
 
-async function pipedFetch<T>(path: string, instances: string[] = PIPED_INSTANCES): Promise<T> {
+async function apiFetch<T>(path: string, instances: string[]): Promise<T> {
   let lastError: unknown;
   for (const instance of instances) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PIPED_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
     try {
       const response = await fetch(`${instance}${path}`, {
-        headers: PIPED_HEADERS,
+        headers: API_HEADERS,
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -108,26 +82,85 @@ async function pipedFetch<T>(path: string, instances: string[] = PIPED_INSTANCES
       clearTimeout(timer);
     }
   }
-  throw new Error(`All audio API instances failed: ${String(lastError)}`);
+  throw new Error(`All API instances failed: ${String(lastError)}`);
 }
 
-function extractVideoId(item: PipedSearchItem): string | null {
-  const url = item.url ?? '';
-  const queryMatch = url.match(/v=([^&]+)/);
-  if (queryMatch) {
-    return queryMatch[1];
-  }
-  return url.startsWith('/watch?v=') ? url.replace('/watch?v=', '') : null;
+const JIOSAAVN_INSTANCES = [
+  'https://saavn.dev',
+  'https://shnwazdev-jiosaavn-apii.vercel.app',
+  'https://jiosaavn.rajputhemant.me',
+];
+
+interface JioSaavnDownload {
+  quality?: string;
+  url?: string;
 }
 
-function pickAudioStream(audioStreams: PipedAudioStream[]): PipedAudioStream | undefined {
-  return (
-    audioStreams.find((stream) => (stream.mimeType ?? '').toLowerCase().includes('m4a')) ??
-    audioStreams.find((stream) => (stream.mimeType ?? '').toLowerCase().includes('mp4')) ??
-    audioStreams.find((stream) => (stream.mimeType ?? '').toLowerCase().includes('opus')) ??
-    audioStreams.find((stream) => (stream.format ?? '').toLowerCase().includes('m4a')) ??
-    audioStreams[0]
+interface JioSaavnSong {
+  id?: string;
+  name?: string;
+  duration?: number | string;
+  artists?: { primary?: Array<{ name?: string }> };
+  downloadUrl?: JioSaavnDownload[];
+}
+
+interface JioSaavnSearchResponse {
+  status?: string;
+  data?: { results?: JioSaavnSong[] };
+}
+
+function parseJioSaavnQuality(quality: string): number {
+  const match = String(quality).match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function pickJioSaavnDownload(song: JioSaavnSong): string | null {
+  const downloads = (song.downloadUrl ?? []).filter((item) =>
+    String(item.url ?? '').startsWith('http')
   );
+  if (downloads.length === 0) {
+    return null;
+  }
+  downloads.sort(
+    (a, b) => parseJioSaavnQuality(b.quality ?? '') - parseJioSaavnQuality(a.quality ?? '')
+  );
+  return downloads[0]?.url ?? null;
+}
+
+function pickJioSaavnSong(results: JioSaavnSong[], artist: string): JioSaavnSong {
+  const target = artist.toLowerCase().trim();
+  const match = results.find((song) =>
+    (song.artists?.primary ?? []).some((primary) => {
+      const name = (primary.name ?? '').toLowerCase();
+      return name && (name.includes(target) || target.includes(name));
+    })
+  );
+  return match ?? results[0];
+}
+
+export async function resolveJioSaavnStream(
+  title: string,
+  artist: string
+): Promise<StreamResult | null> {
+  try {
+    const search = await apiFetch<JioSaavnSearchResponse>(
+      `/api/search/songs?query=${encodeURIComponent(title)}&limit=8`,
+      JIOSAAVN_INSTANCES
+    );
+    const results = search.data?.results ?? [];
+    if (results.length === 0) {
+      return null;
+    }
+    const song = pickJioSaavnSong(results, artist);
+    const url = pickJioSaavnDownload(song);
+    if (!url) {
+      return null;
+    }
+    return { url, mimeType: 'audio/mp4', provider: 'jiosaavn' };
+  } catch (error) {
+    console.warn('[audio] JioSaavn resolution failed.', error);
+    return null;
+  }
 }
 
 const SOUNDCLOUD_FALLBACK_CLIENT_IDS = [
@@ -148,6 +181,7 @@ interface SoundCloudTranscoding {
 interface SoundCloudTrack {
   id: number;
   title?: string;
+  duration?: number;
   user?: { username?: string };
   media?: {
     transcodings?: SoundCloudTranscoding[];
@@ -188,7 +222,7 @@ async function fetchSoundCloudClientId(): Promise<string | null> {
   soundCloudClientIdPromise = (async () => {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), PIPED_TIMEOUT_MS);
+      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
       try {
         const response = await fetch('https://soundcloud.com/', {
           headers: SOUNDCLOUD_PAGE_HEADERS,
@@ -206,7 +240,7 @@ async function fetchSoundCloudClientId(): Promise<string | null> {
           return null;
         }
         const scriptController = new AbortController();
-        const scriptTimer = setTimeout(() => scriptController.abort(), PIPED_TIMEOUT_MS);
+        const scriptTimer = setTimeout(() => scriptController.abort(), API_TIMEOUT_MS);
         const scriptResponse = await fetch(lastScript, {
           headers: SOUNDCLOUD_HEADERS,
           signal: scriptController.signal,
@@ -237,7 +271,7 @@ async function fetchSoundCloudClientId(): Promise<string | null> {
 
 async function soundCloudFetch<T>(url: string): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PIPED_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       headers: SOUNDCLOUD_HEADERS,
@@ -267,15 +301,17 @@ function pickSoundCloudTranscoding(
   track: SoundCloudTrack
 ): SoundCloudTranscoding | undefined {
   const transcodings = track.media?.transcodings ?? [];
-  return (
-    transcodings.find(
-      (item) => item.format?.protocol === 'progressive' && item.snipped === false
-    ) ??
-    transcodings.find((item) => item.format?.protocol === 'hls' && item.snipped === false) ??
-    transcodings.find((item) => item.format?.protocol === 'progressive') ??
-    transcodings.find((item) => item.format?.protocol === 'hls') ??
-    transcodings[0]
-  );
+  for (const item of transcodings) {
+    if (item.format?.protocol === 'progressive' && item.snipped === false) {
+      return item;
+    }
+  }
+  for (const item of transcodings) {
+    if (item.format?.protocol === 'hls' && item.snipped === false) {
+      return item;
+    }
+  }
+  return undefined;
 }
 
 async function soundCloudSearch(
@@ -302,6 +338,9 @@ async function resolveSoundCloudWithClientId(
       ? next
       : current
   );
+  if (!best.duration || best.duration <= 60000) {
+    return null;
+  }
   const transcoding = pickSoundCloudTranscoding(best);
   const transcodingUrl = transcoding?.url;
   if (!transcodingUrl) {
@@ -353,118 +392,17 @@ export async function resolveSoundCloudStream(
   }
 }
 
-const INVIDIOUS_INSTANCES = [
-  'https://inv.tux.pizza',
-  'https://invidious.nerdvpn.de',
-  'https://invidious.slipfox.xyz',
-  'https://invidious.materialio.us',
-];
-
-interface InvidiousSearchResult {
-  type?: string;
-  videoId?: string;
-  title?: string;
-  author?: string;
-}
-
-interface InvidiousVideoFormat {
-  url?: string;
-  type?: string;
-  bitrate?: number;
-}
-
-interface InvidiousVideoResponse {
-  formatStreams?: InvidiousVideoFormat[];
-  adaptiveFormats?: InvidiousVideoFormat[];
-}
-
-async function invidiousVideoId(query: string): Promise<string | null> {
-  const search = await pipedFetch<InvidiousSearchResult[]>(
-    `/api/v1/search?q=${encodeURIComponent(query)}&type=video`,
-    INVIDIOUS_INSTANCES
-  );
-  const items = Array.isArray(search) ? search : [];
-  const match = items.find((item) => item.type === 'video' && item.videoId) ?? items[0];
-  return match?.videoId ?? null;
-}
-
-function pickInvidiousStream(video: InvidiousVideoResponse): InvidiousVideoFormat | undefined {
-  const formats = [...(video.adaptiveFormats ?? []), ...(video.formatStreams ?? [])];
-  const audioFormats = formats.filter((format) =>
-    (format.type ?? '').toLowerCase().startsWith('audio/')
-  );
-  return (
-    audioFormats.find((format) => (format.type ?? '').toLowerCase().includes('mp4')) ??
-    audioFormats.find((format) => (format.type ?? '').toLowerCase().includes('webm')) ??
-    audioFormats[0]
-  );
-}
-
-async function resolveInvidiousVideo(
-  videoId: string
-): Promise<StreamResult | null> {
-  const video = await pipedFetch<InvidiousVideoResponse>(
-    `/api/v1/videos/${videoId}?fields=formatStreams,adaptiveFormats`,
-    INVIDIOUS_INSTANCES
-  );
-  const stream = pickInvidiousStream(video);
-  const url = stream?.url?.startsWith('http') ? stream.url : null;
-  if (!url) {
-    return null;
-  }
-  return { url, mimeType: stream?.type ?? 'audio/mp4', provider: 'invidious' };
-}
-
-export async function resolveInvidiousStream(
-  title: string,
-  artist: string
-): Promise<StreamResult | null> {
-  try {
-    const videoId = await invidiousVideoId(`${title} ${artist}`);
-    if (!videoId) {
-      return null;
-    }
-    return await resolveInvidiousVideo(videoId);
-  } catch (error) {
-    console.warn('[audio] Invidious resolution failed.', error);
-    return null;
-  }
-}
-
 export async function resolveStream(
   title: string,
-  artist: string,
-  previewUrl: string
+  artist: string
 ): Promise<StreamResult> {
-  const invidious = await resolveInvidiousStream(title, artist);
-  if (invidious) {
-    return invidious;
+  const jioSaavn = await resolveJioSaavnStream(title, artist);
+  if (jioSaavn) {
+    return jioSaavn;
   }
   const soundCloud = await resolveSoundCloudStream(title, artist);
   if (soundCloud) {
     return soundCloud;
   }
-  try {
-    const query = encodeURIComponent(`${title} ${artist}`.trim());
-    const search = await pipedFetch<PipedSearchResponse>(
-      `/search?q=${query}&filter=music_songs`
-    );
-    const items = search.items ?? [];
-    const match = items.find((item) => item.url?.includes('/watch?v=')) ?? items[0];
-    const videoId = match ? extractVideoId(match) : null;
-    if (videoId) {
-      const streams = await pipedFetch<PipedStreamsResponse>(`/streams/${videoId}`);
-      const stream = pickAudioStream(streams.audioStreams ?? []);
-      const url = stream?.url?.startsWith('http') ? stream.url : null;
-      if (url) {
-        return { url, mimeType: stream?.mimeType ?? '', provider: 'piped' };
-      }
-    }
-  } catch (error) {
-    console.warn('[audio] Piped resolution failed, falling back to iTunes preview.', error);
-  }
-  if (previewUrl) {
-    return { url: previewUrl, mimeType: 'audio/mp4', provider: 'itunes' };
-  }
-  throw new Error('No playable audio stream found');
+  throw new Error('No playable full-length stream found from any provider');
 }
