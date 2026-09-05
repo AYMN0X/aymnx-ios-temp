@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { getDownloadedTrack } from '../services/downloadService';
 import { resolveStream, Track } from '../services/musicApi';
 
 interface PlayerContextValue {
@@ -52,11 +53,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queueRef.current = queue;
     indexRef.current = index;
     let resolvedUrl = '';
-    let resolvedProvider: 'jiosaavn' | 'soundcloud' | undefined;
+    let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | undefined;
+    let artworkUri = track.artwork;
     try {
-      const result = await resolveStream(track.title, track.artist);
-      resolvedUrl = result.url;
-      resolvedProvider = result.provider;
+      const downloaded = await getDownloadedTrack(track.id);
+      if (downloaded) {
+        resolvedUrl = downloaded.localAudioUri;
+        resolvedProvider = 'local';
+        artworkUri = downloaded.localArtworkUri || track.artwork;
+      } else {
+        const result = await resolveStream(track.title, track.artist);
+        resolvedUrl = result.url;
+        resolvedProvider = result.provider;
+      }
     } catch (error) {
       console.error('[audio] No playable stream found for:', track.title, track.artist, error);
       setPlaybackError('Could not find a playable source for this track.');
@@ -76,13 +85,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         title: track.title,
         artist: track.artist,
         albumTitle: track.album,
-        artworkUrl: track.artwork,
+        artworkUrl: artworkUri,
       });
       player.replace({ uri: resolvedUrl });
       player.seekTo(0);
       player.play();
       console.warn(
-        `[audio] Playing "${track.title}" via ${resolvedProvider ?? 'unknown'} stream source.`
+        `[audio] Playing "${track.title}" via ${resolvedProvider ?? 'unknown'} source.`
       );
     } catch (error) {
       console.error('[audio] Playback failed to start:', error);

@@ -47,6 +47,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
 import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
 import { fetchPopularHits, fetchTrendingNow, searchITunes } from './src/services/musicApi';
@@ -698,7 +699,16 @@ function SearchScreen() {
   );
 }
 
-function TrackOptionsSheet({ track, visible, onClose, onAddToPlaylist, onRemove, onQueue }) {
+function TrackOptionsSheet({
+  track,
+  visible,
+  onClose,
+  onAddToPlaylist,
+  onRemove,
+  onQueue,
+  downloaded,
+  onToggleDownload,
+}) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.tosBackdrop} onPress={onClose}>
@@ -730,6 +740,14 @@ function TrackOptionsSheet({ track, visible, onClose, onAddToPlaylist, onRemove,
             <Feather name="plus-circle" size={20} color="#B3B3B3" />
             <Text style={styles.tosItemLabel}>Add to playlist</Text>
           </Pressable>
+          <Pressable style={styles.tosItem} onPress={onToggleDownload}>
+            {downloaded ? (
+              <MaterialCommunityIcons name="download-off" size={20} color="#1ED760" />
+            ) : (
+              <Feather name="download" size={20} color="#B3B3B3" />
+            )}
+            <Text style={styles.tosItemLabel}>{downloaded ? 'Remove download' : 'Download'}</Text>
+          </Pressable>
           <Pressable style={styles.tosItem} onPress={onClose}>
             <Feather name="x-circle" size={20} color="#B3B3B3" />
             <Text style={styles.tosItemLabel}>Exclude track from your taste profile</Text>
@@ -759,6 +777,14 @@ function TrackOptionsSheet({ track, visible, onClose, onAddToPlaylist, onRemove,
 function LikedSongsScreen({ onBack }) {
   const { likedSongs, toggleLike } = useLibrary();
   const { playTrack, isPlaying, currentTrack, togglePlayPause } = usePlayer();
+  const {
+    isDownloaded,
+    downloadingIds,
+    toggleDownload,
+    downloadAll,
+    isBatchDownloading,
+    batchProgress,
+  } = useDownloads();
   const [query, setQuery] = useState('');
   const [chip, setChip] = useState(null);
   const [sheetTrack, setSheetTrack] = useState(null);
@@ -774,12 +800,22 @@ function LikedSongsScreen({ onBack }) {
   const nowPlayingLiked =
     isPlaying && currentTrack && likedSongs.some((t) => t.id === currentTrack.id);
 
+  const allDownloaded =
+    likedSongs.length > 0 && likedSongs.every((t) => isDownloaded(t.id));
+
   const handlePrimary = () => {
     if (nowPlayingLiked) {
       togglePlayPause();
     } else if (likedSongs.length > 0) {
       playTrack(likedSongs[0], likedSongs);
     }
+  };
+
+  const handleDownloadAll = () => {
+    if (isBatchDownloading) {
+      return;
+    }
+    downloadAll(likedSongs);
   };
 
   const renderRow = ({ item }) => {
@@ -802,6 +838,9 @@ function LikedSongsScreen({ onBack }) {
           </View>
         </Pressable>
         <Pressable style={styles.lgRowMore} onPress={() => setSheetTrack(item)} hitSlop={10}>
+          {isDownloaded(item.id) ? (
+            <Download size={16} color={COLORS.green} style={styles.lgRowDownloaded} />
+          ) : null}
           <Feather name="more-horizontal" size={20} color="#B3B3B3" />
         </Pressable>
       </View>
@@ -852,8 +891,20 @@ function LikedSongsScreen({ onBack }) {
               {likedSongs.length === 1 ? '1 song' : `${likedSongs.length} songs`}
             </Text>
             <View style={styles.lgActionRow}>
-              <Pressable style={styles.lgDownload} hitSlop={8}>
-                <Ionicons name="download-outline" size={24} color="#B3B3B3" />
+              <Pressable
+                style={[styles.lgDownload, allDownloaded && styles.lgDownloadDone]}
+                onPress={handleDownloadAll}
+                hitSlop={8}
+              >
+                {isBatchDownloading ? (
+                  <Activity size={18} color="#FFFFFF" />
+                ) : (
+                  <Ionicons
+                    name={allDownloaded ? 'download' : 'download-outline'}
+                    size={24}
+                    color={allDownloaded ? '#FFFFFF' : '#B3B3B3'}
+                  />
+                )}
               </Pressable>
               <View style={styles.lgActionRight}>
                 <Pressable style={styles.lgShuffle} hitSlop={8}>
@@ -868,6 +919,11 @@ function LikedSongsScreen({ onBack }) {
                 </Pressable>
               </View>
             </View>
+            {isBatchDownloading && batchProgress ? (
+              <Text style={styles.lgDownloadProgress} numberOfLines={1}>
+                Downloading {batchProgress.downloaded} of {batchProgress.total} songs...
+              </Text>
+            ) : null}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -906,6 +962,13 @@ function LikedSongsScreen({ onBack }) {
         track={sheetTrack}
         visible={!!sheetTrack}
         onClose={() => setSheetTrack(null)}
+        downloaded={!!sheetTrack && isDownloaded(sheetTrack.id)}
+        onToggleDownload={() => {
+          if (sheetTrack) {
+            toggleDownload(sheetTrack);
+          }
+          setSheetTrack(null);
+        }}
         onAddToPlaylist={() => {
           setPlaylistTrack(sheetTrack);
           setSheetTrack(null);
@@ -943,6 +1006,7 @@ function LibraryScreen() {
     removeTrackFromPlaylist,
   } = useLibrary();
   const { playTrack } = usePlayer();
+  const { downloadedTracks, deleteDownload } = useDownloads();
   const [detail, setDetail] = useState(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -1036,7 +1100,15 @@ function LibraryScreen() {
     })),
   ];
 
-  const filteredItems = libraryFilter === 'Playlists' ? libraryItems : libraryItems.filter(i => i.type === 'liked');
+  const filteredItems = libraryFilter === 'Downloaded'
+    ? downloadedTracks.map((track) => ({
+        type: 'downloaded',
+        key: `downloaded-${track.id}`,
+        track,
+      }))
+    : libraryFilter === 'Playlists'
+    ? libraryItems
+    : libraryItems.filter((i) => i.type === 'liked');
 
   return (
     <View style={styles.libraryScreen}>
@@ -1121,10 +1193,12 @@ function LibraryScreen() {
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.libraryList}
         ListEmptyComponent={
-          libraryFilter !== 'Playlists' ? (
-            <Text style={styles.libraryEmpty}>Nothing here yet.</Text>
-          ) : (
+          libraryFilter === 'Playlists' ? (
             <Text style={styles.libraryEmpty}>No songs yet</Text>
+          ) : libraryFilter === 'Downloaded' ? (
+            <Text style={styles.libraryEmpty}>Nothing downloaded yet.</Text>
+          ) : (
+            <Text style={styles.libraryEmpty}>Nothing here yet.</Text>
           )
         }
         renderItem={({ item }) => {
@@ -1149,6 +1223,17 @@ function LibraryScreen() {
                   </View>
                 </View>
               </Pressable>
+            );
+          }
+          if (item.type === 'downloaded') {
+            return (
+              <TrackRow
+                track={item.track}
+                liked={isLiked(item.track.id)}
+                onPlay={() => playTrack(item.track, downloadedTracks)}
+                onToggleLike={() => toggleLike(item.track)}
+                onRemove={() => deleteDownload(item.track.id)}
+              />
             );
           }
           if (item.type === 'static') {
@@ -1480,14 +1565,16 @@ function AppShell() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <PlayerProvider>
-        <LibraryProvider>
-          <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-            <StatusBar style="light" />
-            <AppShell />
-          </SafeAreaView>
-        </LibraryProvider>
-      </PlayerProvider>
+      <DownloadProvider>
+        <PlayerProvider>
+          <LibraryProvider>
+            <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+              <StatusBar style="light" />
+              <AppShell />
+            </SafeAreaView>
+          </LibraryProvider>
+        </PlayerProvider>
+      </DownloadProvider>
     </SafeAreaProvider>
   );
 }
@@ -2451,6 +2538,16 @@ disabled: {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  lgDownloadDone: {
+    borderColor: '#1ED760',
+    backgroundColor: '#1ED760',
+  },
+  lgDownloadProgress: {
+    color: '#B3B3B3',
+    fontSize: 12,
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
   lgActionRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2557,7 +2654,12 @@ disabled: {
     marginTop: 2,
   },
   lgRowMore: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 4,
+  },
+  lgRowDownloaded: {
+    marginRight: 12,
   },
   lgEmpty: {
     color: '#B3B3B3',
