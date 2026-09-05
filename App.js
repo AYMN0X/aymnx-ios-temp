@@ -26,6 +26,7 @@ import {
   SkipBack,
   SkipForward,
   Trash2,
+  User,
   X,
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
@@ -227,7 +228,7 @@ const TABS = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'search', label: 'Search', icon: Search },
   { key: 'library', label: 'Your Library', icon: Library },
-  { key: 'create', label: 'Create', icon: Plus },
+  { key: 'create', label: 'AYMNX', icon: User },
 ];
 
 function formatMillis(ms) {
@@ -1351,24 +1352,7 @@ function LibraryScreen() {
 }
 
 function CreateScreen() {
-  const { createPlaylist, playlists } = useLibrary();
-  const [created, setCreated] = useState(false);
-
-  const handleCreate = async () => {
-    await createPlaylist(`My Playlist #${playlists.length + 1}`);
-    setCreated(true);
-  };
-
-  return (
-    <View style={styles.createContainer}>
-      <Pressable style={styles.createButton} onPress={handleCreate}>
-        <Plus size={44} color="#121212" />
-      </Pressable>
-      <Text style={styles.createTitle}>Create a playlist</Text>
-      <Text style={styles.createSubtitle}>Build your own collection of songs.</Text>
-      {created ? <Text style={styles.createDone}>Created! Find it in Your Library.</Text> : null}
-    </View>
-  );
+  return <View style={styles.createEmpty} />;
 }
 
 function Scrubber({ position, duration, onSeek, large }) {
@@ -2256,37 +2240,9 @@ disabled: {
     marginTop: 16,
     textAlign: 'center',
   },
-  createContainer: {
+  createEmpty: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  createButton: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: COLORS.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  createTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  createSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  createDone: {
-    color: COLORS.green,
-    fontSize: 14,
-    marginTop: 16,
-    textAlign: 'center',
+    backgroundColor: '#121212',
   },
   scrubTrack: {
     height: 4,
