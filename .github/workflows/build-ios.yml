@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    name: Build unsigned SpotifyWhite.ipa
+    name: Build unsigned AYMNX.ipa
     runs-on: macos-latest
     timeout-minutes: 60
 
@@ -37,10 +37,10 @@ jobs:
           cd ios
           xcodebuild archive \
             -workspace *.xcworkspace \
-            -scheme spotifywhite \
+            -scheme AYMNX \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$GITHUB_WORKSPACE/build/SpotifyWhite.xcarchive" \
+            -archivePath "$GITHUB_WORKSPACE/build/AYMNX.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
@@ -49,13 +49,13 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p Payload
-          cp -r "$GITHUB_WORKSPACE/build/SpotifyWhite.xcarchive/Products/Applications/"*.app Payload/
-          zip -r SpotifyWhite.ipa Payload
+          cp -r "$GITHUB_WORKSPACE/build/AYMNX.xcarchive/Products/Applications/"*.app Payload/
+          zip -r AYMNX.ipa Payload
           rm -rf Payload
 
       - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpotifyWhite-unsigned
-          path: SpotifyWhite.ipa
+          name: AYMNX-unsigned
+          path: AYMNX.ipa
           if-no-files-found: error
