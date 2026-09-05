@@ -1,6 +1,16 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { resolveStream, Track } from '../services/musicApi';
+import { getRecommendedNextTracks } from '../services/autoplayService';
 import * as storage from '../services/storage';
 import { useAuth } from './AuthContext';
 import { useDownloads } from './DownloadContext';
@@ -17,6 +27,11 @@ interface PlayerContextValue {
   seekTo: (millis: number) => Promise<void>;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
+  queue: Track[];
+  queueIndex: number;
+  isAutoplayEnabled: boolean;
+  autoplayAddedIds: Set<string>;
+  toggleAutoplay: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
@@ -30,10 +45,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<Track[]>([]);
+  const [queueIndex, setQueueIndex] = useState(-1);
+  const [isAutoplayEnabled, setIsAutoplayEnabled] = useState(true);
+  const [autoplayAddedIds, setAutoplayAddedIds] = useState<Set<string>>(new Set());
   const queueRef = useRef<Track[]>([]);
   const indexRef = useRef(-1);
   const resolvingRef = useRef(false);
   const reportedErrorRef = useRef<string | null>(null);
+  const playedSetRef = useRef<Set<string>>(new Set());
+  const autoplayLoadingRef = useRef(false);
+  const autoplayFailedForRef = useRef<string | null>(null);
 
   useEffect(() => {
     setAudioModeAsync({
@@ -43,6 +65,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }).catch((error) => {
       console.warn('Failed to configure audio mode', error);
     });
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    storage
+      .getAutoplayEnabled()
+      .then((value) => {
+        if (mounted && value != null) {
+          setIsAutoplayEnabled(value);
+        }
+      })
+      .catch((error) => console.warn('[player] Could not load autoplay setting.', error));
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const playbackPosition = Number.isFinite(status.currentTime) ? status.currentTime * 1000 : 0;
@@ -56,6 +93,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     resolvingRef.current = true;
     queueRef.current = queue;
     indexRef.current = index;
+    setQueue(queue);
+    setQueueIndex(index);
+    autoplayFailedForRef.current = null;
+    if (track.id) {
+      playedSetRef.current.add(track.id);
+    }
     let resolvedUrl = '';
     let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | undefined;
     let artworkUri = track.artwork;
@@ -105,6 +148,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const playTrack = async (track: Track, queue: Track[] = []) => {
+    setAutoplayAddedIds(new Set());
     if (queue.length > 0) {
       const index = Math.max(queue.findIndex((item) => item.id === track.id), 0);
       await startTrack(track, queue, index);
@@ -135,11 +179,89 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     await startTrack(queue[prevIndex], queue, prevIndex);
   };
 
-  useEffect(() => {
-    if (status.didJustFinish) {
-      playNext();
+  const ensureAutoplayTracks = useCallback(async () => {
+    if (autoplayLoadingRef.current || !currentTrack) {
+      return;
     }
-  }, [status.didJustFinish]);
+    const queueNow = queueRef.current;
+    if (queueNow.length === 0) {
+      return;
+    }
+    if (indexRef.current < queueNow.length - 1) {
+      return;
+    }
+    const attemptKey = `${currentTrack.id}:${queueNow.length}`;
+    if (autoplayFailedForRef.current === attemptKey) {
+      return;
+    }
+    autoplayLoadingRef.current = true;
+    try {
+      const played = Array.from(playedSetRef.current);
+      const recommendations = await getRecommendedNextTracks(currentTrack, played);
+      const fresh = recommendations.filter(
+        (item) => item.id && !playedSetRef.current.has(item.id)
+      );
+      if (fresh.length > 0 && queueRef.current === queueNow) {
+        const nextQueue = [...queueNow, ...fresh];
+        queueRef.current = nextQueue;
+        setQueue(nextQueue);
+        setAutoplayAddedIds((prev) => {
+          const next = new Set(prev);
+          fresh.forEach((item) => next.add(item.id));
+          return next;
+        });
+      } else {
+        autoplayFailedForRef.current = attemptKey;
+      }
+    } catch (error) {
+      console.warn('[autoplay] Failed to fetch recommendations.', error);
+      autoplayFailedForRef.current = attemptKey;
+    } finally {
+      autoplayLoadingRef.current = false;
+    }
+  }, [currentTrack]);
+
+  useEffect(() => {
+    if (!isAutoplayEnabled || !currentTrack) {
+      return;
+    }
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return;
+    }
+    const queueNow = queueRef.current;
+    if (queueNow.length === 0 || indexRef.current < queueNow.length - 1) {
+      return;
+    }
+    if (playbackPosition < Math.max(duration - 8000, duration * 0.9)) {
+      return;
+    }
+    ensureAutoplayTracks();
+  }, [playbackPosition, duration, currentTrack, isAutoplayEnabled, ensureAutoplayTracks]);
+
+  useEffect(() => {
+    if (!status.didJustFinish) {
+      return;
+    }
+    (async () => {
+      const queueNow = queueRef.current;
+      if (queueNow.length === 0 || !currentTrack) {
+        return;
+      }
+      if (isAutoplayEnabled && indexRef.current >= queueNow.length - 1) {
+        if (autoplayLoadingRef.current) {
+          const deadline = Date.now() + 6000;
+          while (autoplayLoadingRef.current && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 120));
+          }
+        } else {
+          await ensureAutoplayTracks();
+        }
+      }
+      if (indexRef.current < queueRef.current.length - 1) {
+        await playNext();
+      }
+    })();
+  }, [status.didJustFinish, isAutoplayEnabled, ensureAutoplayTracks]);
 
   useEffect(() => {
     if (user && currentTrack) {
@@ -158,6 +280,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     reportedErrorRef.current = null;
     queueRef.current = [];
     indexRef.current = -1;
+    setQueue([]);
+    setQueueIndex(-1);
+    setAutoplayAddedIds(new Set());
+    playedSetRef.current = new Set();
+    autoplayLoadingRef.current = false;
+    autoplayFailedForRef.current = null;
     player.pause();
   }, [user]);
 
@@ -193,6 +321,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const toggleAutoplay = () => {
+    setIsAutoplayEnabled((prev) => {
+      const next = !prev;
+      storage
+        .setAutoplayEnabled(next)
+        .catch((error) => console.warn('[player] Could not save autoplay setting.', error));
+      return next;
+    });
+  };
+
   const seekTo = async (millis: number) => {
     if (millis == null || !Number.isFinite(millis)) {
       return;
@@ -216,6 +354,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       seekTo,
       playNext,
       playPrevious,
+      queue,
+      queueIndex,
+      isAutoplayEnabled,
+      autoplayAddedIds,
+      toggleAutoplay,
     }),
     [
       currentTrack,
@@ -224,6 +367,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       status.duration,
       isLoadingAudio,
       playbackError,
+      queue,
+      queueIndex,
+      isAutoplayEnabled,
+      autoplayAddedIds,
       downloadedTracks,
     ]
   );

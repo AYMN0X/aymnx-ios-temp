@@ -171,3 +171,22 @@ export async function getLastPlayedTrack(userId: string): Promise<Track | null> 
 export async function writeLastPlayedTrack(userId: string, track: Track | null): Promise<void> {
   await updateUserData(userId, (d) => ({ ...d, lastPlayedTrack: track }));
 }
+
+const AUTOPLAY_KEY = '@spotify_autoplay_enabled';
+
+export async function getAutoplayEnabled(): Promise<boolean | null> {
+  try {
+    const raw = await AsyncStorage.getItem(AUTOPLAY_KEY);
+    if (raw == null) {
+      return null;
+    }
+    return JSON.parse(raw) === true;
+  } catch (error) {
+    console.warn('[storage] Failed to read autoplay setting.', error);
+    return null;
+  }
+}
+
+export async function setAutoplayEnabled(value: boolean): Promise<void> {
+  await AsyncStorage.setItem(AUTOPLAY_KEY, JSON.stringify(value));
+}

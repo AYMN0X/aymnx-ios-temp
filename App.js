@@ -37,6 +37,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -1592,6 +1593,7 @@ function NowPlayingModal({ visible, onClose }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const artSize = Math.min(width - 80, 340);
+  const [queueOpen, setQueueOpen] = useState(false);
 
   return (
     <Modal
@@ -1688,7 +1690,7 @@ function NowPlayingModal({ visible, onClose }) {
               <Pressable hitSlop={12}>
                 <MaterialCommunityIcons name="airplay" size={24} color="#FFFFFF" />
               </Pressable>
-              <Pressable hitSlop={12}>
+              <Pressable hitSlop={12} onPress={() => setQueueOpen(true)}>
                 <Ionicons name="list" size={24} color="#FFFFFF" />
               </Pressable>
             </View>
@@ -1698,6 +1700,119 @@ function NowPlayingModal({ visible, onClose }) {
             <Text style={styles.npEmptyText}>Nothing is playing</Text>
           </View>
         )}
+        <QueueModal visible={queueOpen} onClose={() => setQueueOpen(false)} />
+      </View>
+    </Modal>
+  );
+}
+
+function QueueModal({ visible, onClose }) {
+  const {
+    currentTrack,
+    queue,
+    queueIndex,
+    isAutoplayEnabled,
+    toggleAutoplay,
+    autoplayAddedIds,
+  } = usePlayer();
+  const insets = useSafeAreaInsets();
+  const upNext = queue.slice(queueIndex >= 0 ? queueIndex + 1 : 0);
+
+  const renderTrack = ({ item }) => (
+    <View style={styles.queueRow}>
+      {item.artwork ? (
+        <Image source={{ uri: item.artwork }} style={styles.queueArt} />
+      ) : (
+        <View style={[styles.queueArt, styles.queueArtFallback]} />
+      )}
+      <View style={styles.queueRowInfo}>
+        <Text style={styles.queueRowTitle} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <View style={styles.queueRowMeta}>
+          <Text style={styles.queueRowArtist} numberOfLines={1}>
+            {item.artist}
+          </Text>
+          {autoplayAddedIds.has(item.id) ? (
+            <View style={styles.autoplayPill}>
+              <Text style={styles.autoplayPillLabel}>Autoplay recommendation</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View
+        style={[
+          styles.queueRoot,
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
+        ]}
+      >
+        <View style={styles.queueHeader}>
+          <Pressable style={styles.npCloseBtn} onPress={onClose} hitSlop={12}>
+            <X size={26} color={COLORS.textPrimary} />
+          </Pressable>
+          <Text style={styles.queueTitle}>Queue</Text>
+        </View>
+        <FlatList
+          data={upNext}
+          keyExtractor={(item, index) => `${item.id}_${index}`}
+          renderItem={renderTrack}
+          contentContainerStyle={styles.queueListContent}
+          ListHeaderComponent={
+            <View>
+              <Text style={styles.queueSectionLabel}>Now Playing</Text>
+              {currentTrack ? (
+                <View style={styles.queueRow}>
+                  {currentTrack.artwork ? (
+                    <Image source={{ uri: currentTrack.artwork }} style={styles.queueArt} />
+                  ) : (
+                    <View style={[styles.queueArt, styles.queueArtFallback]} />
+                  )}
+                  <View style={styles.queueRowInfo}>
+                    <Text style={styles.queueRowTitleNow} numberOfLines={1}>
+                      {currentTrack.title}
+                    </Text>
+                    <Text style={styles.queueRowArtist} numberOfLines={1}>
+                      {currentTrack.artist}
+                    </Text>
+                  </View>
+                  <Ionicons name="volume-high" size={18} color={COLORS.green} />
+                </View>
+              ) : null}
+              <Text style={styles.queueSectionLabel}>Next in queue</Text>
+              {upNext.length === 0 ? (
+                <Text style={styles.queueEmpty}>
+                  {currentTrack
+                    ? 'No more songs in the queue. Autoplay will keep the music going when the queue ends.'
+                    : 'Nothing is queued.'}
+                </Text>
+              ) : null}
+            </View>
+          }
+        />
+        <View style={styles.autoplayToggleRow}>
+          <View style={styles.autoplayToggleInfo}>
+            <Text style={styles.autoplayToggleTitle}>Autoplay</Text>
+            <Text style={styles.autoplayToggleSubtitle}>
+              Keep the music going when your queue ends
+            </Text>
+          </View>
+          <Switch
+            value={isAutoplayEnabled}
+            onValueChange={toggleAutoplay}
+            trackColor={{ false: '#535353', true: COLORS.green }}
+            thumbColor={isAutoplayEnabled ? COLORS.white : '#B3B3B3'}
+          />
+        </View>
       </View>
     </Modal>
   );
@@ -2940,6 +3055,113 @@ disabled: {
   npEmptyText: {
     color: COLORS.textSecondary,
     fontSize: 16,
+  },
+  queueRoot: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  queueHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+  },
+  queueTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  queueListContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  queueSectionLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  queueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  queueArt: {
+    width: 52,
+    height: 52,
+    borderRadius: 4,
+    backgroundColor: COLORS.card,
+  },
+  queueArtFallback: {
+    backgroundColor: COLORS.cardPress,
+  },
+  queueRowInfo: {
+    flex: 1,
+    marginLeft: 12,
+    paddingRight: 8,
+  },
+  queueRowTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  queueRowTitleNow: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  queueRowArtist: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  queueRowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  autoplayPill: {
+    backgroundColor: COLORS.cardPress,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  autoplayPillLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  queueEmpty: {
+    color: COLORS.textSubdued,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingVertical: 8,
+  },
+  autoplayToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  autoplayToggleInfo: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  autoplayToggleTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  autoplayToggleSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
   },
   tosBackdrop: {
     flex: 1,
