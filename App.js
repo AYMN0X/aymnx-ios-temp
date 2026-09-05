@@ -859,7 +859,6 @@ function MiniPlayer({ onOpen }) {
     isPlaying,
     playbackPosition,
     duration,
-    isLoadingAudio,
     playbackError,
     togglePlayPause,
   } = usePlayer();
@@ -898,14 +897,12 @@ function MiniPlayer({ onOpen }) {
           <Pressable
             style={styles.miniPlayerPlay}
             onPress={togglePlayPause}
-            disabled={isLoadingAudio}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {isLoadingAudio ? (
-              <Activity size={16} color="#121212" />
-            ) : isPlaying ? (
-              <Pause size={17} color="#121212" fill="#121212" />
+            {isPlaying ? (
+              <Pause size={22} color="#FFFFFF" fill="#FFFFFF" />
             ) : (
-              <Play size={17} color="#121212" fill="#121212" />
+              <Play size={22} color="#FFFFFF" fill="#FFFFFF" />
             )}
           </Pressable>
         </View>
@@ -1667,10 +1664,10 @@ disabled: {
     gap: 14,
   },
   miniPlayerPlay: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.white,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.green,
     alignItems: 'center',
     justifyContent: 'center',
   },

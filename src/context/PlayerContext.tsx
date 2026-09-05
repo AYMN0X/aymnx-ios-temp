@@ -161,6 +161,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const seekTo = async (millis: number) => {
+    if (millis == null || !Number.isFinite(millis)) {
+      return;
+    }
     if (!Number.isFinite(status.duration) || status.duration <= 0) {
       return;
     }
