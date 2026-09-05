@@ -1,4 +1,7 @@
+import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -86,6 +89,8 @@ const HERO_GRADIENT = ['#D84000', '#503750'];
 const FILTERS = ['All', 'Music', 'Podcasts'];
 
 const LIBRARY_FILTERS = ['Playlists', 'Podcasts', 'Albums', 'Downloaded'];
+
+const LIKED_FILTERS = ['Aggressive', 'Pop', 'Gaming', 'Calm', 'Beats', 'Funk'];
 
 const LIBRARY_ROWS = [
   { key: 'chill', title: 'Chill Vibes', color: '#1E3264', subtitle: 'Playlist • SA' },
@@ -693,6 +698,240 @@ function SearchScreen() {
   );
 }
 
+function TrackOptionsSheet({ track, visible, onClose, onAddToPlaylist, onRemove, onQueue }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.tosBackdrop} onPress={onClose}>
+        <Pressable style={styles.tosSheet} onPress={() => {}}>
+          <View style={styles.tosPill} />
+          {track ? (
+            <View style={styles.tosPreview}>
+              {track.artwork ? (
+                <Image source={{ uri: track.artwork }} style={styles.tosArtwork} />
+              ) : (
+                <View style={[styles.tosArtwork, styles.tosArtworkFallback]} />
+              )}
+              <View style={styles.tosPreviewText}>
+                <Text style={styles.tosPreviewTitle} numberOfLines={1}>
+                  {track.title}
+                </Text>
+                <Text style={styles.tosPreviewArtist} numberOfLines={1}>
+                  {track.artist}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          <View style={styles.tosDivider} />
+          <Pressable style={styles.tosItem} onPress={onClose}>
+            <Feather name="share" size={20} color="#B3B3B3" />
+            <Text style={styles.tosItemLabel}>Share</Text>
+          </Pressable>
+          <Pressable style={styles.tosItem} onPress={onAddToPlaylist}>
+            <Feather name="plus-circle" size={20} color="#B3B3B3" />
+            <Text style={styles.tosItemLabel}>Add to playlist</Text>
+          </Pressable>
+          <Pressable style={styles.tosItem} onPress={onClose}>
+            <Feather name="x-circle" size={20} color="#B3B3B3" />
+            <Text style={styles.tosItemLabel}>Exclude track from your taste profile</Text>
+          </Pressable>
+          <Pressable style={styles.tosItem} onPress={onRemove}>
+            <Feather name="minus-circle" size={20} color="#B3B3B3" />
+            <Text style={styles.tosItemLabel}>Remove from this playlist</Text>
+          </Pressable>
+          <Pressable style={styles.tosItem} onPress={onQueue}>
+            <MaterialIcons name="queue-music" size={20} color="#B3B3B3" />
+            <Text style={styles.tosItemLabel}>Add to Queue</Text>
+          </Pressable>
+          <Pressable style={styles.tosItem} onPress={onClose}>
+            <Ionicons name="radio-outline" size={20} color="#B3B3B3" />
+            <Text style={styles.tosItemLabel}>Go to radio</Text>
+          </Pressable>
+          <Pressable style={styles.tosItem} onPress={onClose}>
+            <Ionicons name="disc-outline" size={20} color="#B3B3B3" />
+            <Text style={styles.tosItemLabel}>Go to album</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function LikedSongsScreen({ onBack }) {
+  const { likedSongs, toggleLike } = useLibrary();
+  const { playTrack, isPlaying, currentTrack, togglePlayPause } = usePlayer();
+  const [query, setQuery] = useState('');
+  const [chip, setChip] = useState(null);
+  const [sheetTrack, setSheetTrack] = useState(null);
+  const [playlistTrack, setPlaylistTrack] = useState(null);
+
+  const q = query.trim().toLowerCase();
+  const tracks = q
+    ? likedSongs.filter(
+        (t) => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q)
+      )
+    : likedSongs;
+
+  const nowPlayingLiked =
+    isPlaying && currentTrack && likedSongs.some((t) => t.id === currentTrack.id);
+
+  const handlePrimary = () => {
+    if (nowPlayingLiked) {
+      togglePlayPause();
+    } else if (likedSongs.length > 0) {
+      playTrack(likedSongs[0], likedSongs);
+    }
+  };
+
+  const renderRow = ({ item }) => {
+    const active = !!currentTrack && currentTrack.id === item.id && isPlaying;
+    return (
+      <View style={styles.lgRow}>
+        <Pressable style={styles.lgRowMain} onPress={() => playTrack(item, likedSongs)}>
+          {item.artwork ? (
+            <Image source={{ uri: item.artwork }} style={styles.lgRowArtwork} />
+          ) : (
+            <View style={[styles.lgRowArtwork, styles.lgRowArtworkFallback]} />
+          )}
+          <View style={styles.lgRowInfo}>
+            <Text style={[styles.lgRowTitle, active && styles.lgRowTitleActive]} numberOfLines={1}>
+              {item.title}
+            </Text>
+            <Text style={styles.lgRowArtist} numberOfLines={1}>
+              {item.artist} • {item.album}
+            </Text>
+          </View>
+        </Pressable>
+        <Pressable style={styles.lgRowMore} onPress={() => setSheetTrack(item)} hitSlop={10}>
+          <Feather name="more-horizontal" size={20} color="#B3B3B3" />
+        </Pressable>
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.lgRoot}>
+      <LinearGradient
+        pointerEvents="none"
+        colors={['#2E3A75', '#121212']}
+        locations={[0, 0.55]}
+        style={styles.lgGradient}
+      />
+      <View style={styles.lgNavRow}>
+        <Pressable style={styles.lgBack} onPress={onBack} hitSlop={12}>
+          <ChevronLeft size={26} color="#FFFFFF" />
+        </Pressable>
+      </View>
+      <View style={styles.lgSearchRow}>
+        <View style={styles.lgSearchBox}>
+          <Search size={16} color="rgba(255,255,255,0.7)" />
+          <TextInput
+            style={styles.lgSearchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Find in Liked Songs"
+            placeholderTextColor="rgba(255,255,255,0.7)"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+        </View>
+        <Pressable style={styles.lgSortBtn}>
+          <MaterialIcons name="sort" size={18} color="#FFFFFF" />
+          <Text style={styles.lgSortLabel}>Sort</Text>
+        </Pressable>
+      </View>
+      <FlatList
+        data={tracks}
+        keyExtractor={(item) => item.id}
+        style={styles.lgList}
+        contentContainerStyle={styles.lgListContent}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <View>
+            <Text style={styles.lgTitle}>Liked Songs</Text>
+            <Text style={styles.lgCount}>
+              {likedSongs.length === 1 ? '1 song' : `${likedSongs.length} songs`}
+            </Text>
+            <View style={styles.lgActionRow}>
+              <Pressable style={styles.lgDownload} hitSlop={8}>
+                <Ionicons name="download-outline" size={24} color="#B3B3B3" />
+              </Pressable>
+              <View style={styles.lgActionRight}>
+                <Pressable style={styles.lgShuffle} hitSlop={8}>
+                  <Shuffle size={22} color="#1ED760" />
+                </Pressable>
+                <Pressable style={styles.lgPlayPrimary} onPress={handlePrimary}>
+                  {nowPlayingLiked ? (
+                    <Pause size={24} color="#000000" fill="#000000" />
+                  ) : (
+                    <Play size={24} color="#000000" fill="#000000" style={styles.lgPlayToken} />
+                  )}
+                </Pressable>
+              </View>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.lgChipsScroll}
+              contentContainerStyle={styles.lgChipsContent}
+            >
+              {LIKED_FILTERS.map((f) => {
+                const selected = chip === f;
+                return (
+                  <Pressable
+                    key={f}
+                    onPress={() => setChip(selected ? null : f)}
+                    style={[styles.lgChip, selected && styles.lgChipActive]}
+                  >
+                    <Text style={[styles.lgChipText, selected && styles.lgChipTextActive]}>{f}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable style={styles.lgAddRow}>
+              <View style={styles.lgAddIcon}>
+                <Plus size={20} color="#FFFFFF" />
+              </View>
+              <Text style={styles.lgAddLabel}>Add songs</Text>
+            </Pressable>
+          </View>
+        }
+        ListEmptyComponent={
+          <Text style={styles.lgEmpty}>
+            {q ? 'No matches found.' : 'No liked songs yet'}
+          </Text>
+        }
+        renderItem={renderRow}
+      />
+      <TrackOptionsSheet
+        track={sheetTrack}
+        visible={!!sheetTrack}
+        onClose={() => setSheetTrack(null)}
+        onAddToPlaylist={() => {
+          setPlaylistTrack(sheetTrack);
+          setSheetTrack(null);
+        }}
+        onRemove={() => {
+          if (sheetTrack) {
+            toggleLike(sheetTrack);
+          }
+          setSheetTrack(null);
+        }}
+        onQueue={() => {
+          if (sheetTrack) {
+            playTrack(sheetTrack, likedSongs);
+          }
+          setSheetTrack(null);
+        }}
+      />
+      <AddToPlaylistModal
+        track={playlistTrack}
+        visible={!!playlistTrack}
+        onClose={() => setPlaylistTrack(null)}
+      />
+    </View>
+  );
+}
+
 function LibraryScreen() {
   const {
     likedSongs,
@@ -732,8 +971,10 @@ function LibraryScreen() {
   };
 
   if (detail) {
-    const tracks =
-      detail.type === 'liked' ? likedSongs : selectedPlaylist ? selectedPlaylist.tracks : [];
+    if (detail.type === 'liked') {
+      return <LikedSongsScreen onBack={backToRoot} />;
+    }
+    const tracks = selectedPlaylist ? selectedPlaylist.tracks : [];
     return (
       <View style={styles.libraryScreen}>
         <View style={styles.libraryHeader}>
@@ -1173,7 +1414,7 @@ function NowPlayingModal({ visible, onClose }) {
                 <Ionicons name="chatbox-ellipses" size={24} color="#FFFFFF" />
               </Pressable>
               <Pressable hitSlop={12}>
-                <Ionicons name="airplay" size={24} color="#FFFFFF" />
+                <MaterialCommunityIcons name="airplay" size={24} color="#FFFFFF" />
               </Pressable>
               <Pressable hitSlop={12}>
                 <Ionicons name="list" size={24} color="#FFFFFF" />
@@ -2050,6 +2291,278 @@ disabled: {
   npEmptyText: {
     color: COLORS.textSecondary,
     fontSize: 16,
+  },
+  tosBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  tosSheet: {
+    backgroundColor: '#282828',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    paddingBottom: 32,
+    maxHeight: '85%',
+  },
+  tosPill: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  tosPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tosArtwork: {
+    width: 48,
+    height: 48,
+    borderRadius: 4,
+    backgroundColor: COLORS.card,
+  },
+  tosArtworkFallback: {
+    backgroundColor: '#7358FF',
+  },
+  tosPreviewText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  tosPreviewTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  tosPreviewArtist: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  tosDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: 4,
+  },
+  tosItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  tosItemLabel: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    marginLeft: 16,
+    flex: 1,
+  },
+  lgRoot: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  lgGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '55%',
+  },
+  lgNavRow: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  lgBack: {
+    padding: 8,
+  },
+  lgSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  lgSearchBox: {
+    flex: 1,
+    height: 36,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    marginRight: 8,
+  },
+  lgSearchInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    marginLeft: 8,
+    paddingVertical: 0,
+  },
+  lgSortBtn: {
+    height: 36,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  lgSortLabel: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  lgList: {
+    flex: 1,
+  },
+  lgListContent: {
+    paddingBottom: 32,
+  },
+  lgTitle: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 4,
+    paddingHorizontal: 16,
+  },
+  lgCount: {
+    color: '#B3B3B3',
+    fontSize: 12,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  lgActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  lgDownload: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#B3B3B3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lgActionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  lgShuffle: {
+    marginRight: 16,
+    padding: 4,
+  },
+  lgPlayPrimary: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#1ED760',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lgPlayToken: {
+    marginLeft: 2,
+  },
+  lgChipsScroll: {
+    flexGrow: 0,
+    marginBottom: 16,
+  },
+  lgChipsContent: {
+    paddingHorizontal: 16,
+  },
+  lgChip: {
+    height: 32,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: '#282828',
+    marginRight: 8,
+    justifyContent: 'center',
+  },
+  lgChipActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  lgChipText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  lgChipTextActive: {
+    color: '#000000',
+  },
+  lgAddRow: {
+    height: 56,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  lgAddIcon: {
+    width: 48,
+    height: 48,
+    backgroundColor: '#282828',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lgAddLabel: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  lgRow: {
+    height: 60,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  lgRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  lgRowArtwork: {
+    width: 48,
+    height: 48,
+    borderRadius: 4,
+    backgroundColor: COLORS.card,
+  },
+  lgRowArtworkFallback: {
+    backgroundColor: '#7358FF',
+  },
+  lgRowInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'center',
+  },
+  lgRowTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  lgRowTitleActive: {
+    color: '#1ED760',
+  },
+  lgRowArtist: {
+    color: '#B3B3B3',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  lgRowMore: {
+    padding: 4,
+  },
+  lgEmpty: {
+    color: '#B3B3B3',
+    marginTop: 24,
+    textAlign: 'center',
   },
   tabBar: {
     width: '100%',
