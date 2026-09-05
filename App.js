@@ -34,6 +34,7 @@ import {
   FlatList,
   Image,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -1484,30 +1485,78 @@ function ImportScreen({ onOpenImportedPlaylist }) {
   );
 }
 
+function SliderBar({ value, onValueChange, style, barStyle, fillStyle, hitSlop }) {
+  const widthRef = useRef(0);
+  const offsetRef = useRef(0);
+
+  const moveTo = (x) => {
+    const w = widthRef.current;
+    if (w <= 0 || !onValueChange) {
+      return;
+    }
+    onValueChange(Math.min(Math.max(x / w, 0), 1));
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (event) => {
+        offsetRef.current = event.nativeEvent.pageX - event.nativeEvent.locationX;
+        moveTo(event.nativeEvent.locationX);
+      },
+      onPanResponderMove: (event) => {
+        moveTo(event.nativeEvent.pageX - offsetRef.current);
+      },
+      onPanResponderRelease: () => {},
+      onPanResponderTerminate: () => {},
+    })
+  ).current;
+
+  const pct = `${Math.min(Math.max(value, 0), 1) * 100}%`;
+
+  return (
+    <View
+      style={[styles.sliderTouch, style]}
+      hitSlop={hitSlop}
+      onLayout={(event) => {
+        widthRef.current = event.nativeEvent.layout.width;
+      }}
+      {...panResponder.panHandlers}
+    >
+      <View style={barStyle}>
+        <View style={[fillStyle, { width: pct }]} />
+      </View>
+    </View>
+  );
+}
+
 function Scrubber({ position, duration, onSeek, large }) {
-  const [width, setWidth] = useState(0);
   const progress = duration > 0 ? Math.min(Math.max(position / duration, 0), 1) : 0;
   const trackStyle = large ? styles.scrubTrackLarge : styles.scrubTrack;
   const fillStyle = large ? styles.scrubFillLarge : styles.scrubFill;
-  const wrapStyle = large ? styles.scrubWrapLarge : undefined;
+  const touchStyle = large ? styles.scrubTouchLarge : styles.scrubTouch;
   const rightLabel = large
     ? `-${formatMillis(Math.max(duration - position, 0))}`
     : formatMillis(duration);
 
+  const handleSeek = (ratio) => {
+    if (onSeek && duration > 0) {
+      onSeek(ratio * duration);
+    }
+  };
+
   return (
-    <View style={wrapStyle}>
-      <Pressable
-        style={trackStyle}
-        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-        onPress={(event) => {
-          if (width > 0 && onSeek) {
-            const ratio = Math.min(Math.max(event.nativeEvent.locationX / width, 0), 1);
-            onSeek(ratio * duration);
-          }
-        }}
-      >
-        <View style={[fillStyle, { width: `${progress * 100}%` }]} />
-      </Pressable>
+    <View style={large ? styles.scrubWrapLarge : undefined}>
+      <SliderBar
+        value={progress}
+        onValueChange={handleSeek}
+        style={touchStyle}
+        barStyle={trackStyle}
+        fillStyle={fillStyle}
+        hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
+      />
       <View style={styles.scrubLabels}>
         <Text style={styles.scrubTime}>{formatMillis(position)}</Text>
         <Text style={styles.scrubTime}>{rightLabel}</Text>
@@ -1584,6 +1633,8 @@ function NowPlayingModal({ visible, onClose }) {
     playbackPosition,
     duration,
     playbackError,
+    volume,
+    setVolume,
     togglePlayPause,
     seekTo,
     playNext,
@@ -1678,9 +1729,14 @@ function NowPlayingModal({ visible, onClose }) {
             </View>
             <View style={styles.npVolumeRow}>
               <Ionicons name="volume-low" size={18} color="#FFFFFF" />
-              <View style={styles.npVolumeTrack}>
-                <View style={[styles.npVolumeFill, { width: '55%' }]} />
-              </View>
+              <SliderBar
+                value={volume}
+                onValueChange={setVolume}
+                style={styles.npVolumeTouch}
+                barStyle={styles.npVolumeTrack}
+                fillStyle={styles.npVolumeFill}
+                hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
+              />
               <Ionicons name="volume-high" size={22} color="#FFFFFF" />
             </View>
             <View style={styles.npDock}>
@@ -2825,11 +2881,25 @@ disabled: {
     fontWeight: '600',
     marginLeft: 16,
   },
+  sliderTouch: {
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  scrubTouch: {
+    width: '100%',
+    minHeight: 40,
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  scrubTouchLarge: {
+    width: '100%',
+    minHeight: 40,
+    justifyContent: 'center',
+  },
   scrubTrack: {
     height: 4,
     borderRadius: 2,
     backgroundColor: '#4d4d4d',
-    marginTop: 8,
     overflow: 'hidden',
   },
   scrubFill: {
@@ -3031,6 +3101,11 @@ disabled: {
     borderRadius: 1.5,
     backgroundColor: '#4d4d4d',
     overflow: 'hidden',
+  },
+  npVolumeTouch: {
+    flex: 1,
+    minHeight: 36,
+    justifyContent: 'center',
   },
   npVolumeFill: {
     height: 3,

@@ -22,6 +22,8 @@ interface PlayerContextValue {
   duration: number;
   isLoadingAudio: boolean;
   playbackError: string | null;
+  volume: number;
+  setVolume: (value: number) => void;
   playTrack: (track: Track, queue?: Track[]) => Promise<void>;
   togglePlayPause: () => void;
   seekTo: (millis: number) => Promise<void>;
@@ -36,6 +38,8 @@ interface PlayerContextValue {
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 
+const DEFAULT_VOLUME = 0.5;
+
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const player = useAudioPlayer(null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
@@ -45,12 +49,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [volume, setVolumeState] = useState(DEFAULT_VOLUME);
   const [queue, setQueue] = useState<Track[]>([]);
   const [queueIndex, setQueueIndex] = useState(-1);
   const [isAutoplayEnabled, setIsAutoplayEnabled] = useState(true);
   const [autoplayAddedIds, setAutoplayAddedIds] = useState<Set<string>>(new Set());
   const queueRef = useRef<Track[]>([]);
   const indexRef = useRef(-1);
+  const volumeRef = useRef(DEFAULT_VOLUME);
   const resolvingRef = useRef(false);
   const reportedErrorRef = useRef<string | null>(null);
   const playedSetRef = useRef<Set<string>>(new Set());
@@ -65,6 +71,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }).catch((error) => {
       console.warn('Failed to configure audio mode', error);
     });
+    try {
+      player.volume = DEFAULT_VOLUME;
+    } catch (error) {
+      console.warn('[player] Could not apply default volume.', error);
+    }
   }, []);
 
   useEffect(() => {
@@ -136,6 +147,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       });
       player.replace({ uri: resolvedUrl });
       player.seekTo(0);
+      player.volume = volumeRef.current;
       player.play();
       console.warn(
         `[audio] Playing "${track.title}" via ${resolvedProvider ?? 'unknown'} source.`
@@ -331,6 +343,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setVolume = (value: number) => {
+    const next = Math.min(Math.max(value, 0), 1);
+    volumeRef.current = next;
+    setVolumeState(next);
+    try {
+      player.volume = next;
+    } catch (error) {
+      console.warn('[player] Could not set volume.', error);
+    }
+  };
+
   const seekTo = async (millis: number) => {
     if (millis == null || !Number.isFinite(millis)) {
       return;
@@ -349,6 +372,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       duration,
       isLoadingAudio,
       playbackError,
+      volume,
+      setVolume,
       playTrack,
       togglePlayPause,
       seekTo,
@@ -367,6 +392,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       status.duration,
       isLoadingAudio,
       playbackError,
+      volume,
       queue,
       queueIndex,
       isAutoplayEnabled,
