@@ -1,16 +1,20 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import {
   Activity,
+  ArrowUpDown,
   Cast,
   ChevronDown,
   ChevronLeft,
+  Download,
   Heart,
   Home,
   Library,
   ListMusic,
   MoreHorizontal,
   Pause,
+  Pin,
   Play,
   Plus,
   Repeat,
@@ -23,6 +27,7 @@ import {
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Dimensions,
   FlatList,
   Image,
   Modal,
@@ -59,7 +64,26 @@ const COLORS = {
 const LIKED_GRADIENT = ['#450AF5', '#8E8EE5'];
 const HERO_GRADIENT = ['#D84000', '#503750'];
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const QUICK_TILE_WIDTH = Math.floor((SCREEN_WIDTH - 40) / 2);
+
 const FILTERS = ['All', 'Music', 'Podcasts'];
+
+const LIBRARY_FILTERS = ['Playlists', 'Podcasts', 'Albums', 'Downloaded'];
+
+const LIBRARY_ROWS = [
+  { key: 'chill', title: 'Chill Vibes', color: '#1E3264', subtitle: 'Playlist • SA' },
+  { key: 'road', title: 'Road Trip', color: '#E13300', subtitle: 'Playlist • SA', downloaded: true },
+  { key: 'workout', title: 'Workout', color: '#4E4E4E', subtitle: 'Playlist • SA', pinned: true },
+  {
+    key: 'throwback',
+    title: 'Throwback',
+    color: '#148A08',
+    subtitle: 'Playlist • SA',
+    downloaded: true,
+  },
+  { key: 'study', title: 'Study Session', color: '#8D67AB', subtitle: 'Playlist • SA' },
+];
 
 const quickTrack = (id, title, artist, album, artwork) => ({
   id,
@@ -313,7 +337,7 @@ function QuickPickTile({ item, onPress }) {
     return (
       <TouchableOpacity
         activeOpacity={0.7}
-        style={styles.quickTile}
+        style={[styles.quickTile, { width: QUICK_TILE_WIDTH }]}
         onPress={onPress}
       >
         <LinearGradient
@@ -333,7 +357,7 @@ function QuickPickTile({ item, onPress }) {
     );
   }
   return (
-    <TouchableOpacity activeOpacity={0.7} style={styles.quickTile} onPress={onPress}>
+    <TouchableOpacity activeOpacity={0.7} style={[styles.quickTile, { width: QUICK_TILE_WIDTH }]} onPress={onPress}>
       <Image source={{ uri: item.track.artwork }} style={styles.quickArtwork} />
       <View style={styles.quickTextWrap}>
         <Text style={styles.quickTitle} numberOfLines={2}>
@@ -381,7 +405,14 @@ function HeroSpotlight() {
           </Text>
         </View>
         <View style={styles.heroActions}>
-          <Pressable style={styles.heroAdd} hitSlop={8} onPress={() => toggleLike(SPOTLIGHT_TARGET)}>
+          <Pressable style={styles.heroMore} hitSlop={8}>
+            <MoreHorizontal size={22} color={COLORS.textSecondary} />
+          </Pressable>
+          <Pressable
+            style={styles.heroAdd}
+            hitSlop={8}
+            onPress={() => toggleLike(SPOTLIGHT_TARGET)}
+          >
             {liked ? (
               <Heart size={20} color={COLORS.green} fill={COLORS.green} />
             ) : (
@@ -389,7 +420,7 @@ function HeroSpotlight() {
             )}
           </Pressable>
           <Pressable style={styles.heroPlay} onPress={() => playTrack(SPOTLIGHT_TARGET)}>
-            <Play size={20} color="#000000" fill="#000000" />
+            <Play size={22} color="#000000" fill="#000000" />
           </Pressable>
         </View>
       </View>
@@ -646,24 +677,6 @@ function SearchScreen() {
   );
 }
 
-function LibraryRow({ icon: Icon, title, subtitle, onPress }) {
-  return (
-    <Pressable style={styles.libraryRow} onPress={onPress}>
-      <View style={styles.libraryRowIcon}>
-        <Icon size={18} color={COLORS.white} />
-      </View>
-      <View style={styles.libraryRowText}>
-        <Text style={styles.libraryRowTitle} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={styles.libraryRowSubtitle} numberOfLines={1}>
-          {subtitle}
-        </Text>
-      </View>
-    </Pressable>
-  );
-}
-
 function LibraryScreen() {
   const {
     likedSongs,
@@ -678,6 +691,8 @@ function LibraryScreen() {
   const [detail, setDetail] = useState(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
+  const [libraryFilter, setLibraryFilter] = useState('Playlists');
+  const [viewMode, setViewMode] = useState('list');
 
   const selectedPlaylist =
     detail && detail.type === 'playlist'
@@ -744,16 +759,83 @@ function LibraryScreen() {
     );
   }
 
+  const libraryItems = [
+    { type: 'liked', key: 'liked', title: 'Liked Songs', subtitle: `Playlist • ${likedSongs.length} songs` },
+    ...LIBRARY_ROWS.map((item) => ({
+      type: 'static',
+      key: item.key,
+      title: item.title,
+      subtitle: item.subtitle,
+      color: item.color,
+      pinned: item.pinned,
+      downloaded: item.downloaded,
+    })),
+    ...playlists.map((item) => ({
+      type: 'playlist',
+      key: item.id,
+      title: item.name,
+      subtitle: `Playlist • ${item.tracks.length} songs`,
+      playlistId: item.id,
+    })),
+  ];
+
+  const filteredItems = libraryFilter === 'Playlists' ? libraryItems : libraryItems.filter(i => i.type === 'liked');
+
   return (
     <View style={styles.libraryScreen}>
       <View style={styles.libraryHeader}>
-        <Text style={[styles.libraryTitle, styles.libraryRootTitle]}>Your Library</Text>
+        <View style={styles.libraryAvatar}>
+          <Text style={styles.libraryAvatarLetter}>S</Text>
+        </View>
+        <Text style={[styles.libraryTitle, { fontSize: 24, flex: 1 }]}>Your Library</Text>
+        <View style={styles.libraryHeaderActions}>
+          <Pressable style={styles.libraryHeaderBtn} hitSlop={8}>
+            <Ionicons name="search" size={22} color={COLORS.white} />
+          </Pressable>
+          <Pressable
+            style={styles.libraryHeaderBtn}
+            onPress={() => setCreating((v) => !v)}
+            hitSlop={8}
+          >
+            <Ionicons name="add" size={26} color={COLORS.white} />
+          </Pressable>
+        </View>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.libraryPillsScroll}
+        contentContainerStyle={styles.libraryPillsContent}
+      >
+        {LIBRARY_FILTERS.map((f) => {
+          const selected = libraryFilter === f;
+          return (
+            <Pressable
+              key={f}
+              onPress={() => setLibraryFilter(f)}
+              style={[styles.libraryPill, selected && styles.libraryPillActive]}
+            >
+              <Text style={[styles.libraryPillText, selected && styles.libraryPillTextActive]}>
+                {f}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      <View style={styles.libraryToolbar}>
+        <Pressable style={styles.libraryToolbarLeft} hitSlop={8}>
+          <ArrowUpDown size={16} color={COLORS.white} />
+          <Text style={styles.libraryToolbarText}>Recents</Text>
+        </Pressable>
         <Pressable
-          style={styles.libraryAdd}
-          onPress={() => setCreating((value) => !value)}
-          hitSlop={10}
+          onPress={() => setViewMode((v) => (v === 'list' ? 'grid' : 'list'))}
+          hitSlop={8}
         >
-          <Plus size={22} color={COLORS.white} />
+          <Ionicons
+            name={viewMode === 'list' ? 'grid-outline' : 'list'}
+            size={22}
+            color={COLORS.white}
+          />
         </Pressable>
       </View>
       {creating ? (
@@ -778,31 +860,74 @@ function LibraryScreen() {
         </View>
       ) : null}
       <FlatList
-        data={playlists}
-        keyExtractor={(item) => item.id}
+        data={filteredItems}
+        keyExtractor={(item) => item.key}
         contentContainerStyle={styles.libraryList}
-        ListHeaderComponent={
-          <LibraryRow
-            icon={Heart}
-            title="Liked Songs"
-            subtitle={
-              likedSongs.length === 1 ? 'Playlist · 1 song' : `Playlist · ${likedSongs.length} songs`
-            }
-            onPress={() => setDetail({ type: 'liked' })}
-          />
+        ListEmptyComponent={
+          libraryFilter !== 'Playlists' ? (
+            <Text style={styles.libraryEmpty}>Nothing here yet.</Text>
+          ) : (
+            <Text style={styles.libraryEmpty}>No songs yet</Text>
+          )
         }
-        renderItem={({ item }) => (
-          <LibraryRow
-            icon={ListMusic}
-            title={item.name}
-            subtitle={
-              item.tracks.length === 1
-                ? 'Playlist · 1 song'
-                : `Playlist · ${item.tracks.length} songs`
-            }
-            onPress={() => setDetail({ type: 'playlist', id: item.id, name: item.name })}
-          />
-        )}
+        renderItem={({ item }) => {
+          if (item.type === 'liked') {
+            return (
+              <Pressable style={styles.libRow} onPress={() => setDetail({ type: 'liked' })}>
+                <LinearGradient
+                  colors={LIKED_GRADIENT}
+                  style={styles.libCover}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Heart size={20} color={COLORS.white} fill={COLORS.white} />
+                </LinearGradient>
+                <View style={styles.libRowInfo}>
+                  <Text style={styles.libRowTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <View style={styles.libRowSubtitleRow}>
+                    <Download size={12} color={COLORS.green} />
+                    <Text style={styles.libRowSubtitle}>{item.subtitle}</Text>
+                  </View>
+                </View>
+              </Pressable>
+            );
+          }
+          if (item.type === 'static') {
+            return (
+              <View style={styles.libRow}>
+                <View style={[styles.libCover, { backgroundColor: item.color }]} />
+                <View style={styles.libRowInfo}>
+                  <Text style={styles.libRowTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <View style={styles.libRowSubtitleRow}>
+                    {item.pinned ? <Pin size={12} color={COLORS.green} /> : null}
+                    {item.downloaded ? <Download size={12} color={COLORS.green} /> : null}
+                    <Text style={styles.libRowSubtitle}>{item.subtitle}</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          }
+          return (
+            <Pressable
+              style={styles.libRow}
+              onPress={() => setDetail({ type: 'playlist', id: item.playlistId, title: item.title })}
+            >
+              <View style={[styles.libCover, { backgroundColor: COLORS.card }]} />
+              <View style={styles.libRowInfo}>
+                <Text style={styles.libRowTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text style={styles.libRowSubtitle} numberOfLines={1}>
+                  {item.subtitle}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        }}
       />
     </View>
   );
@@ -835,6 +960,9 @@ function Scrubber({ position, duration, onSeek, large }) {
   const trackStyle = large ? styles.scrubTrackLarge : styles.scrubTrack;
   const fillStyle = large ? styles.scrubFillLarge : styles.scrubFill;
   const wrapStyle = large ? styles.scrubWrapLarge : undefined;
+  const rightLabel = large
+    ? `-${formatMillis(Math.max(duration - position, 0))}`
+    : formatMillis(duration);
 
   return (
     <View style={wrapStyle}>
@@ -852,7 +980,7 @@ function Scrubber({ position, duration, onSeek, large }) {
       </Pressable>
       <View style={styles.scrubLabels}>
         <Text style={styles.scrubTime}>{formatMillis(position)}</Text>
-        <Text style={styles.scrubTime}>{formatMillis(duration)}</Text>
+        <Text style={styles.scrubTime}>{rightLabel}</Text>
       </View>
     </View>
   );
@@ -934,7 +1062,7 @@ function NowPlayingModal({ visible, onClose }) {
   const { isLiked, toggleLike } = useLibrary();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const artSize = Math.min(width - 48, 380);
+  const artSize = Math.min(width - 80, 340);
 
   return (
     <Modal
@@ -946,17 +1074,19 @@ function NowPlayingModal({ visible, onClose }) {
       <View
         style={[
           styles.npRoot,
-          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 },
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
         ]}
       >
-        <View style={styles.npTopBar}>
-          <Pressable style={styles.npChevron} onPress={onClose} hitSlop={12}>
-            <ChevronDown size={26} color={COLORS.textPrimary} />
+        <View style={styles.npHandleRow}>
+          <Pressable style={styles.npCloseBtn} onPress={onClose} hitSlop={12}>
+            <ChevronDown size={28} color={COLORS.textPrimary} />
           </Pressable>
-          <Text style={styles.npContext}>PLAYING FROM PLAYLIST</Text>
+        </View>
+        <View style={styles.npDragHandle}>
+          <View style={styles.npDragPill} />
         </View>
         {currentTrack ? (
-          <>
+          <View style={styles.npBody}>
             <View style={styles.npArtworkWrap}>
               {currentTrack.artwork ? (
                 <Image
@@ -997,11 +1127,8 @@ function NowPlayingModal({ visible, onClose }) {
             </View>
             <Scrubber position={playbackPosition} duration={duration} onSeek={seekTo} large />
             <View style={styles.npControls}>
-              <Pressable hitSlop={10}>
-                <Shuffle size={24} color={COLORS.textSecondary} />
-              </Pressable>
               <Pressable onPress={playPrevious} hitSlop={10}>
-                <SkipBack size={34} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
+                <Ionicons name="play-skip-back" size={36} color="#FFFFFF" />
               </Pressable>
               <Pressable
                 style={styles.npPlay}
@@ -1009,32 +1136,34 @@ function NowPlayingModal({ visible, onClose }) {
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 {isPlaying ? (
-                  <Pause size={34} color="#000000" fill="#000000" />
+                  <Ionicons name="pause" size={64} color="#FFFFFF" />
                 ) : (
-                  <Play
-                    size={34}
-                    color="#000000"
-                    fill="#000000"
-                    style={styles.npPlayToken}
-                  />
+                  <Ionicons name="play" size={64} color="#FFFFFF" style={styles.npPlayToken} />
                 )}
               </Pressable>
               <Pressable onPress={playNext} hitSlop={10}>
-                <SkipForward size={34} color={COLORS.textPrimary} fill={COLORS.textPrimary} />
-              </Pressable>
-              <Pressable hitSlop={10}>
-                <Repeat size={24} color={COLORS.textSecondary} />
+                <Ionicons name="play-skip-forward" size={36} color="#FFFFFF" />
               </Pressable>
             </View>
-            <View style={styles.npUtilities}>
-              <Pressable hitSlop={10}>
-                <Cast size={26} color={COLORS.textSecondary} />
+            <View style={styles.npVolumeRow}>
+              <Ionicons name="volume-low" size={18} color="#FFFFFF" />
+              <View style={styles.npVolumeTrack}>
+                <View style={[styles.npVolumeFill, { width: '55%' }]} />
+              </View>
+              <Ionicons name="volume-high" size={22} color="#FFFFFF" />
+            </View>
+            <View style={styles.npDock}>
+              <Pressable hitSlop={12}>
+                <Ionicons name="chatbox-ellipses" size={24} color="#FFFFFF" />
               </Pressable>
-              <Pressable hitSlop={10}>
-                <ListMusic size={26} color={COLORS.textSecondary} />
+              <Pressable hitSlop={12}>
+                <Ionicons name="airplay" size={24} color="#FFFFFF" />
+              </Pressable>
+              <Pressable hitSlop={12}>
+                <Ionicons name="list" size={24} color="#FFFFFF" />
               </Pressable>
             </View>
-          </>
+          </View>
         ) : (
           <View style={styles.npEmpty}>
             <Text style={styles.npEmptyText}>Nothing is playing</Text>
@@ -1193,7 +1322,6 @@ header: {
     paddingHorizontal: 16,
   },
   quickTile: {
-    width: '48.5%',
     height: 56,
     backgroundColor: '#2A2A2A',
     borderRadius: 4,
@@ -1265,11 +1393,11 @@ header: {
     backgroundColor: '#242424',
     borderRadius: 8,
     overflow: 'hidden',
-    height: 120,
+    height: 140,
   },
   heroArtwork: {
-    width: 120,
-    height: 120,
+    width: 140,
+    height: 140,
   },
   heroMeta: {
     flex: 1,
@@ -1295,8 +1423,14 @@ header: {
     alignItems: 'center',
     justifyContent: 'space-between',
     alignSelf: 'stretch',
-    paddingVertical: 12,
-    paddingRight: 12,
+    paddingVertical: 16,
+    paddingRight: 16,
+  },
+  heroMore: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heroAdd: {
     width: 36,
@@ -1491,7 +1625,6 @@ disabled: {
   },
   libraryScreen: {
     flex: 1,
-    paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 8,
   },
@@ -1499,19 +1632,112 @@ disabled: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 4,
+    marginBottom: 16,
+    paddingHorizontal: 16,
   },
-  libraryRootTitle: {
-    flex: 1,
+  libraryAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.cardPress,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  libraryAvatarLetter: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   libraryTitle: {
     color: COLORS.textPrimary,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     flex: 1,
   },
-  libraryAdd: {
+  libraryHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  libraryHeaderBtn: {
     padding: 4,
+  },
+  libraryPillsScroll: {
+    flexGrow: 0,
+    marginBottom: 12,
+  },
+  libraryPillsContent: {
+    paddingHorizontal: 16,
+  },
+  libraryPill: {
+    height: 32,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: '#282828',
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  libraryPillActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  libraryPillText: {
+    color: COLORS.textPrimary,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  libraryPillTextActive: {
+    color: '#000000',
+  },
+  libraryToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginVertical: 8,
+  },
+  libraryToolbarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  libraryToolbarText: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  libRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 64,
+    gap: 12,
+    paddingHorizontal: 16,
+  },
+  libCover: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  libRowInfo: {
+    flex: 1,
+  },
+  libRowTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  libRowSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  libRowSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
   },
   librarySubtitle: {
     color: COLORS.textSecondary,
@@ -1527,6 +1753,7 @@ disabled: {
     gap: 8,
     marginTop: 8,
     marginBottom: 8,
+    paddingHorizontal: 16,
   },
   libraryCreateInput: {
     flex: 1,
@@ -1545,33 +1772,6 @@ disabled: {
   libraryCreateLabel: {
     color: '#121212',
     fontWeight: '600',
-  },
-  libraryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-  },
-  libraryRowIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 6,
-    backgroundColor: COLORS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  libraryRowText: {
-    flex: 1,
-  },
-  libraryRowTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  libraryRowSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 1,
   },
   libraryEmpty: {
     color: COLORS.textSecondary,
@@ -1643,8 +1843,8 @@ disabled: {
     marginTop: 4,
   },
   scrubTime: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
+    color: '#888888',
+    fontSize: 12,
   },
   miniPlayer: {
     position: 'absolute',
@@ -1721,27 +1921,42 @@ disabled: {
     paddingHorizontal: 24,
     alignItems: 'center',
   },
-  npTopBar: {
+  npHandleRow: {
+    width: '100%',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  npChevron: {
-    padding: 4,
-  },
-  npContext: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 1,
     marginTop: 4,
   },
+  npCloseBtn: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    padding: 4,
+  },
+  npDragHandle: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  npDragPill: {
+    width: 36,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  npBody: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+  },
   npArtworkWrap: {
-    elevation: 6,
+    marginTop: 24,
+    elevation: 10,
+    shadowColor: '#000000',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
   },
   npArtwork: {
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
     backgroundColor: COLORS.card,
   },
   npArtworkFallback: {
@@ -1750,7 +1965,7 @@ disabled: {
   npMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 28,
+    marginTop: 24,
     width: '100%',
     gap: 16,
   },
@@ -1758,12 +1973,12 @@ disabled: {
     flex: 1,
   },
   npTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 22,
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   npArtist: {
-    color: COLORS.textSecondary,
+    color: '#A0A0A0',
     fontSize: 16,
     marginTop: 4,
   },
@@ -1775,28 +1990,49 @@ disabled: {
   npControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 36,
+    justifyContent: 'center',
+    gap: 48,
+    marginTop: 32,
     width: '100%',
   },
   npPlay: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: COLORS.white,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   npPlayToken: {
-    marginLeft: 3,
+    marginLeft: 6,
   },
-  npUtilities: {
+  npVolumeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    marginTop: 24,
+  },
+  npVolumeTrack: {
+    flex: 1,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#4d4d4d',
+    overflow: 'hidden',
+  },
+  npVolumeFill: {
+    height: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  npDock: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
     marginTop: 'auto',
+    paddingTop: 16,
     paddingBottom: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.25)',
   },
   npEmpty: {
     flex: 1,
