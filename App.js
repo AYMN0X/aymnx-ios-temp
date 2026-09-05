@@ -40,7 +40,7 @@ import {
 } from 'react-native-safe-area-context';
 import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
-import { searchITunes } from './src/services/musicApi';
+import { fetchPopularHits, fetchTrendingNow, searchITunes } from './src/services/musicApi';
 
 const COLORS = {
   background: '#121212',
@@ -130,6 +130,77 @@ function HorizontalRow({ title, data }) {
   );
 }
 
+function TrackCard({ track, onPress }) {
+  return (
+    <Pressable style={styles.card} onPress={onPress}>
+      {track.artwork ? (
+        <Image source={{ uri: track.artwork }} style={styles.cardArtwork} />
+      ) : (
+        <View style={[styles.cardArtwork, { backgroundColor: '#503750' }]} />
+      )}
+      <Text style={styles.cardTitle} numberOfLines={1}>
+        {track.title}
+      </Text>
+      <Text style={styles.cardSubtitle} numberOfLines={1}>
+        {track.artist}
+      </Text>
+    </Pressable>
+  );
+}
+
+function TrackCarousel({ title, fetchTracks }) {
+  const [tracks, setTracks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const { playTrack } = usePlayer();
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      setError(false);
+      try {
+        const list = await fetchTracks();
+        if (active) {
+          setTracks(list);
+        }
+      } catch (e) {
+        if (active) {
+          setError(true);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [fetchTracks]);
+
+  return (
+    <View style={styles.rowSection}>
+      <SectionTitle title={title} />
+      {loading ? (
+        <Activity size={16} color={COLORS.white} style={styles.rowLoading} />
+      ) : error || tracks.length === 0 ? (
+        <Text style={styles.rowError}>Couldn't load this section right now.</Text>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.rowContent}
+        >
+          {tracks.map((track) => (
+            <TrackCard key={track.id} track={track} onPress={() => playTrack(track, tracks)} />
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
 function FilterChips({ active, onChange }) {
   return (
     <ScrollView
@@ -186,6 +257,8 @@ function HomeScreen({ activeFilter, onFilterChange }) {
       )}
       ListFooterComponent={
         <View>
+          <TrackCarousel title="Trending Now" fetchTracks={fetchTrendingNow} />
+          <TrackCarousel title="Popular Hits" fetchTracks={fetchPopularHits} />
           <HorizontalRow title="Made for you" data={PLAYLISTS} />
           <HorizontalRow title="Popular albums" data={ALBUMS} />
           <HorizontalRow title="Podcasts to try" data={PODCASTS} />
@@ -903,6 +976,15 @@ const styles = StyleSheet.create({
   },
   rowSection: {
     marginTop: 20,
+  },
+  rowLoading: {
+    marginVertical: 24,
+    alignSelf: 'center',
+  },
+  rowError: {
+    color: COLORS.textSecondary,
+    marginVertical: 16,
+    textAlign: 'center',
   },
   rowContent: {
     paddingRight: 16,

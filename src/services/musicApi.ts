@@ -43,12 +43,20 @@ interface PipedStreamsResponse {
 
 const ARTWORK_HIRES_SUFFIX = '600x600bb.jpg';
 
-export async function searchITunes(query: string): Promise<Track[]> {
+export async function fetchTrendingNow(): Promise<Track[]> {
+  return searchITunes('trending now', 30);
+}
+
+export async function fetchPopularHits(): Promise<Track[]> {
+  return searchITunes('popular hits', 30);
+}
+
+export async function searchITunes(query: string, limit = 25): Promise<Track[]> {
   const term = query.trim();
   if (!term) {
     return [];
   }
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=song&limit=25`;
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=song&limit=${limit}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`iTunes search failed with status ${response.status}`);
