@@ -273,6 +273,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [status.didJustFinish, isAutoplayEnabled, ensureAutoplayTracks]);
 
   useEffect(() => {
+    if (!currentTrack) {
+      try {
+        player.clearLockScreenControls();
+      } catch (error) {
+        console.warn('[player] Could not clear lock screen controls.', error);
+      }
+      return;
+    }
+    const local = downloadedTracks.find((item) => item.id === currentTrack.id);
+    const artworkUrl = local?.localArtworkUri || currentTrack.artwork;
+    try {
+      player.setActiveForLockScreen(true, {
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        albumTitle: currentTrack.album,
+        artworkUrl,
+      });
+    } catch (error) {
+      console.warn('[player] Could not update lock screen metadata.', error);
+    }
+  }, [currentTrack, downloadedTracks]);
+
+  useEffect(() => {
     if (user && currentTrack) {
       storage
         .writeLastPlayedTrack(user.id, currentTrack)
