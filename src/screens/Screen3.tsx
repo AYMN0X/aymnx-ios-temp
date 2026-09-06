@@ -1,7 +1,6 @@
 import * as React from "react";
 import {
   Image,
-  ImageBackground,
   Modal,
   Pressable,
   SafeAreaView,
@@ -103,6 +102,14 @@ export const Screen3: React.FC<Screen3Props> = ({
     }
   };
 
+  const likedPlaylist = isLikedPlaylist || displayTracks.every((track) => isLiked(track.id));
+  const toggleLikeCurrent = async () => {
+    if (displayTracks.length === 0) {
+      return;
+    }
+    await toggleLike(displayTracks[0]);
+  };
+
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [sheetView, setSheetView] = React.useState<"options" | "details">("options");
   const [isEditing, setIsEditing] = React.useState(false);
@@ -197,26 +204,17 @@ export const Screen3: React.FC<Screen3Props> = ({
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
+      <LinearGradient
+        colors={["#3b156b", "#0F0817"]}
+        locations={[0, 0.45]}
+        style={StyleSheet.absoluteFill}
+      />
 
-      <View style={[styles.heroContainer, { backgroundColor: coverBackground }]}>
-        {effectiveCover && effectiveCover.length > 0 ? (
-          <ImageBackground
-            source={{ uri: effectiveCover }}
-            style={styles.heroImageCover}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.heroGradient, { backgroundColor: coverBackground, opacity: 0.45 }]} />
-        )}
-        <LinearGradient
-          colors={["transparent", "rgba(15, 8, 23, 0.6)", "#0F0817"]}
-          locations={[0, 0.6, 1]}
-          style={styles.heroFade}
-        />
-        <LinearGradient
-          colors={["rgba(15, 8, 23, 0.45)", "transparent"]}
-          style={styles.heroTopFade}
-        />
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <SafeAreaView style={styles.safeTop}>
           <View style={styles.topNav}>
             <TouchableOpacity onPress={onBack} style={styles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -244,23 +242,52 @@ export const Screen3: React.FC<Screen3Props> = ({
             )}
           </View>
         </SafeAreaView>
-      </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.playlistMetaRow}>
-          <View style={styles.metaInfo}>
-            <Text style={styles.playlistTitle}>{displayTitle}</Text>
-            <Text style={styles.playlistSubtitle}>{displaySubtitle}</Text>
-          </View>
+        {effectiveCover && effectiveCover.length > 0 ? (
+          <Image source={{ uri: effectiveCover }} style={styles.artworkCard} />
+        ) : (
+          <View style={[styles.artworkCard, { backgroundColor: coverBackground }]} />
+        )}
 
-          <View style={styles.metaActions}>
-            <TouchableOpacity onPress={handlePlayAll} style={styles.playButton} activeOpacity={0.8}>
-              <Ionicons name={isPlaying ? "pause" : "play"} size={22} color="#FFFFFF" style={{ marginLeft: isPlaying ? 0 : 2 }} />
-            </TouchableOpacity>
+        <View style={styles.metaBlock}>
+          <Text style={styles.playlistTitle}>{displayTitle}</Text>
+          <Text style={styles.playlistSubtitle}>{displaySubtitle}</Text>
+
+          <View style={styles.actionRow}>
+            <View style={styles.actionLeft}>
+              <TouchableOpacity onPress={toggleLikeCurrent} hitSlop={8} style={styles.iconButton}>
+                <Ionicons
+                  name={likedPlaylist ? "heart" : "heart-outline"}
+                  size={24}
+                  color={likedPlaylist ? Color.accent : Color.textPrimary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDownload} hitSlop={8} style={styles.iconButton} disabled={isDownloading || allDownloaded}>
+                <Ionicons
+                  name={allDownloaded ? "checkmark-circle" : "download-outline"}
+                  size={22}
+                  color={isDownloading || allDownloaded ? Color.accent : Color.textPrimary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setSheetView("options");
+                  setSheetOpen(true);
+                }}
+                hitSlop={8}
+                style={styles.iconButton}
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.actionRight}>
+              <TouchableOpacity onPress={handlePlayAll} hitSlop={8} style={styles.iconButton}>
+                <Ionicons name="shuffle" size={24} color={Color.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handlePlayAll} style={styles.playButton} activeOpacity={0.8}>
+                <Ionicons name={isPlaying ? "pause" : "play"} size={28} color="#FFFFFF" style={{ marginLeft: isPlaying ? 0 : 2 }} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -538,45 +565,13 @@ const styles = StyleSheet.create({
   safeTop: {
     zIndex: 10,
   },
-  heroContainer: {
-    height: 220,
-    justifyContent: "flex-start",
-    position: "relative",
-  },
-  heroImageCover: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  heroGradient: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  heroFade: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 120,
-  },
-  heroTopFade: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 90,
-  },
   topNav: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 10,
+    paddingBottom: 8,
   },
   iconButton: {
     width: 36,
@@ -589,47 +584,65 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Color.accent,
   },
+  artworkCard: {
+    width: 220,
+    height: 220,
+    alignSelf: "center",
+    marginTop: 24,
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  metaBlock: {
+    marginTop: 20,
+  },
   scrollView: {
     flex: 1,
-    marginTop: -20,
   },
   scrollContent: {
     backgroundColor: "transparent",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingHorizontal: 16,
+    paddingTop: 12,
     paddingBottom: 90,
-    gap: 24,
+    gap: 20,
     minHeight: "100%",
-  },
-  playlistMetaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  metaInfo: {
-    gap: 4,
   },
   playlistTitle: {
     fontSize: 24,
     fontWeight: "700",
     color: Color.textPrimary,
+    marginTop: 20,
+    paddingHorizontal: 0,
   },
   playlistSubtitle: {
     fontSize: 13,
     color: Color.textSecondary,
     fontWeight: "500",
+    marginTop: 6,
   },
-  metaActions: {
+  actionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    justifyContent: "space-between",
+    marginTop: 16,
+  },
+  actionLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  actionRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   playButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: Color.accent,
     justifyContent: "center",
     alignItems: "center",
