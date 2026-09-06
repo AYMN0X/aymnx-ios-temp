@@ -96,8 +96,8 @@ export const Screen3: React.FC<Screen3Props> = ({
   };
 
   const [sheetOpen, setSheetOpen] = React.useState(false);
-  const [editOpen, setEditOpen] = React.useState(false);
-  const [detailsOpen, setDetailsOpen] = React.useState(false);
+  const [sheetView, setSheetView] = React.useState<"options" | "details">("options");
+  const [isEditing, setIsEditing] = React.useState(false);
   const [detailsName, setDetailsName] = React.useState("");
   const [detailsDescription, setDetailsDescription] = React.useState("");
   const [detailsCover, setDetailsCover] = React.useState("");
@@ -119,7 +119,7 @@ export const Screen3: React.FC<Screen3Props> = ({
     setDetailsName(livePlaylist?.name ?? displayTitle);
     setDetailsDescription(livePlaylist?.description ?? "");
     setDetailsCover(livePlaylist?.coverUrl ?? coverImage ?? "");
-    setDetailsOpen(true);
+    setSheetView("details");
   };
 
   const pickCoverImage = async () => {
@@ -144,7 +144,7 @@ export const Screen3: React.FC<Screen3Props> = ({
       return;
     }
     await updatePlaylistDetails(playlistId, trimmed, detailsDescription.trim(), detailsCover || undefined);
-    setDetailsOpen(false);
+    setSheetView("options");
   };
 
   const moveTrack = (index: number, delta: number) => {
@@ -180,13 +180,26 @@ export const Screen3: React.FC<Screen3Props> = ({
             <TouchableOpacity onPress={onBack} style={styles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="chevron-back" size={26} color={Color.textPrimary} />
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setSheetOpen(true)}
-              style={styles.iconButton}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
-            </TouchableOpacity>
+            {isEditing ? (
+              <TouchableOpacity
+                onPress={() => setIsEditing(false)}
+                style={styles.iconButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.doneButtonText}>Done</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => {
+                  setSheetView("options");
+                  setSheetOpen(true);
+                }}
+                style={styles.iconButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
+              </TouchableOpacity>
+            )}
           </View>
         </SafeAreaView>
       </View>
@@ -215,40 +228,72 @@ export const Screen3: React.FC<Screen3Props> = ({
           ) : (
             displayTracks.map((track, index) => {
               const artwork = artworkFor(track);
-              const isCurrent = currentTrack?.id === track.id;
+              const isCurrent = !isEditing && currentTrack?.id === track.id;
               const liked = isLiked(track.id);
               return (
-                <TouchableOpacity
-                  key={track.id}
-                  style={[styles.trackRow, isCurrent && styles.trackRowActive]}
-                  onPress={() => playTrack(track, displayTracks)}
-                  activeOpacity={0.7}
-                >
-                  {artwork ? (
-                    <Image source={{ uri: artwork }} style={styles.trackArtwork} />
-                  ) : (
-                    <View style={[styles.trackArtwork, { backgroundColor: FALLBACK_COLORS[index % FALLBACK_COLORS.length] }]} />
-                  )}
-                  <View style={styles.trackDetails}>
-                    <Text
-                      style={[styles.trackTitle, isCurrent && styles.trackTitleCurrent]}
-                      numberOfLines={1}
-                    >
-                      {track.title}
-                    </Text>
-                    <Text style={[styles.trackArtist, isCurrent && styles.trackArtistCurrent]} numberOfLines={1}>
-                      {track.artist}
-                      {track.album ? ` • ${track.album}` : ""}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => toggleLike(track)} hitSlop={10} style={styles.likeButton}>
-                    <Ionicons
-                      name={liked ? "heart" : "heart-outline"}
-                      size={20}
-                      color={liked ? Color.accent : Color.textSecondary}
-                    />
+                <View key={track.id} style={[styles.trackRow, isCurrent && styles.trackRowActive]}>
+                  <TouchableOpacity
+                    style={styles.trackRowMain}
+                    onPress={() => playTrack(track, displayTracks)}
+                    disabled={isEditing}
+                    activeOpacity={0.7}
+                  >
+                    {artwork ? (
+                      <Image source={{ uri: artwork }} style={styles.trackArtwork} />
+                    ) : (
+                      <View style={[styles.trackArtwork, { backgroundColor: FALLBACK_COLORS[index % FALLBACK_COLORS.length] }]} />
+                    )}
+                    <View style={styles.trackDetails}>
+                      <Text
+                        style={[styles.trackTitle, isCurrent && styles.trackTitleCurrent]}
+                        numberOfLines={1}
+                      >
+                        {track.title}
+                      </Text>
+                      <Text style={[styles.trackArtist, isCurrent && styles.trackArtistCurrent]} numberOfLines={1}>
+                        {track.artist}
+                        {track.album ? ` • ${track.album}` : ""}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
-                </TouchableOpacity>
+                  {isEditing ? (
+                    <View style={styles.editControls}>
+                      <TouchableOpacity
+                        onPress={() => moveTrack(index, -1)}
+                        disabled={index === 0}
+                        hitSlop={6}
+                      >
+                        <Ionicons
+                          name="chevron-up"
+                          size={20}
+                          color={index === 0 ? Color.textSecondary : Color.textPrimary}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => moveTrack(index, 1)}
+                        disabled={index === displayTracks.length - 1}
+                        hitSlop={6}
+                      >
+                        <Ionicons
+                          name="chevron-down"
+                          size={20}
+                          color={index === displayTracks.length - 1 ? Color.textSecondary : Color.textPrimary}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => removeTrack(track.id)} hitSlop={6}>
+                        <Ionicons name="trash-outline" size={20} color="#E05A47" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity onPress={() => toggleLike(track)} hitSlop={10} style={styles.likeButton}>
+                      <Ionicons
+                        name={liked ? "heart" : "heart-outline"}
+                        size={20}
+                        color={liked ? Color.accent : Color.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
               );
             })
           )}
@@ -257,10 +302,18 @@ export const Screen3: React.FC<Screen3Props> = ({
 
       <Modal visible={sheetOpen} transparent animationType="slide" onRequestClose={() => setSheetOpen(false)}>
         <View style={styles.sheetOverlay}>
-          <Pressable style={styles.sheetBackdrop} onPress={() => setSheetOpen(false)} />
+          <Pressable
+            style={styles.sheetBackdrop}
+            onPress={() => {
+              setSheetView("options");
+              setSheetOpen(false);
+            }}
+          />
           <View style={styles.sheet}>
             <View style={styles.dragBar} />
-            <View style={styles.sheetHeader}>
+            {sheetView === "options" ? (
+              <>
+                <View style={styles.sheetHeader}>
               {effectiveCover && effectiveCover.length > 0 ? (
                 <Image source={{ uri: effectiveCover }} style={styles.sheetArtwork} />
               ) : (
@@ -308,7 +361,11 @@ export const Screen3: React.FC<Screen3Props> = ({
               <>
                 <TouchableOpacity
                   style={styles.sheetAction}
-                  onPress={() => setEditOpen(true)}
+                  onPress={() => {
+                    setSheetOpen(false);
+                    setSheetView("options");
+                    setIsEditing(true);
+                  }}
                   activeOpacity={0.7}
                 >
                   <Ionicons name="list-outline" size={22} color={Color.textPrimary} />
@@ -320,162 +377,91 @@ export const Screen3: React.FC<Screen3Props> = ({
                 </TouchableOpacity>
               </>
             ) : null}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={editOpen} transparent animationType="slide" onRequestClose={() => setEditOpen(false)}>
-        <View style={styles.sheetOverlay}>
-          <Pressable style={styles.sheetBackdrop} onPress={() => setEditOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.dragBar} />
-            <View style={styles.editHeader}>
-              <TouchableOpacity onPress={() => setEditOpen(false)} hitSlop={10}>
-                <Ionicons name="close" size={24} color={Color.textPrimary} />
-              </TouchableOpacity>
-              <Text style={styles.editTitle}>Edit playlist</Text>
-              <View style={styles.editHeaderSpacer} />
-            </View>
-            <ScrollView style={styles.editList} showsVerticalScrollIndicator={false}>
-              {displayTracks.length === 0 ? (
-                <Text style={styles.emptyText}>No songs yet</Text>
-              ) : (
-                displayTracks.map((track, index) => {
-                  const artwork = artworkFor(track);
-                  return (
-                    <View key={track.id} style={styles.editRow}>
-                      {artwork ? (
-                        <Image source={{ uri: artwork }} style={styles.editArtwork} />
+              </>
+            ) : (
+              <>
+                <ScrollView
+                  style={styles.detailsScroll}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Text style={styles.detailsTitle}>Name & details</Text>
+                  <View style={styles.detailsTopRow}>
+                    <Pressable style={styles.detailsArtworkWrap} onPress={pickCoverImage} hitSlop={8}>
+                      {detailsCover && detailsCover.length > 0 ? (
+                        <Image source={{ uri: detailsCover }} style={styles.detailsArtwork} />
                       ) : (
-                        <View style={[styles.editArtwork, { backgroundColor: FALLBACK_COLORS[index % FALLBACK_COLORS.length] }]} />
+                        <View style={[styles.detailsArtwork, { backgroundColor: coverBackground }]} />
                       )}
-                      <View style={styles.trackDetails}>
-                        <Text style={styles.trackTitle} numberOfLines={1}>
-                          {track.title}
-                        </Text>
-                        <Text style={styles.trackArtist} numberOfLines={1}>
-                          {track.artist}
-                        </Text>
+                      <View style={styles.detailsPencilBadge}>
+                        <Ionicons name="pencil" size={13} color="#0F0817" />
                       </View>
-                      <TouchableOpacity
-                        onPress={() => moveTrack(index, -1)}
-                        disabled={index === 0}
-                        hitSlop={6}
-                      >
-                        <Ionicons
-                          name="chevron-up"
-                          size={20}
-                          color={index === 0 ? Color.textSecondary : Color.textPrimary}
+                    </Pressable>
+                    <View style={styles.detailsFields}>
+                      <View style={styles.detailsField}>
+                        <Text style={styles.detailsLabel}>Playlist name</Text>
+                        <TextInput
+                          style={styles.detailsInput}
+                          value={detailsName}
+                          onChangeText={setDetailsName}
+                          placeholder="Playlist name"
+                          placeholderTextColor={Color.textSecondary}
+                          autoFocus
+                          returnKeyType="done"
                         />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => moveTrack(index, 1)}
-                        disabled={index === displayTracks.length - 1}
-                        hitSlop={6}
-                      >
-                        <Ionicons
-                          name="chevron-down"
-                          size={20}
-                          color={index === displayTracks.length - 1 ? Color.textSecondary : Color.textPrimary}
+                      </View>
+                      <View style={styles.detailsField}>
+                        <Text style={styles.detailsLabel}>Description</Text>
+                        <TextInput
+                          style={[styles.detailsInput, styles.detailsInputMultiline]}
+                          value={detailsDescription}
+                          onChangeText={setDetailsDescription}
+                          placeholder="Add description"
+                          placeholderTextColor={Color.textSecondary}
+                          multiline
                         />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => removeTrack(track.id)} hitSlop={6}>
-                        <Ionicons name="trash-outline" size={20} color="#E05A47" />
-                      </TouchableOpacity>
+                      </View>
                     </View>
-                  );
-                })
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={detailsOpen} transparent animationType="slide" onRequestClose={() => setDetailsOpen(false)}>
-        <View style={styles.sheetOverlay}>
-          <Pressable style={styles.sheetBackdrop} onPress={() => setDetailsOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.dragBar} />
-            <ScrollView
-              style={styles.detailsScroll}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-            <Text style={styles.detailsTitle}>Name & details</Text>
-            <View style={styles.detailsTopRow}>
-              <Pressable style={styles.detailsArtworkWrap} onPress={pickCoverImage} hitSlop={8}>
-                {detailsCover && detailsCover.length > 0 ? (
-                  <Image source={{ uri: detailsCover }} style={styles.detailsArtwork} />
-                ) : (
-                  <View style={[styles.detailsArtwork, { backgroundColor: coverBackground }]} />
-                )}
-                <View style={styles.detailsPencilBadge}>
-                  <Ionicons name="pencil" size={13} color="#0F0817" />
-                </View>
-              </Pressable>
-              <View style={styles.detailsFields}>
-                <View style={styles.detailsField}>
-                  <Text style={styles.detailsLabel}>Playlist name</Text>
-                  <TextInput
-                    style={styles.detailsInput}
-                    value={detailsName}
-                    onChangeText={setDetailsName}
-                    placeholder="Playlist name"
-                    placeholderTextColor={Color.textSecondary}
-                    autoFocus
-                    returnKeyType="done"
-                  />
-                </View>
-                <View style={styles.detailsField}>
-                  <Text style={styles.detailsLabel}>Description</Text>
-                  <TextInput
-                    style={[styles.detailsInput, styles.detailsInputMultiline]}
-                    value={detailsDescription}
-                    onChangeText={setDetailsDescription}
-                    placeholder="Add description"
-                    placeholderTextColor={Color.textSecondary}
-                    multiline
-                  />
-                </View>
-              </View>
-            </View>
-            <View style={styles.detailsCoverSection}>
-              <Text style={styles.detailsLabel}>Cover</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.detailsPresetRow}
-              >
-                {PRESET_COVERS.map((uri) => (
-                  <TouchableOpacity key={uri} onPress={() => setDetailsCover(uri)} activeOpacity={0.8}>
-                    <Image
-                      source={{ uri }}
-                      style={[styles.detailsPresetCover, detailsCover === uri && styles.detailsPresetActive]}
+                  </View>
+                  <View style={styles.detailsCoverSection}>
+                    <Text style={styles.detailsLabel}>Cover</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.detailsPresetRow}
+                    >
+                      {PRESET_COVERS.map((uri) => (
+                        <TouchableOpacity key={uri} onPress={() => setDetailsCover(uri)} activeOpacity={0.8}>
+                          <Image
+                            source={{ uri }}
+                            style={[styles.detailsPresetCover, detailsCover === uri && styles.detailsPresetActive]}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                    <TextInput
+                      style={styles.detailsInput}
+                      value={detailsCover}
+                      onChangeText={setDetailsCover}
+                      placeholder="Paste an image URL"
+                      placeholderTextColor={Color.textSecondary}
+                      autoCapitalize="none"
+                      autoCorrect={false}
                     />
+                  </View>
+                </ScrollView>
+                <View style={styles.detailsActions}>
+                  <TouchableOpacity onPress={() => setSheetView("options")} hitSlop={8}>
+                    <Text style={styles.detailsCancel}>Cancel</Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <TextInput
-                style={styles.detailsInput}
-                value={detailsCover}
-                onChangeText={setDetailsCover}
-                placeholder="Paste an image URL"
-                placeholderTextColor={Color.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-            </ScrollView>
-            <View style={styles.detailsActions}>
-              <TouchableOpacity onPress={() => setDetailsOpen(false)} hitSlop={8}>
-                <Text style={styles.detailsCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={saveDetails} disabled={!detailsName.trim()} hitSlop={8}>
-                <Text style={[styles.detailsSave, !detailsName.trim() && styles.detailsSaveDisabled]}>
-                  Save
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  <TouchableOpacity onPress={saveDetails} disabled={!detailsName.trim()} hitSlop={8}>
+                    <Text style={[styles.detailsSave, !detailsName.trim() && styles.detailsSaveDisabled]}>
+                      Save
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -522,6 +508,11 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: "center",
     alignItems: "center",
+  },
+  doneButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Color.accent,
   },
   scrollView: {
     flex: 1,
@@ -582,6 +573,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 8,
     gap: 14,
+  },
+  trackRowMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  editControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   trackRowActive: {
     opacity: 0.9,
@@ -691,34 +693,6 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     backgroundColor: Color.accent,
-  },
-  editHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  editHeaderSpacer: {
-    width: 24,
-  },
-  editTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Color.textPrimary,
-  },
-  editList: {
-    maxHeight: 380,
-  },
-  editRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 6,
-  },
-  editArtwork: {
-    width: 40,
-    height: 40,
-    borderRadius: Border.sm,
   },
   detailsTitle: {
     fontSize: 16,
