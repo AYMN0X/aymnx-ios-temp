@@ -259,16 +259,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (queueNow.length === 0 || !currentTrack) {
         return;
       }
-      if (isAutoplayEnabled && indexRef.current >= queueNow.length - 1) {
-        if (autoplayLoadingRef.current) {
-          const deadline = Date.now() + 6000;
-          while (autoplayLoadingRef.current && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 120));
-          }
-        } else {
-          await ensureAutoplayTracks();
-        }
+      const isLastTrack = indexRef.current >= queueNow.length - 1;
+
+      if (!isLastTrack) {
+        await playNext();
+        return;
       }
+
+      if (!isAutoplayEnabled) {
+        return;
+      }
+
+      if (autoplayLoadingRef.current) {
+        const deadline = Date.now() + 6000;
+        while (autoplayLoadingRef.current && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+      } else {
+        await ensureAutoplayTracks();
+      }
+
       if (indexRef.current < queueRef.current.length - 1) {
         await playNext();
       }
