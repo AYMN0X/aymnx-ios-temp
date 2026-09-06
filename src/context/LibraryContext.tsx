@@ -15,7 +15,7 @@ interface LibraryContextValue {
   removePlaylist: (playlistId: string) => Promise<void>;
   addToPlaylist: (playlistId: string, track: Track) => Promise<void>;
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
-  updatePlaylistDetails: (playlistId: string, name: string, description: string) => Promise<void>;
+  updatePlaylistDetails: (playlistId: string, name: string, description: string, coverUrl?: string) => Promise<void>;
   reorderPlaylistTracks: (playlistId: string, fromIndex: number, toIndex: number) => Promise<void>;
 }
 
@@ -117,7 +117,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setPlaylists(next);
   };
 
-  const updatePlaylistDetails = async (playlistId: string, name: string, description: string) => {
+  const updatePlaylistDetails = async (
+    playlistId: string,
+    name: string,
+    description: string,
+    coverUrl?: string
+  ) => {
     if (!userId) {
       return;
     }
@@ -125,7 +130,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     if (!trimmed) {
       return;
     }
-    const next = await storage.updatePlaylistDetails(userId, playlistId, trimmed, description);
+    const next = await storage.updatePlaylistDetails(userId, playlistId, trimmed, description, coverUrl);
     setPlaylists(next);
   };
 

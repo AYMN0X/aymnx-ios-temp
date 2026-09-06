@@ -125,13 +125,24 @@ export async function updatePlaylistDetails(
   userId: string,
   playlistId: string,
   name: string,
-  description: string
+  description: string,
+  coverUrl?: string
 ): Promise<SavedPlaylist[]> {
   const data = await updateUserData(userId, (d) => ({
     ...d,
     playlists: (d.playlists ?? []).map((playlist) =>
       playlist.id === playlistId
-        ? { ...playlist, name, description: description.length > 0 ? description : undefined }
+        ? {
+            ...playlist,
+            name,
+            description: description.length > 0 ? description : undefined,
+            coverUrl:
+              coverUrl === undefined
+                ? playlist.coverUrl
+                : coverUrl.length > 0
+                ? coverUrl
+                : undefined,
+          }
         : playlist
     ),
   }));

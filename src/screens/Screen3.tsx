@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { Color, Border } from "../theme/GlobalStyles";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
@@ -40,6 +41,14 @@ const FALLBACK_COLORS = [
   "#8D67AB",
   "#503750",
   "#D84000",
+];
+
+const PRESET_COVERS = [
+  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80",
+  "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80",
+  "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80",
+  "https://images.unsplash.com/photo-1487180144351-b8472da7d491?w=400&q=80",
+  "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=400&q=80",
 ];
 
 export const Screen3: React.FC<Screen3Props> = ({
@@ -75,6 +84,7 @@ export const Screen3: React.FC<Screen3Props> = ({
   const displaySubtitle =
     subtitle || `${displayTracks.length} ${displayTracks.length === 1 ? "song" : "songs"}`;
   const coverBackground = isLikedPlaylist ? "#450AF5" : (coverColor ?? Color.accent);
+  const effectiveCover = livePlaylist?.coverUrl ?? coverImage;
 
   const artworkFor = (track: Track) =>
     (track as Track & { albumArt?: string }).albumArt || track.artwork;
@@ -90,6 +100,7 @@ export const Screen3: React.FC<Screen3Props> = ({
   const [detailsOpen, setDetailsOpen] = React.useState(false);
   const [detailsName, setDetailsName] = React.useState("");
   const [detailsDescription, setDetailsDescription] = React.useState("");
+  const [detailsCover, setDetailsCover] = React.useState("");
 
   const canEdit = !isLikedPlaylist && !!livePlaylist;
 
@@ -107,7 +118,24 @@ export const Screen3: React.FC<Screen3Props> = ({
   const openDetails = () => {
     setDetailsName(livePlaylist?.name ?? displayTitle);
     setDetailsDescription(livePlaylist?.description ?? "");
+    setDetailsCover(livePlaylist?.coverUrl ?? coverImage ?? "");
     setDetailsOpen(true);
+  };
+
+  const pickCoverImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setDetailsCover(result.assets[0].uri);
+    }
   };
 
   const saveDetails = async () => {
@@ -115,7 +143,7 @@ export const Screen3: React.FC<Screen3Props> = ({
     if (!playlistId || !trimmed) {
       return;
     }
-    await updatePlaylistDetails(playlistId, trimmed, detailsDescription.trim());
+    await updatePlaylistDetails(playlistId, trimmed, detailsDescription.trim(), detailsCover || undefined);
     setDetailsOpen(false);
   };
 
@@ -138,9 +166,9 @@ export const Screen3: React.FC<Screen3Props> = ({
       <StatusBar barStyle="light-content" />
 
       <View style={[styles.heroContainer, { backgroundColor: coverBackground }]}>
-        {coverImage && coverImage.length > 0 ? (
+        {effectiveCover && effectiveCover.length > 0 ? (
           <ImageBackground
-            source={{ uri: coverImage }}
+            source={{ uri: effectiveCover }}
             style={styles.heroImageCover}
             resizeMode="cover"
           />
@@ -233,8 +261,8 @@ export const Screen3: React.FC<Screen3Props> = ({
           <View style={styles.sheet}>
             <View style={styles.dragBar} />
             <View style={styles.sheetHeader}>
-              {coverImage && coverImage.length > 0 ? (
-                <Image source={{ uri: coverImage }} style={styles.sheetArtwork} />
+              {effectiveCover && effectiveCover.length > 0 ? (
+                <Image source={{ uri: effectiveCover }} style={styles.sheetArtwork} />
               ) : (
                 <View style={[styles.sheetArtwork, { backgroundColor: coverBackground }]} />
               )}
@@ -368,30 +396,76 @@ export const Screen3: React.FC<Screen3Props> = ({
           <Pressable style={styles.sheetBackdrop} onPress={() => setDetailsOpen(false)} />
           <View style={styles.sheet}>
             <View style={styles.dragBar} />
+            <ScrollView
+              style={styles.detailsScroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
             <Text style={styles.detailsTitle}>Name & details</Text>
-            <View style={styles.detailsField}>
-              <Text style={styles.detailsLabel}>Playlist name</Text>
+            <View style={styles.detailsTopRow}>
+              <Pressable style={styles.detailsArtworkWrap} onPress={pickCoverImage} hitSlop={8}>
+                {detailsCover && detailsCover.length > 0 ? (
+                  <Image source={{ uri: detailsCover }} style={styles.detailsArtwork} />
+                ) : (
+                  <View style={[styles.detailsArtwork, { backgroundColor: coverBackground }]} />
+                )}
+                <View style={styles.detailsPencilBadge}>
+                  <Ionicons name="pencil" size={13} color="#0F0817" />
+                </View>
+              </Pressable>
+              <View style={styles.detailsFields}>
+                <View style={styles.detailsField}>
+                  <Text style={styles.detailsLabel}>Playlist name</Text>
+                  <TextInput
+                    style={styles.detailsInput}
+                    value={detailsName}
+                    onChangeText={setDetailsName}
+                    placeholder="Playlist name"
+                    placeholderTextColor={Color.textSecondary}
+                    autoFocus
+                    returnKeyType="done"
+                  />
+                </View>
+                <View style={styles.detailsField}>
+                  <Text style={styles.detailsLabel}>Description</Text>
+                  <TextInput
+                    style={[styles.detailsInput, styles.detailsInputMultiline]}
+                    value={detailsDescription}
+                    onChangeText={setDetailsDescription}
+                    placeholder="Add description"
+                    placeholderTextColor={Color.textSecondary}
+                    multiline
+                  />
+                </View>
+              </View>
+            </View>
+            <View style={styles.detailsCoverSection}>
+              <Text style={styles.detailsLabel}>Cover</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.detailsPresetRow}
+              >
+                {PRESET_COVERS.map((uri) => (
+                  <TouchableOpacity key={uri} onPress={() => setDetailsCover(uri)} activeOpacity={0.8}>
+                    <Image
+                      source={{ uri }}
+                      style={[styles.detailsPresetCover, detailsCover === uri && styles.detailsPresetActive]}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
               <TextInput
                 style={styles.detailsInput}
-                value={detailsName}
-                onChangeText={setDetailsName}
-                placeholder="Playlist name"
+                value={detailsCover}
+                onChangeText={setDetailsCover}
+                placeholder="Paste an image URL"
                 placeholderTextColor={Color.textSecondary}
-                autoFocus
-                returnKeyType="done"
+                autoCapitalize="none"
+                autoCorrect={false}
               />
             </View>
-            <View style={styles.detailsField}>
-              <Text style={styles.detailsLabel}>Description</Text>
-              <TextInput
-                style={[styles.detailsInput, styles.detailsInputMultiline]}
-                value={detailsDescription}
-                onChangeText={setDetailsDescription}
-                placeholder="Add description"
-                placeholderTextColor={Color.textSecondary}
-                multiline
-              />
-            </View>
+            </ScrollView>
             <View style={styles.detailsActions}>
               <TouchableOpacity onPress={() => setDetailsOpen(false)} hitSlop={8}>
                 <Text style={styles.detailsCancel}>Cancel</Text>
@@ -651,6 +725,60 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Color.textPrimary,
     marginBottom: 14,
+  },
+  detailsScroll: {
+    maxHeight: 430,
+  },
+  detailsTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+  },
+  detailsArtworkWrap: {
+    width: 96,
+    height: 96,
+    position: "relative",
+  },
+  detailsArtwork: {
+    width: 96,
+    height: 96,
+    borderRadius: Border.sm,
+  },
+  detailsPencilBadge: {
+    position: "absolute",
+    right: 6,
+    bottom: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: "#000000",
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  detailsFields: {
+    flex: 1,
+  },
+  detailsCoverSection: {
+    marginTop: 2,
+    gap: 10,
+  },
+  detailsPresetRow: {
+    gap: 10,
+    paddingRight: 8,
+  },
+  detailsPresetCover: {
+    width: 64,
+    height: 64,
+    borderRadius: Border.sm,
+  },
+  detailsPresetActive: {
+    borderWidth: 2,
+    borderColor: Color.accent,
   },
   detailsField: {
     marginBottom: 14,
