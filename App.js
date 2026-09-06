@@ -17,7 +17,6 @@ import {
   ListMusic,
   MoreHorizontal,
   Pause,
-  Pin,
   Play,
   Plus,
   Repeat,
@@ -108,20 +107,6 @@ const SEARCH_CATEGORIES = [
   { key: 'hip-hop', title: 'Hip-Hop', color: '#BC5900' },
   { key: 'rock', title: 'Rock', color: '#E91429' },
   { key: 'dance', title: 'Dance / Electronic', color: '#D84000' },
-];
-
-const LIBRARY_ROWS = [
-  { key: 'chill', title: 'Chill Vibes', color: '#1E3264', subtitle: 'Playlist • SA' },
-  { key: 'road', title: 'Road Trip', color: '#E13300', subtitle: 'Playlist • SA', downloaded: true },
-  { key: 'workout', title: 'Workout', color: '#4E4E4E', subtitle: 'Playlist • SA', pinned: true },
-  {
-    key: 'throwback',
-    title: 'Throwback',
-    color: '#148A08',
-    subtitle: 'Playlist • SA',
-    downloaded: true,
-  },
-  { key: 'study', title: 'Study Session', color: '#8D67AB', subtitle: 'Playlist • SA' },
 ];
 
 const TABS = [
@@ -796,15 +781,6 @@ function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
 
   const libraryItems = [
     { type: 'liked', key: 'liked', title: 'Liked Songs', subtitle: `Playlist • ${likedSongs.length} songs` },
-    ...LIBRARY_ROWS.map((item) => ({
-      type: 'static',
-      key: item.key,
-      title: item.title,
-      subtitle: item.subtitle,
-      color: item.color,
-      pinned: item.pinned,
-      downloaded: item.downloaded,
-    })),
     ...playlists.map((item) => ({
       type: 'playlist',
       key: item.id,
@@ -951,25 +927,8 @@ function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
               />
             );
           }
-          if (item.type === 'static') {
-            return (
-              <View style={styles.libRow}>
-                <View style={[styles.libCover, { backgroundColor: item.color }]} />
-                <View style={styles.libRowInfo}>
-                  <Text style={styles.libRowTitle} numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  <View style={styles.libRowSubtitleRow}>
-                    {item.pinned ? <Pin size={12} color={COLORS.green} /> : null}
-                    {item.downloaded ? <Download size={12} color={COLORS.green} /> : null}
-                    <Text style={styles.libRowSubtitle}>{item.subtitle}</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          }
           return (
-<Pressable
+            <Pressable
                 style={styles.libRow}
                 onPress={() => setDetail({ type: 'playlist', id: item.playlistId, title: item.title })}
               >
