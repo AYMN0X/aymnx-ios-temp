@@ -228,18 +228,7 @@ export const Screen3: React.FC<Screen3Props> = ({
               >
                 <Text style={styles.doneButtonText}>Done</Text>
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                onPress={() => {
-                  setSheetView("options");
-                  setSheetOpen(true);
-                }}
-                style={styles.iconButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
-              </TouchableOpacity>
-            )}
+            ) : null}
           </View>
         </SafeAreaView>
 
