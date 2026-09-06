@@ -4,17 +4,30 @@ import {
   View,
   Text,
   TextInput,
+  Image,
   ScrollView,
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { Color, Border } from "../theme/GlobalStyles";
 
 const CATEGORIES = ["Recent", "Top 50", "Chill", "R&B", "Festival"];
 
-const FEATURED_MIXES = [
-  { id: "1", title: "R&B Playlist", subtitle: "Chill your mind", color: Color.accent },
+const FEATURED_MIXES: {
+  id: string;
+  title: string;
+  subtitle: string;
+  gradient?: [string, string];
+  color?: string;
+}[] = [
+  {
+    id: "1",
+    title: "R&B Playlist",
+    subtitle: "Chill your mind",
+    gradient: ["#6A1B9A", "#311B92"],
+  },
   { id: "2", title: "Daily Mix 2", subtitle: "Made for you", color: "#2B4B7A" },
 ];
 
@@ -24,21 +37,24 @@ const FAVORITES = [
     title: "Bye Bye",
     artist: "Marshmello, Juice WRLD",
     duration: "2:09",
-    color: "#E05A47",
+    artwork:
+      "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&h=200&fit=crop&auto=format&q=60",
   },
   {
     id: "2",
     title: "I Like You",
     artist: "Post Malone, Doja Cat",
     duration: "4:03",
-    color: "#F3A953",
+    artwork:
+      "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=200&h=200&fit=crop&auto=format&q=60",
   },
   {
     id: "3",
     title: "Fountains",
     artist: "Drake, Tems",
     duration: "3:18",
-    color: "#3B82F6",
+    artwork:
+      "https://images.unsplash.com/photo-1506152983158-b4a74a01c721?w=200&h=200&fit=crop&auto=format&q=60",
   },
 ];
 
@@ -104,9 +120,19 @@ export const Screen2: React.FC = () => {
             {FEATURED_MIXES.map((mix) => (
               <TouchableOpacity
                 key={mix.id}
-                style={[styles.featuredCard, { backgroundColor: mix.color }]}
+                style={styles.featuredCard}
                 activeOpacity={0.8}
               >
+                {mix.gradient ? (
+                  <LinearGradient
+                    colors={mix.gradient}
+                    style={styles.featuredCardFill}
+                  />
+                ) : (
+                  <View
+                    style={[styles.featuredCardFill, { backgroundColor: mix.color }]}
+                  />
+                )}
                 <Text style={styles.cardTitle}>{mix.title}</Text>
                 <Text style={styles.cardSubtitle}>{mix.subtitle}</Text>
               </TouchableOpacity>
@@ -122,8 +148,9 @@ export const Screen2: React.FC = () => {
                   style={styles.trackRow}
                   activeOpacity={0.7}
                 >
-                  <View
-                    style={[styles.trackArtwork, { backgroundColor: track.color }]}
+                  <Image
+                    source={{ uri: track.artwork }}
+                    style={styles.trackArtwork}
                   />
                   <View style={styles.trackInfo}>
                     <Text style={styles.trackTitle} numberOfLines={1}>
@@ -199,7 +226,7 @@ const styles = StyleSheet.create({
     color: Color.textSecondary,
   },
   categoryTextActive: {
-    color: Color.textPrimary,
+    color: Color.accent,
   },
   activeIndicator: {
     marginTop: 4,
@@ -218,6 +245,15 @@ const styles = StyleSheet.create({
     borderRadius: Border.md,
     padding: 14,
     justifyContent: "flex-end",
+    overflow: "hidden",
+    backgroundColor: Color.card,
+  },
+  featuredCardFill: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   cardTitle: {
     fontSize: 15,
@@ -252,6 +288,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: Border.sm,
+    backgroundColor: Color.card,
   },
   trackInfo: {
     flex: 1,

@@ -67,6 +67,7 @@ const COLORS = {
   cardPress: '#3E3E3E',
   pill: '#2A2A2A',
   green: '#1ED760',
+  accent: '#781ECF',
   white: '#FFFFFF',
   textPrimary: '#FFFFFF',
   textSecondary: '#B3B3B3',
@@ -1496,7 +1497,7 @@ function TabBar({ active, onChange }) {
         const Icon = tab.icon;
         return (
           <Pressable key={tab.key} style={styles.tabItem} onPress={() => onChange(tab.key)}>
-            <Icon size={24} color={isActive ? COLORS.white : COLORS.textSecondary} />
+            <Icon size={24} color={isActive ? COLORS.accent : COLORS.textSecondary} />
             <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
           </Pressable>
         );
@@ -2951,6 +2952,6 @@ disabled: {
     marginTop: 4,
   },
   tabLabelActive: {
-    color: COLORS.textPrimary,
+    color: COLORS.accent,
   },
 });

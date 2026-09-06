@@ -1,9 +1,10 @@
 export const Color = {
-  background: '#121212',
-  surface: '#282828',
-  accent: '#1ED760',
+  background: '#0F0817',
+  surface: '#1C1625',
+  card: '#221C2B',
+  accent: '#781ECF',
   textPrimary: '#FFFFFF',
-  textSecondary: '#B3B3B3',
+  textSecondary: '#A5A5A5',
 };
 
 export const Border = {
