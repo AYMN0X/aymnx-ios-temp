@@ -8,7 +8,6 @@ import {
   Activity,
   ArrowUpDown,
   Cast,
-  ChevronDown,
   Download,
   Heart,
   Home,
@@ -17,12 +16,7 @@ import {
   MoreHorizontal,
   Pause,
   Play,
-  Plus,
-  Repeat,
   Search,
-  Shuffle,
-  SkipBack,
-  SkipForward,
   User,
   X,
 } from 'lucide-react-native';
@@ -31,21 +25,17 @@ import {
   FlatList,
   Image,
   Modal,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import {
   SafeAreaProvider,
   SafeAreaView,
-  useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
@@ -54,6 +44,7 @@ import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
 import { Screen1 } from './src/screens/Screen1';
 import { Screen2 } from './src/screens/Screen2';
 import { Screen3 } from './src/screens/Screen3';
+import { Screen4 } from './src/screens/Screen4';
 import { searchITunes } from './src/services/musicApi';
 import { importSpotifyPlaylist } from './src/services/spotifyImportService';
 import { getHasSeenOnboarding, setHasSeenOnboarding } from './src/services/storage';
@@ -114,13 +105,6 @@ const TABS = [
   { key: 'library', label: 'Your Library', icon: Library },
   { key: 'create', label: 'AYMNX', icon: User },
 ];
-
-function formatMillis(ms) {
-  const total = Math.floor(ms / 1000);
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
 
 function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove }) {
   return (
@@ -803,86 +787,6 @@ function ImportScreen({ onOpenImportedPlaylist }) {
   );
 }
 
-function SliderBar({ value, onValueChange, style, barStyle, fillStyle, hitSlop }) {
-  const widthRef = useRef(0);
-  const offsetRef = useRef(0);
-
-  const moveTo = (x) => {
-    const w = widthRef.current;
-    if (w <= 0 || !onValueChange) {
-      return;
-    }
-    onValueChange(Math.min(Math.max(x / w, 0), 1));
-  };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (event) => {
-        offsetRef.current = event.nativeEvent.pageX - event.nativeEvent.locationX;
-        moveTo(event.nativeEvent.locationX);
-      },
-      onPanResponderMove: (event) => {
-        moveTo(event.nativeEvent.pageX - offsetRef.current);
-      },
-      onPanResponderRelease: () => {},
-      onPanResponderTerminate: () => {},
-    })
-  ).current;
-
-  const pct = `${Math.min(Math.max(value, 0), 1) * 100}%`;
-
-  return (
-    <View
-      style={[styles.sliderTouch, style]}
-      hitSlop={hitSlop}
-      onLayout={(event) => {
-        widthRef.current = event.nativeEvent.layout.width;
-      }}
-      {...panResponder.panHandlers}
-    >
-      <View style={barStyle}>
-        <View style={[fillStyle, { width: pct }]} />
-      </View>
-    </View>
-  );
-}
-
-function Scrubber({ position, duration, onSeek, large }) {
-  const progress = duration > 0 ? Math.min(Math.max(position / duration, 0), 1) : 0;
-  const trackStyle = large ? styles.scrubTrackLarge : styles.scrubTrack;
-  const fillStyle = large ? styles.scrubFillLarge : styles.scrubFill;
-  const touchStyle = large ? styles.scrubTouchLarge : styles.scrubTouch;
-  const rightLabel = large
-    ? `-${formatMillis(Math.max(duration - position, 0))}`
-    : formatMillis(duration);
-
-  const handleSeek = (ratio) => {
-    if (onSeek && duration > 0) {
-      onSeek(ratio * duration);
-    }
-  };
-
-  return (
-    <View style={large ? styles.scrubWrapLarge : undefined}>
-      <SliderBar
-        value={progress}
-        onValueChange={handleSeek}
-        style={touchStyle}
-        barStyle={trackStyle}
-        fillStyle={fillStyle}
-        hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
-      />
-      <View style={styles.scrubLabels}>
-        <Text style={styles.scrubTime}>{formatMillis(position)}</Text>
-        <Text style={styles.scrubTime}>{rightLabel}</Text>
-      </View>
-    </View>
-  );
-}
-
 function MiniPlayer({ onOpen }) {
   const {
     currentTrack,
@@ -945,25 +849,6 @@ function MiniPlayer({ onOpen }) {
 }
 
 function NowPlayingModal({ visible, onClose }) {
-  const {
-    currentTrack,
-    isPlaying,
-    playbackPosition,
-    duration,
-    playbackError,
-    volume,
-    setVolume,
-    togglePlayPause,
-    seekTo,
-    playNext,
-    playPrevious,
-  } = usePlayer();
-  const { isLiked, toggleLike } = useLibrary();
-  const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const artSize = Math.min(width - 80, 340);
-  const [queueOpen, setQueueOpen] = useState(false);
-
   return (
     <Modal
       visible={visible}
@@ -971,223 +856,7 @@ function NowPlayingModal({ visible, onClose }) {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View
-        style={[
-          styles.npRoot,
-          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
-        ]}
-      >
-        <View style={styles.npHandleRow}>
-          <Pressable style={styles.npCloseBtn} onPress={onClose} hitSlop={12}>
-            <ChevronDown size={28} color={COLORS.textPrimary} />
-          </Pressable>
-        </View>
-        <View style={styles.npDragHandle}>
-          <View style={styles.npDragPill} />
-        </View>
-        {currentTrack ? (
-          <View style={styles.npBody}>
-            <View style={styles.npArtworkWrap}>
-              {currentTrack.artwork ? (
-                <Image
-                  source={{ uri: currentTrack.artwork }}
-                  style={[styles.npArtwork, { width: artSize, height: artSize }]}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.npArtwork,
-                    styles.npArtworkFallback,
-                    { width: artSize, height: artSize },
-                  ]}
-                />
-              )}
-            </View>
-            <View style={styles.npMeta}>
-              <View style={styles.npMetaText}>
-                <Text style={styles.npTitle} numberOfLines={1}>
-                  {currentTrack.title}
-                </Text>
-                <Text style={styles.npArtist} numberOfLines={1}>
-                  {currentTrack.artist}
-                </Text>
-                {playbackError ? (
-                  <Text style={styles.npError} numberOfLines={1}>
-                    {playbackError}
-                  </Text>
-                ) : null}
-              </View>
-              <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={10}>
-                <Heart
-                  size={26}
-                  color={COLORS.textPrimary}
-                  fill={isLiked(currentTrack.id) ? COLORS.textPrimary : 'transparent'}
-                />
-              </Pressable>
-            </View>
-            <Scrubber position={playbackPosition} duration={duration} onSeek={seekTo} large />
-            <View style={styles.npControls}>
-              <Pressable onPress={playPrevious} hitSlop={10}>
-                <Ionicons name="play-skip-back" size={36} color="#FFFFFF" />
-              </Pressable>
-              <Pressable
-                style={styles.npPlay}
-                onPress={togglePlayPause}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                {isPlaying ? (
-                  <Ionicons name="pause" size={64} color="#FFFFFF" />
-                ) : (
-                  <Ionicons name="play" size={64} color="#FFFFFF" style={styles.npPlayToken} />
-                )}
-              </Pressable>
-              <Pressable onPress={playNext} hitSlop={10}>
-                <Ionicons name="play-skip-forward" size={36} color="#FFFFFF" />
-              </Pressable>
-            </View>
-            <View style={styles.npVolumeRow}>
-              <Ionicons name="volume-low" size={18} color="#FFFFFF" />
-              <SliderBar
-                value={volume}
-                onValueChange={setVolume}
-                style={styles.npVolumeTouch}
-                barStyle={styles.npVolumeTrack}
-                fillStyle={styles.npVolumeFill}
-                hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
-              />
-              <Ionicons name="volume-high" size={22} color="#FFFFFF" />
-            </View>
-            <View style={styles.npDock}>
-              <Pressable hitSlop={12}>
-                <Ionicons name="chatbox-ellipses" size={24} color="#FFFFFF" />
-              </Pressable>
-              <Pressable hitSlop={12}>
-                <MaterialCommunityIcons name="cast-audio" size={24} color="#FFFFFF" />
-              </Pressable>
-              <Pressable hitSlop={12} onPress={() => setQueueOpen(true)}>
-                <Ionicons name="list" size={24} color="#FFFFFF" />
-              </Pressable>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.npEmpty}>
-            <Text style={styles.npEmptyText}>Nothing is playing</Text>
-          </View>
-        )}
-        <QueueModal visible={queueOpen} onClose={() => setQueueOpen(false)} />
-      </View>
-    </Modal>
-  );
-}
-
-function QueueModal({ visible, onClose }) {
-  const {
-    currentTrack,
-    queue,
-    queueIndex,
-    isAutoplayEnabled,
-    toggleAutoplay,
-    autoplayAddedIds,
-  } = usePlayer();
-  const insets = useSafeAreaInsets();
-  const upNext = queue.slice(queueIndex >= 0 ? queueIndex + 1 : 0);
-
-  const renderTrack = ({ item }) => (
-    <View style={styles.queueRow}>
-      {item.artwork ? (
-        <Image source={{ uri: item.artwork }} style={styles.queueArt} />
-      ) : (
-        <View style={[styles.queueArt, styles.queueArtFallback]} />
-      )}
-      <View style={styles.queueRowInfo}>
-        <Text style={styles.queueRowTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <View style={styles.queueRowMeta}>
-          <Text style={styles.queueRowArtist} numberOfLines={1}>
-            {item.artist}
-          </Text>
-          {autoplayAddedIds.has(item.id) ? (
-            <View style={styles.autoplayPill}>
-              <Text style={styles.autoplayPillLabel}>Autoplay recommendation</Text>
-            </View>
-          ) : null}
-        </View>
-      </View>
-    </View>
-  );
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <View
-        style={[
-          styles.queueRoot,
-          { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
-        ]}
-      >
-        <View style={styles.queueHeader}>
-          <Pressable style={styles.npCloseBtn} onPress={onClose} hitSlop={12}>
-            <X size={26} color={COLORS.textPrimary} />
-          </Pressable>
-          <Text style={styles.queueTitle}>Queue</Text>
-        </View>
-        <FlatList
-          data={upNext}
-          keyExtractor={(item, index) => `${item.id}_${index}`}
-          renderItem={renderTrack}
-          contentContainerStyle={styles.queueListContent}
-          ListHeaderComponent={
-            <View>
-              <Text style={styles.queueSectionLabel}>Now Playing</Text>
-              {currentTrack ? (
-                <View style={styles.queueRow}>
-                  {currentTrack.artwork ? (
-                    <Image source={{ uri: currentTrack.artwork }} style={styles.queueArt} />
-                  ) : (
-                    <View style={[styles.queueArt, styles.queueArtFallback]} />
-                  )}
-                  <View style={styles.queueRowInfo}>
-                    <Text style={styles.queueRowTitleNow} numberOfLines={1}>
-                      {currentTrack.title}
-                    </Text>
-                    <Text style={styles.queueRowArtist} numberOfLines={1}>
-                      {currentTrack.artist}
-                    </Text>
-                  </View>
-                  <Ionicons name="volume-high" size={18} color={COLORS.green} />
-                </View>
-              ) : null}
-              <Text style={styles.queueSectionLabel}>Next in queue</Text>
-              {upNext.length === 0 ? (
-                <Text style={styles.queueEmpty}>
-                  {currentTrack
-                    ? 'No more songs in the queue. Autoplay will keep the music going when the queue ends.'
-                    : 'Nothing is queued.'}
-                </Text>
-              ) : null}
-            </View>
-          }
-        />
-        <View style={styles.autoplayToggleRow}>
-          <View style={styles.autoplayToggleInfo}>
-            <Text style={styles.autoplayToggleTitle}>Autoplay</Text>
-            <Text style={styles.autoplayToggleSubtitle}>
-              Keep the music going when your queue ends
-            </Text>
-          </View>
-          <Switch
-            value={isAutoplayEnabled}
-            onValueChange={toggleAutoplay}
-            trackColor={{ false: '#535353', true: COLORS.green }}
-            thumbColor={isAutoplayEnabled ? COLORS.white : '#B3B3B3'}
-          />
-        </View>
-      </View>
+      <Screen4 onClose={onClose} />
     </Modal>
   );
 }
@@ -1980,55 +1649,6 @@ disabled: {
     fontWeight: '600',
     marginLeft: 16,
   },
-  sliderTouch: {
-    minHeight: 40,
-    justifyContent: 'center',
-  },
-  scrubTouch: {
-    width: '100%',
-    minHeight: 40,
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  scrubTouchLarge: {
-    width: '100%',
-    minHeight: 40,
-    justifyContent: 'center',
-  },
-  scrubTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#4d4d4d',
-    overflow: 'hidden',
-  },
-  scrubFill: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.white,
-  },
-  scrubWrapLarge: {
-    width: '100%',
-    marginTop: 28,
-  },
-  scrubTrackLarge: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4d4d4d',
-    overflow: 'hidden',
-  },
-  scrubFillLarge: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.white,
-  },
-  scrubLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  scrubTime: {
-    ...TYPE.micro,
-  },
   miniPlayer: {
     position: 'absolute',
     bottom: 58,
@@ -2096,243 +1716,6 @@ disabled: {
     height: 2,
     backgroundColor: COLORS.green,
     borderRadius: 1,
-  },
-  npRoot: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  npHandleRow: {
-    width: '100%',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  npCloseBtn: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    padding: 4,
-  },
-  npDragHandle: {
-    marginTop: 8,
-    alignItems: 'center',
-  },
-  npDragPill: {
-    width: 36,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  npBody: {
-    flex: 1,
-    width: '100%',
-    alignItems: 'center',
-  },
-  npArtworkWrap: {
-    marginTop: 24,
-    elevation: 10,
-    boxShadow: '0 6px 12px rgba(0, 0, 0, 0.4)',
-  },
-  npArtwork: {
-    borderRadius: 12,
-    backgroundColor: COLORS.card,
-  },
-  npArtworkFallback: {
-    backgroundColor: '#503750',
-  },
-  npMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 24,
-    width: '100%',
-    gap: 16,
-  },
-  npMetaText: {
-    flex: 1,
-  },
-  npTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  npArtist: {
-    color: '#A0A0A0',
-    fontSize: 16,
-    marginTop: 4,
-  },
-  npError: {
-    color: '#F15E6C',
-    fontSize: 14,
-    marginTop: 6,
-  },
-  npControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 48,
-    marginTop: 32,
-    width: '100%',
-  },
-  npPlay: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  npPlayToken: {
-    marginLeft: 6,
-  },
-  npVolumeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    width: '100%',
-    marginTop: 24,
-  },
-  npVolumeTrack: {
-    flex: 1,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#4d4d4d',
-    overflow: 'hidden',
-  },
-  npVolumeTouch: {
-    flex: 1,
-    minHeight: 36,
-    justifyContent: 'center',
-  },
-  npVolumeFill: {
-    height: 3,
-    backgroundColor: '#FFFFFF',
-  },
-  npDock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 'auto',
-    paddingTop: 16,
-    paddingBottom: 8,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.25)',
-  },
-  npEmpty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  npEmptyText: {
-    color: COLORS.textSecondary,
-    fontSize: 16,
-  },
-  queueRoot: {
-    flex: 1,
-    backgroundColor: '#121212',
-  },
-  queueHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-  },
-  queueTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-  queueListContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  queueSectionLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  queueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  queueArt: {
-    width: 52,
-    height: 52,
-    borderRadius: 4,
-    backgroundColor: COLORS.card,
-  },
-  queueArtFallback: {
-    backgroundColor: COLORS.cardPress,
-  },
-  queueRowInfo: {
-    flex: 1,
-    marginLeft: 12,
-    paddingRight: 8,
-  },
-  queueRowTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  queueRowTitleNow: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  queueRowArtist: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  queueRowMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 2,
-  },
-  autoplayPill: {
-    backgroundColor: COLORS.cardPress,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  autoplayPillLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  queueEmpty: {
-    color: COLORS.textSubdued,
-    fontSize: 13,
-    lineHeight: 18,
-    paddingVertical: 8,
-  },
-  autoplayToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  autoplayToggleInfo: {
-    flex: 1,
-    paddingRight: 16,
-  },
-  autoplayToggleTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  autoplayToggleSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
   },
   tosBackdrop: {
     flex: 1,
