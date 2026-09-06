@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createAccount, verifyCredentials } from '../services/storage';
 
 export interface User {
   id: string;
@@ -10,11 +11,15 @@ export interface User {
 
 export const AUTH_USER_KEY = '@spotify_auth_user';
 
+export type AuthResult = { ok: boolean; error?: string };
+
 interface AuthContextValue {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, name?: string) => Promise<void>;
+  signUp: (name: string, identifier: string, password: string) => Promise<AuthResult>;
+  login: (identifier: string, password: string) => Promise<AuthResult>;
+  loginGuest: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -45,20 +50,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (username: string, name?: string) => {
-    const trimmed = username.trim();
-    if (!trimmed) {
-      return;
-    }
-    const normalized = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '.');
-    const profile: User = {
-      id: `user_${normalized || 'guest'}`,
-      username: trimmed,
-      name: name && name.trim() ? name.trim() : trimmed,
-    };
+  const persistSession = useCallback(async (profile: User) => {
     await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(profile));
     setUser(profile);
   }, []);
+
+  const signUp = useCallback(
+    async (name: string, identifier: string, password: string): Promise<AuthResult> => {
+      if (!identifier.trim()) {
+        return { ok: false, error: 'Please enter a username or email.' };
+      }
+      if (password.length < 6) {
+        return { ok: false, error: 'Password must be at least 6 characters.' };
+      }
+      try {
+        const account = await createAccount({ name, username: identifier, password });
+        await persistSession({
+          id: account.id,
+          name: account.name,
+          username: account.username,
+        });
+        return { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : 'Could not create account.',
+        };
+      }
+    },
+    [persistSession]
+  );
+
+  const login = useCallback(
+    async (identifier: string, password: string): Promise<AuthResult> => {
+      if (!identifier.trim() || !password) {
+        return { ok: false, error: 'Enter your username or email and password.' };
+      }
+      const account = await verifyCredentials(identifier, password);
+      if (!account) {
+        return { ok: false, error: 'Invalid username or password.' };
+      }
+      await persistSession({
+        id: account.id,
+        name: account.name,
+        username: account.username,
+      });
+      return { ok: true };
+    },
+    [persistSession]
+  );
+
+  const loginGuest = useCallback(async () => {
+    await persistSession({ id: 'user_guest', username: 'Guest', name: 'Guest' });
+  }, [persistSession]);
 
   const logout = useCallback(async () => {
     await AsyncStorage.removeItem(AUTH_USER_KEY);
@@ -70,10 +114,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: user !== null,
       isLoading,
+      signUp,
       login,
+      loginGuest,
       logout,
     }),
-    [user, isLoading, login, logout]
+    [user, isLoading, signUp, login, loginGuest, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

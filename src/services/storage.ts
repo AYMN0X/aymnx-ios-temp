@@ -10,6 +10,87 @@ export interface SavedPlaylist {
   coverUrl?: string;
 }
 
+export interface AuthAccount {
+  id: string;
+  name: string;
+  username: string;
+  password: string;
+  createdAt: number;
+}
+
+export const ACCOUNTS_KEY = '@aymnx_auth_accounts';
+
+const normalizeIdentifier = (value: string): string => value.trim().toLowerCase();
+
+async function readAccounts(): Promise<AuthAccount[]> {
+  try {
+    const raw = await AsyncStorage.getItem(ACCOUNTS_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as AuthAccount[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn('[storage] Failed to read accounts.', error);
+    return [];
+  }
+}
+
+async function writeAccounts(accounts: AuthAccount[]): Promise<void> {
+  await AsyncStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
+export async function getAccounts(): Promise<AuthAccount[]> {
+  return readAccounts();
+}
+
+export async function findAccount(identifier: string): Promise<AuthAccount | null> {
+  const key = normalizeIdentifier(identifier);
+  const accounts = await readAccounts();
+  return accounts.find((account) => normalizeIdentifier(account.username) === key) ?? null;
+}
+
+export async function createAccount(input: {
+  name: string;
+  username: string;
+  password: string;
+}): Promise<AuthAccount> {
+  const key = normalizeIdentifier(input.username);
+  if (!key) {
+    throw new Error('Please enter a username or email.');
+  }
+  if (!input.name.trim()) {
+    throw new Error('Please enter a display name.');
+  }
+  if (!input.password) {
+    throw new Error('Please enter a password.');
+  }
+  const accounts = await readAccounts();
+  if (accounts.some((account) => normalizeIdentifier(account.username) === key)) {
+    throw new Error('An account with that username or email already exists.');
+  }
+  const account: AuthAccount = {
+    id: `user_${key.replace(/[^a-z0-9]+/g, '.')}`,
+    name: input.name.trim(),
+    username: input.username.trim(),
+    password: input.password,
+    createdAt: Date.now(),
+  };
+  await writeAccounts([...accounts, account]);
+  return account;
+}
+
+export async function verifyCredentials(
+  identifier: string,
+  password: string
+): Promise<AuthAccount | null> {
+  const account = await findAccount(identifier);
+  if (!account || account.password !== password) {
+    return null;
+  }
+  return account;
+}
+
 export interface StoredUserData {
   likedSongs?: Track[];
   playlists?: SavedPlaylist[];
