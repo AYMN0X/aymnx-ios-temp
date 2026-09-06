@@ -457,25 +457,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     width: "100%",
+    alignSelf: "stretch",
     backgroundColor: "transparent",
   },
   safeArea: {
     flex: 1,
     width: "100%",
+    alignSelf: "stretch",
   },
   scrollView: {
     flex: 1,
     width: "100%",
+    alignSelf: "stretch",
   },
   scrollContent: {
     width: "100%",
-    paddingHorizontal: 20,
+    alignSelf: "stretch",
+    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 40,
     gap: 24,
   },
   header: {
     gap: 6,
+    width: "100%",
+    alignSelf: "stretch",
   },
   greetingTitle: {
     fontSize: 26,
@@ -502,6 +508,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 20,
     paddingVertical: 4,
+    width: "100%",
+    alignSelf: "stretch",
   },
   categoryTab: {
     alignItems: "center",
@@ -553,6 +561,8 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: 14,
+    width: "100%",
+    alignSelf: "stretch",
   },
   sectionTitle: {
     fontSize: 17,

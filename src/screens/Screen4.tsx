@@ -54,11 +54,12 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
 
   const [isShuffle, setIsShuffle] = React.useState(false);
   const [isRepeat, setIsRepeat] = React.useState(false);
+  const [barWidth, setBarWidth] = React.useState(0);
 
   const handleSeekPress = (e: GestureResponderEvent) => {
     const touchX = e.nativeEvent.locationX;
-    const barWidth = SCREEN_WIDTH - 48;
-    const seekPercentage = Math.max(0, Math.min(1, touchX / barWidth));
+    const width = barWidth > 0 ? barWidth : SCREEN_WIDTH * 0.86;
+    const seekPercentage = Math.max(0, Math.min(1, touchX / width));
     if (duration > 0 && seekTo) {
       seekTo(seekPercentage * duration);
     }
@@ -129,6 +130,7 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             style={styles.progressBarBackground}
             activeOpacity={1}
             onPress={handleSeekPress}
+            onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
           >
             <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
           </TouchableOpacity>
@@ -208,14 +210,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     width: "100%",
-    backgroundColor: "transparent",
+    alignItems: "center",
     justifyContent: "space-between",
-    paddingBottom: 28,
+    paddingVertical: 20,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    width: "100%",
     paddingHorizontal: 20,
     paddingTop: 16,
   },
@@ -226,14 +229,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   artworkWrapper: {
-    marginVertical: 18,
-  },
-  artwork: {
-    width: "88%",
-    maxWidth: 340,
+    width: "82%",
     aspectRatio: 1,
     alignSelf: "center",
     borderRadius: 16,
+    overflow: "hidden",
+    marginVertical: 16,
+  },
+  artwork: {
+    width: "100%",
+    height: "100%",
   },
   artworkFallback: {
     backgroundColor: "#1F162B",
@@ -241,10 +246,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   trackInfoSection: {
+    width: "86%",
+    alignSelf: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
     marginTop: 20,
   },
   titleColumn: {
@@ -263,7 +269,8 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   progressContainer: {
-    paddingHorizontal: 24,
+    width: "86%",
+    alignSelf: "center",
     gap: 8,
   },
   progressBarBackground: {
@@ -286,11 +293,11 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   controlsRow: {
+    width: "86%",
+    alignSelf: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 28,
-    marginTop: 8,
   },
   playButton: {
     width: 56,
