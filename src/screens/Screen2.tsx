@@ -375,6 +375,15 @@ export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreateP
 
   const countLabel = (count: number) => `${count} ${count === 1 ? "song" : "songs"}`;
 
+  const sortedHomePlaylists = [
+    ...playlists.filter((p) => p.id === "liked"),
+    ...playlists
+      .filter((p) => p.id !== "liked" && !p.isImported)
+      .slice()
+      .reverse(),
+    ...playlists.filter((p) => p.isImported),
+  ];
+
   const playlistCards: Array<{
     key: string;
     title: string;
@@ -393,7 +402,7 @@ export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreateP
       icon: <Ionicons name="heart" size={26} color="#FFFFFF" />,
       onPress: () => setLibraryView({ kind: "liked" }),
     },
-    ...playlists.map((playlist, index) => ({
+    ...sortedHomePlaylists.map((playlist, index) => ({
       key: playlist.id,
       title: playlist.name,
       subtitle: countLabel(playlist.tracks?.length ?? 0),

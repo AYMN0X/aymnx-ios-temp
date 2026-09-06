@@ -8,6 +8,7 @@ export interface SavedPlaylist {
   description?: string;
   tracks: Track[];
   coverUrl?: string;
+  isImported?: boolean;
 }
 
 export interface AuthAccount {
@@ -220,6 +221,7 @@ export async function createPlaylist(userId: string, name: string): Promise<Save
       id: playlistId(),
       name,
       tracks: [],
+      isImported: false,
     };
     return { ...d, playlists: [...(d.playlists ?? []), playlist] };
   });
@@ -237,6 +239,7 @@ export async function createImportedPlaylist(
     name,
     coverUrl,
     tracks,
+    isImported: true,
   };
   const data = await updateUserData(userId, (d) => ({
     ...d,
