@@ -17,6 +17,7 @@ import { usePlayer } from "../context/PlayerContext";
 import { searchITunes } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 import { Border, Color } from "../theme/GlobalStyles";
+import { Screen3 } from "./Screen3";
 
 const CATEGORY_KEYS = ["Recent", "Top 50", "Chill", "R&B", "Festival"];
 
@@ -225,6 +226,7 @@ export const Screen2: React.FC = () => {
   const { likedSongs } = useLibrary();
 
   const [selectedCategory, setSelectedCategory] = React.useState("Recent");
+  const [showRnbPlaylist, setShowRnbPlaylist] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<Track[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
@@ -303,6 +305,10 @@ export const Screen2: React.FC = () => {
   };
 
   const handlePlayMix = async (mix: PlaylistDef) => {
+    if (mix.id === "rnb-playlist") {
+      setShowRnbPlaylist(true);
+      return;
+    }
     const target = mix.targetCategory ?? selectedCategory;
     const tracks = await loadCategory(target);
     if (tracks.length === 0) {
@@ -322,6 +328,10 @@ export const Screen2: React.FC = () => {
         onPress={() => onPlay(track)}
       />
     ));
+
+  if (showRnbPlaylist) {
+    return <Screen3 onBack={() => setShowRnbPlaylist(false)} />;
+  }
 
   return (
     <View style={styles.container}>
