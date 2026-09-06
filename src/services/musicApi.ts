@@ -26,6 +26,18 @@ interface ITunesResult {
 
 const ARTWORK_HIRES_SUFFIX = '600x600bb.jpg';
 
+const REQUEST_TIMEOUT_MS = 2500;
+
+async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchTrendingNow(): Promise<Track[]> {
   return searchITunes('trending now', 30);
 }
@@ -40,7 +52,7 @@ export async function searchITunes(query: string, limit = 25): Promise<Track[]> 
     return [];
   }
   const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=song&limit=${limit}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
     throw new Error(`iTunes search failed with status ${response.status}`);
   }
@@ -55,7 +67,7 @@ export async function searchITunes(query: string, limit = 25): Promise<Track[]> 
   }));
 }
 
-const API_TIMEOUT_MS = 3500;
+const API_TIMEOUT_MS = REQUEST_TIMEOUT_MS;
 
 const API_HEADERS = {
   Accept: 'application/json',

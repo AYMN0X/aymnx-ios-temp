@@ -79,6 +79,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const autoplayLoadingRef = useRef(false);
   const autoplayFailedForRef = useRef<string | null>(null);
   const autoplayEnabledRef = useRef(true);
+  const playerInitiatedRef = useRef(false);
   const downloadedRef = useRef<typeof downloadedTracks>([]);
   const mirrorIdsRef = useRef<Set<string>>(new Set());
   const lastMirrorIndexRef = useRef(-1);
@@ -154,6 +155,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const fillMirror = useCallback(
     async ({ full = false }: { full?: boolean } = {}) => {
+      if (!playerInitiatedRef.current) {
+        return;
+      }
       if (fillInFlightRef.current) {
         fillPendingRequestRef.current = { full };
         return;
@@ -468,6 +472,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const playTrack = async (track: Track, queue: Track[] = []) => {
+    playerInitiatedRef.current = true;
     setAutoplayAddedIds(new Set());
     if (queue.length > 0) {
       const index = Math.max(queue.findIndex((item) => item.id === track.id), 0);
@@ -594,6 +599,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (user) {
       return;
     }
+    playerInitiatedRef.current = false;
     startSeqRef.current += 1;
     queueGenRef.current += 1;
     setCurrentTrack(null);
