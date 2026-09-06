@@ -17,6 +17,7 @@ import { usePlayer } from "../context/PlayerContext";
 import { searchITunes } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 import { Border, Color } from "../theme/GlobalStyles";
+import { AmbientBackground } from "../components/AmbientBackground";
 import { Screen3 } from "./Screen3";
 
 const CATEGORY_KEYS = ["Recent", "Top 50", "Chill", "R&B", "Festival"];
@@ -349,10 +350,10 @@ export const Screen2: React.FC = () => {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.safeArea}>
+return (
+    <AmbientBackground>
+      <View style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -447,14 +448,15 @@ export const Screen2: React.FC = () => {
           )}
         </ScrollView>
       </SafeAreaView>
-    </View>
+      </View>
+    </AmbientBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Color.background,
+    backgroundColor: "transparent",
   },
   safeArea: {
     flex: 1,

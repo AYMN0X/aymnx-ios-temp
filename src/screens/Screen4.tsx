@@ -11,12 +11,12 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { Color, Border } from "../theme/GlobalStyles";
+import { Color } from "../theme/GlobalStyles";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
+import { AmbientBackground } from "../components/AmbientBackground";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, 340);
 
 interface Screen4Props {
   onClose: () => void;
@@ -52,6 +52,9 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
 
   const artworkUri = currentTrack?.artwork || (currentTrack as any)?.coverUrl;
 
+  const [isShuffle, setIsShuffle] = React.useState(false);
+  const [isRepeat, setIsRepeat] = React.useState(false);
+
   const handleSeekPress = (e: GestureResponderEvent) => {
     const touchX = e.nativeEvent.locationX;
     const barWidth = SCREEN_WIDTH - 48;
@@ -62,8 +65,9 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <AmbientBackground>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" />
 
       <View style={styles.header}>
         <TouchableOpacity
@@ -73,7 +77,6 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
         >
           <Ionicons name="chevron-down" size={28} color={Color.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Now Playing</Text>
         <TouchableOpacity
           style={styles.iconButton}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -136,6 +139,17 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
 
       <View style={styles.controlsRow}>
         <TouchableOpacity
+          onPress={() => setIsShuffle((v) => !v)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons
+            name="shuffle"
+            size={22}
+            color={isShuffle ? Color.accent : Color.textSecondary}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
           onPress={playPrevious}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -161,15 +175,27 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
         >
           <Ionicons name="play-skip-forward" size={28} color={Color.textPrimary} />
         </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+
+        <TouchableOpacity
+          onPress={() => setIsRepeat((v) => !v)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons
+            name="repeat"
+            size={22}
+            color={isRepeat ? Color.accent : Color.textSecondary}
+          />
+        </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </AmbientBackground>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Color.background,
+    backgroundColor: "transparent",
     justifyContent: "space-between",
     paddingBottom: 28,
   },
@@ -181,13 +207,6 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     height: 48,
   },
-  headerTitle: {
-    color: Color.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
   iconButton: {
     width: 40,
     height: 40,
@@ -195,13 +214,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   artworkWrapper: {
-    alignItems: "center",
-    justifyContent: "center",
     marginVertical: 18,
   },
   artwork: {
-    width: ARTWORK_SIZE,
-    height: ARTWORK_SIZE,
+    width: "88%",
+    maxWidth: 340,
+    aspectRatio: 1,
+    alignSelf: "center",
     borderRadius: 16,
   },
   artworkFallback: {
@@ -214,7 +233,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    marginBottom: 8,
+    marginTop: 20,
   },
   titleColumn: {
     flex: 1,
@@ -222,12 +241,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   trackTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
     color: Color.textPrimary,
   },
   trackArtist: {
-    fontSize: 15,
+    fontSize: 14,
     color: Color.textSecondary,
     fontWeight: "500",
   },
@@ -236,9 +255,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   progressBarBackground: {
-    height: 4,
+    height: 3,
     backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: Border.sm || 2,
+    borderRadius: 1.5,
     overflow: "hidden",
   },
   progressBarFill: {
@@ -256,16 +275,15 @@ const styles = StyleSheet.create({
   },
   controlsRow: {
     flexDirection: "row",
-    justifyContent: "center",
+    justifyContent: "space-between",
     alignItems: "center",
-    gap: 40,
     paddingHorizontal: 28,
     marginTop: 8,
   },
   playButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: Color.accent,
     alignItems: "center",
     justifyContent: "center",
