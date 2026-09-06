@@ -36,6 +36,7 @@ import {
 import {
   SafeAreaProvider,
   SafeAreaView,
+  useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
@@ -864,8 +865,15 @@ function NowPlayingModal({ visible, onClose }) {
 }
 
 function TabBar({ active, onChange }) {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 12);
   return (
-    <View style={styles.tabBar}>
+    <View
+      style={[
+        styles.tabBar,
+        { paddingBottom: bottomInset, height: 56 + bottomInset },
+      ]}
+    >
       {TABS.map((tab) => {
         const isActive = active === tab.key;
         const Icon = tab.icon;
@@ -1427,7 +1435,7 @@ disabled: {
   },
   libraryScreen: {
     flex: 1,
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 8,
   },
   libraryHeader: {
@@ -1888,7 +1896,7 @@ disabled: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: COLORS.green,
+    backgroundColor: COLORS.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
