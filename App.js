@@ -1000,8 +1000,17 @@ function AppShell() {
           />
         )}
       </View>
-      <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
-      <TabBar active={activeTab} onChange={setActiveTab} />
+      <View style={styles.bottomBarWrap} pointerEvents="box-none">
+        <LinearGradient
+          colors={['rgba(11, 6, 18, 0)', 'rgba(11, 6, 18, 0.8)', 'rgba(11, 6, 18, 1)']}
+          locations={[0, 0.35, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.bottomFade}
+        />
+        <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
+        <TabBar active={activeTab} onChange={setActiveTab} />
+      </View>
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
       <AccountSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
     </View>
@@ -1092,6 +1101,22 @@ const styles = StyleSheet.create({
   screenContent: {
     flex: 1,
     width: '100%',
+  },
+  bottomBarWrap: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 150,
+    overflow: 'hidden',
+  },
+  bottomFade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    pointerEvents: 'none',
   },
 disabled: {
     opacity: 0.5,
@@ -1651,7 +1676,7 @@ disabled: {
   },
   miniPlayer: {
     position: 'absolute',
-    bottom: 58,
+    bottom: 64,
     left: 8,
     right: 8,
     height: 56,
@@ -1783,9 +1808,13 @@ disabled: {
     flex: 1,
   },
   tabBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     width: '100%',
     height: 56,
-    backgroundColor: '#121212',
+    backgroundColor: 'transparent',
     borderTopWidth: 0,
     flexDirection: 'row',
     justifyContent: 'space-around',
