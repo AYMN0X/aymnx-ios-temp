@@ -71,7 +71,7 @@ export const Screen3: React.FC<Screen3Props> = ({
     removeTrackFromPlaylist,
     reorderPlaylistTracks,
   } = useLibrary();
-  const { downloadedIds, isBatchDownloading, batchProgress, downloadAll } = useDownloads();
+  const { downloadedIds, isDownloaded, isBatchDownloading, batchProgress, downloadAll } = useDownloads();
 
   const livePlaylist = playlistId ? playlists.find((playlist) => playlist.id === playlistId) : undefined;
 
@@ -250,12 +250,22 @@ export const Screen3: React.FC<Screen3Props> = ({
                       >
                         {track.title}
                       </Text>
-                      <Text style={[styles.trackArtist, isCurrent && styles.trackArtistCurrent]} numberOfLines={1}>
+                      <View style={styles.trackMetaRow}>
+                      <Text
+                        style={[styles.trackArtist, styles.trackArtistMeta, isCurrent && styles.trackArtistCurrent]}
+                        numberOfLines={1}
+                      >
                         {track.artist}
                         {track.album ? ` • ${track.album}` : ""}
                       </Text>
+                      {isDownloaded(track.id) ? (
+                        <View style={styles.downloadBadge}>
+                          <Ionicons name="arrow-down" size={9} color="#FFFFFF" />
+                        </View>
+                      ) : null}
                     </View>
-                  </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
                   {isEditing ? (
                     <View style={styles.editControls}>
                       <TouchableOpacity
@@ -608,6 +618,22 @@ const styles = StyleSheet.create({
   trackArtist: {
     fontSize: 12,
     color: Color.textSecondary,
+  },
+  trackArtistMeta: {
+    flexShrink: 1,
+  },
+  trackMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  downloadBadge: {
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    backgroundColor: Color.accent,
+    alignItems: "center",
+    justifyContent: "center",
   },
   trackArtistCurrent: {
     color: Color.accent,
