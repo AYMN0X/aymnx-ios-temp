@@ -707,7 +707,11 @@ function TabBar({ active, onChange }) {
         const isActive = active === tab.key;
         const Icon = tab.icon;
         return (
-          <Pressable key={tab.key} style={styles.tabItem} onPress={() => onChange(tab.key)}>
+          <Pressable
+            key={tab.key}
+            style={styles.tabItem}
+            onPress={() => onChange(tab.key, isActive)}
+          >
             <Icon size={24} color={isActive ? COLORS.accent : COLORS.textSecondary} />
             <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
           </Pressable>
@@ -959,6 +963,7 @@ function CreatePlaylistModal({ visible, onClose }) {
 
 function AppShell() {
   const [activeTab, setActiveTab] = useState('home');
+  const [tabKeys, setTabKeys] = useState({ home: 0, search: 0, create: 0, library: 0 });
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false);
@@ -969,17 +974,26 @@ function AppShell() {
     setActiveTab('library');
   };
 
+  const handleTabChange = (tabKey, wasActive) => {
+    if (wasActive) {
+      setTabKeys((keys) => ({ ...keys, [tabKey]: keys[tabKey] + 1 }));
+    } else {
+      setActiveTab(tabKey);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.screenContent}>
         {activeTab === 'home' ? (
-          <Screen2 onCreatePlaylist={() => setCreatePlaylistOpen(true)} />
+          <Screen2 key={tabKeys.home} onCreatePlaylist={() => setCreatePlaylistOpen(true)} />
         ) : activeTab === 'search' ? (
-          <SearchScreen />
+          <SearchScreen key={tabKeys.search} />
         ) : activeTab === 'create' ? (
-          <ImportScreen onOpenImportedPlaylist={openImportedPlaylist} />
+          <ImportScreen key={tabKeys.create} onOpenImportedPlaylist={openImportedPlaylist} />
         ) : (
           <LibraryScreen
+            key={tabKeys.library}
             onOpenAccount={() => setAccountOpen(true)}
             initialDetail={
               pendingPlaylistId ? { type: 'playlist', id: pendingPlaylistId } : null
@@ -997,7 +1011,7 @@ function AppShell() {
           style={styles.bottomFade}
         />
         <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
-        <TabBar active={activeTab} onChange={setActiveTab} />
+        <TabBar active={activeTab} onChange={handleTabChange} />
       </View>
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
       <AccountSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
