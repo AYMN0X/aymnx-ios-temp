@@ -223,7 +223,7 @@ export const Screen3: React.FC<Screen3Props> = ({
             {isEditing ? (
               <TouchableOpacity
                 onPress={() => setIsEditing(false)}
-                style={styles.iconButton}
+                style={styles.doneButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Text style={styles.doneButtonText}>Done</Text>
@@ -569,9 +569,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   doneButtonText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
-    color: Color.accent,
+    color: "#FFFFFF",
+  },
+  doneButton: {
+    backgroundColor: Color.accent,
+    borderRadius: 18,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
   },
   artworkCard: {
     width: 220,
