@@ -19,6 +19,7 @@ import { Color, Border } from "../theme/GlobalStyles";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
 import { useDownloads } from "../context/DownloadContext";
+import { useTrackActions } from "../context/TrackActionsContext";
 import type { Track } from "../services/musicApi";
 
 interface Screen3Props {
@@ -62,6 +63,7 @@ export const Screen3: React.FC<Screen3Props> = ({
   onBack,
 }) => {
   const { playTrack, currentTrack, isPlaying } = usePlayer();
+  const { openTrack } = useTrackActions();
   const {
     likedSongs,
     likedMeta,
@@ -287,7 +289,6 @@ export const Screen3: React.FC<Screen3Props> = ({
             displayTracks.map((track, index) => {
               const artwork = artworkFor(track);
               const isCurrent = !isEditing && currentTrack?.id === track.id;
-              const liked = isLiked(track.id);
               return (
                 <View key={track.id} style={[styles.trackRow, isCurrent && styles.trackRowActive]}>
                   <TouchableOpacity
@@ -362,12 +363,8 @@ export const Screen3: React.FC<Screen3Props> = ({
                         </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity onPress={() => toggleLike(track)} hitSlop={10} style={styles.likeButton}>
-                      <Ionicons
-                        name={liked ? "heart" : "heart-outline"}
-                        size={20}
-                        color={liked ? Color.accent : Color.textSecondary}
-                      />
+                    <TouchableOpacity onPress={() => openTrack(track)} hitSlop={10} style={styles.likeButton}>
+                      <Ionicons name="ellipsis-horizontal" size={20} color={Color.textSecondary} />
                     </TouchableOpacity>
                   )}
                 </View>
