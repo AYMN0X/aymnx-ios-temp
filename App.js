@@ -1004,10 +1004,10 @@ function AppShell() {
       </View>
       <View style={styles.bottomBarWrap} pointerEvents="box-none">
         <LinearGradient
-          colors={['rgba(11, 6, 18, 0)', 'rgba(11, 6, 18, 0.8)', 'rgba(11, 6, 18, 1)']}
-          locations={[0, 0.35, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
+          colors={['rgba(10, 5, 18, 0)', 'rgba(10, 5, 18, 0.75)', 'rgba(10, 5, 18, 0.98)']}
+          locations={[0.0, 0.35, 1.0]}
+          start={{ x: 0.5, y: 0.0 }}
+          end={{ x: 0.5, y: 1.0 }}
           style={styles.bottomFade}
         />
         <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
@@ -1125,9 +1125,10 @@ const styles = StyleSheet.create({
   bottomFade: {
     position: 'absolute',
     top: 0,
-    right: 0,
     bottom: 0,
     left: 0,
+    right: 0,
+    paddingTop: 18,
     pointerEvents: 'none',
   },
 disabled: {
@@ -1279,13 +1280,13 @@ disabled: {
     textAlign: 'center',
   },
   searchResults: {
-    paddingBottom: 24,
+    paddingBottom: 90,
   },
   searchBrowse: {
     flex: 1,
   },
   searchBrowseContent: {
-    paddingBottom: 24,
+    paddingBottom: 90,
   },
   browseTitle: {
     color: '#FFFFFF',
@@ -1444,7 +1445,7 @@ disabled: {
     ...TYPE.body,
   },
   libraryList: {
-    paddingBottom: 24,
+    paddingBottom: 90,
   },
   libraryCreateRow: {
     flexDirection: 'row',
@@ -1698,6 +1699,7 @@ disabled: {
     alignItems: 'center',
     paddingHorizontal: 8,
     overflow: 'hidden',
+    zIndex: 10,
     elevation: 10,
   },
   miniPlayerMain: {
@@ -1828,6 +1830,7 @@ disabled: {
     height: 56,
     backgroundColor: 'transparent',
     borderTopWidth: 0,
+    zIndex: 10,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',

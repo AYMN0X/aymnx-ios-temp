@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 100,
+    paddingBottom: 90,
     gap: 24,
   },
   header: {

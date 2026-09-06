@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 24,
-    paddingBottom: 40,
+    paddingBottom: 90,
     gap: 24,
     minHeight: "100%",
   },
