@@ -104,7 +104,7 @@ const SEARCH_CATEGORIES = [
 const TABS = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'search', label: 'Search', icon: Search },
-  { key: 'library', label: 'Your Library', icon: Library },
+  { key: 'library', label: 'Library', icon: Library },
   { key: 'create', label: 'AYMNX', icon: User },
 ];
 
@@ -362,7 +362,7 @@ function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
         <Pressable style={styles.libraryAvatar} onPress={onOpenAccount}>
           <Text style={styles.libraryAvatarLetter}>{userInitial}</Text>
         </Pressable>
-        <Text style={styles.libraryTitle}>Your Library</Text>
+        <Text style={styles.libraryTitle}>Library</Text>
         <View style={styles.libraryHeaderActions}>
           <Pressable style={styles.libraryHeaderBtn} hitSlop={8}>
             <Ionicons name="search" size={22} color={COLORS.white} />
