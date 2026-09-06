@@ -5,7 +5,6 @@ import TrackPlayer, {
   Capability,
   Event,
   IOSCategory,
-  IOSCategoryOptions,
   State,
   usePlaybackState,
   useProgress,
@@ -30,7 +29,6 @@ interface PlayerContextValue {
   playTrack: (track: Track, queue?: Track[]) => Promise<void>;
   togglePlayPause: () => void;
   seekTo: (millis: number) => Promise<void>;
-  setPlaybackPosition: (value: number) => void;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
   queue: Track[];
@@ -90,14 +88,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const { state } = usePlaybackState();
   const progress = useProgress(500);
-  const [playbackPosition, setPlaybackPosition] = useState(0);
+  const playbackPosition = Number.isFinite(progress.position) ? progress.position * 1000 : 0;
   const duration = Number.isFinite(progress.duration) ? progress.duration * 1000 : 0;
-
-  useEffect(() => {
-    if (Number.isFinite(progress.position)) {
-      setPlaybackPosition(progress.position * 1000);
-    }
-  }, [progress.position]);
 
   useEffect(() => {
     autoplayEnabledRef.current = isAutoplayEnabled;
@@ -572,11 +564,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-await TrackPlayer.setupPlayer({
-        iosCategory: IOSCategory.Playback,
-        iosCategoryOptions: [IOSCategoryOptions.MixWithOthers, IOSCategoryOptions.DefaultToSpeaker],
-        autoHandleInterruptions: true,
-      });
+        await TrackPlayer.setupPlayer({
+          iosCategory: IOSCategory.Playback,
+          autoHandleInterruptions: true,
+        });
         await TrackPlayer.updateOptions({
           capabilities: [
             Capability.Play,
@@ -674,8 +665,6 @@ await TrackPlayer.setupPlayer({
       return;
     }
     await TrackPlayer.seekTo(millis / 1000);
-    // Optimistic update so the UI responds instantly before the next progress tick
-    setPlaybackPosition(Math.max(0, Math.min(millis, duration)));
   };
 
   const value = useMemo<PlayerContextValue>(
@@ -691,7 +680,6 @@ await TrackPlayer.setupPlayer({
       playTrack,
       togglePlayPause,
       seekTo,
-      setPlaybackPosition,
       playNext,
       playPrevious,
       queue,
