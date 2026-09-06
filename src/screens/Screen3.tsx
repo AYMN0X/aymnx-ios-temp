@@ -16,7 +16,6 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Color, Border } from "../theme/GlobalStyles";
-import { AmbientBackground } from "../components/AmbientBackground";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
 import { useDownloads } from "../context/DownloadContext";
@@ -163,7 +162,7 @@ export const Screen3: React.FC<Screen3Props> = ({
   };
 
   return (
-    <AmbientBackground>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
       <View style={[styles.heroContainer, { backgroundColor: coverBackground }]}>
@@ -480,7 +479,7 @@ export const Screen3: React.FC<Screen3Props> = ({
           </View>
         </View>
       </Modal>
-    </AmbientBackground>
+    </View>
   );
 };
 
@@ -529,7 +528,7 @@ const styles = StyleSheet.create({
     marginTop: -20,
   },
   scrollContent: {
-    backgroundColor: Color.background,
+    backgroundColor: "transparent",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,

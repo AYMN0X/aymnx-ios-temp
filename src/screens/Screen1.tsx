@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface Screen1Props {
@@ -10,24 +9,18 @@ interface Screen1Props {
 export const Screen1: React.FC<Screen1Props> = ({ onContinue }) => {
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#0B3D22', '#121212']}
-        locations={[0, 0.6]}
-        style={styles.background}
-      >
-        <SafeAreaView style={styles.content} edges={['bottom']}>
-          <View style={styles.hero}>
-            <Text style={styles.heading}>Feel the beat</Text>
-            <Text style={styles.subheading}>
-              Immerse yourself into the world of music today
-            </Text>
-          </View>
+      <SafeAreaView style={styles.content} edges={['bottom']}>
+        <View style={styles.hero}>
+          <Text style={styles.heading}>Feel the beat</Text>
+          <Text style={styles.subheading}>
+            Immerse yourself into the world of music today
+          </Text>
+        </View>
 
-          <TouchableOpacity activeOpacity={0.8} style={styles.button} onPress={onContinue}>
-            <Text style={styles.buttonText}>Continue</Text>
-          </TouchableOpacity>
-        </SafeAreaView>
-      </LinearGradient>
+        <TouchableOpacity activeOpacity={0.8} style={styles.button} onPress={onContinue}>
+          <Text style={styles.buttonText}>Continue</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
     </View>
   );
 };
@@ -35,12 +28,7 @@ export const Screen1: React.FC<Screen1Props> = ({ onContinue }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
-  },
-  background: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
+    backgroundColor: 'transparent',
   },
   content: {
     flex: 1,

@@ -14,7 +14,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { Color } from "../theme/GlobalStyles";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
-import { AmbientBackground } from "../components/AmbientBackground";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -67,7 +66,6 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
 
   return (
     <View style={styles.screenRoot}>
-      <AmbientBackground style={styles.ambientFill} />
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
 
@@ -202,13 +200,6 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
     overflow: "hidden",
     alignItems: "center",
-  },
-  ambientFill: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
   },
   container: {
     flex: 1,

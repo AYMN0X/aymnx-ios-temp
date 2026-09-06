@@ -41,6 +41,7 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
 import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
+import { AmbientBackground } from './src/components/AmbientBackground';
 import { Screen1 } from './src/screens/Screen1';
 import { Screen2 } from './src/screens/Screen2';
 import { Screen3 } from './src/screens/Screen3';
@@ -856,6 +857,7 @@ function NowPlayingModal({ visible, onClose }) {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
+      <AmbientBackground style={styles.ambientLayer} />
       <Screen4 onClose={onClose} />
     </Modal>
   );
@@ -1035,41 +1037,38 @@ function AuthGate() {
     };
   }, []);
 
-  if (isLoading || onboardingSeen === null) {
-    return (
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <StatusBar style="light" />
-      </SafeAreaView>
-    );
-  }
-
-  if (!onboardingSeen) {
-    return (
-      <View style={styles.onboardingRoot}>
-        <StatusBar style="light" />
-        <Screen1
-          onContinue={() => {
-            setOnboardingSeen(true);
-            setHasSeenOnboarding(true).catch((error) =>
-              console.warn('[app] Could not persist onboarding flag.', error)
-            );
-          }}
-        />
-      </View>
-    );
-  }
-
   return (
-    <DownloadProvider>
-      <PlayerProvider>
-        <LibraryProvider>
-          <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-            <StatusBar style="light" />
-            {isAuthenticated ? <AppShell /> : <LoginScreen />}
-          </SafeAreaView>
-        </LibraryProvider>
-      </PlayerProvider>
-    </DownloadProvider>
+    <View style={styles.appRoot}>
+      <AmbientBackground style={styles.ambientLayer} />
+      {isLoading || onboardingSeen === null ? (
+        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+          <StatusBar style="light" />
+        </SafeAreaView>
+      ) : !onboardingSeen ? (
+        <View style={styles.onboardingRoot}>
+          <StatusBar style="light" />
+          <Screen1
+            onContinue={() => {
+              setOnboardingSeen(true);
+              setHasSeenOnboarding(true).catch((error) =>
+                console.warn('[app] Could not persist onboarding flag.', error)
+              );
+            }}
+          />
+        </View>
+      ) : (
+        <DownloadProvider>
+          <PlayerProvider>
+            <LibraryProvider>
+              <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+                <StatusBar style="light" />
+                {isAuthenticated ? <AppShell /> : <LoginScreen />}
+              </SafeAreaView>
+            </LibraryProvider>
+          </PlayerProvider>
+        </DownloadProvider>
+      )}
+    </View>
   );
 }
 
@@ -1084,19 +1083,32 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  appRoot: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: 'transparent',
+  },
+  ambientLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
   safeArea: {
     flex: 1,
     width: '100%',
-    backgroundColor: COLORS.background,
+    backgroundColor: 'transparent',
   },
   onboardingRoot: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: 'transparent',
   },
   container: {
     flex: 1,
     width: '100%',
-    backgroundColor: COLORS.background,
+    backgroundColor: 'transparent',
   },
   screenContent: {
     flex: 1,
@@ -1565,7 +1577,7 @@ disabled: {
   },
   loginRoot: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,

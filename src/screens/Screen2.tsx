@@ -17,7 +17,6 @@ import { usePlayer } from "../context/PlayerContext";
 import { searchITunes } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 import { Border, Color } from "../theme/GlobalStyles";
-import { AmbientBackground } from "../components/AmbientBackground";
 import { Screen3 } from "./Screen3";
 
 const CATEGORY_KEYS = ["Recent", "Top 50", "Chill", "R&B", "Festival"];
@@ -351,8 +350,7 @@ export const Screen2: React.FC = () => {
   }
 
 return (
-    <AmbientBackground>
-      <View style={styles.container}>
+    <View style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
         <ScrollView
           style={styles.scrollView}
@@ -448,8 +446,7 @@ return (
           )}
         </ScrollView>
       </SafeAreaView>
-      </View>
-    </AmbientBackground>
+    </View>
   );
 };
 
