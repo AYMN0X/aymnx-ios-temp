@@ -251,6 +251,20 @@ export const Screen3: React.FC<Screen3Props> = ({
                         {track.title}
                       </Text>
                       <View style={styles.trackMetaRow}>
+                      <View
+                        style={[
+                          styles.downloadBadge,
+                          isDownloaded(track.id)
+                            ? styles.downloadBadgeActive
+                            : styles.downloadBadgeMuted,
+                        ]}
+                      >
+                        <Ionicons
+                          name="arrow-down"
+                          size={9}
+                          color={isDownloaded(track.id) ? "#FFFFFF" : "#888888"}
+                        />
+                      </View>
                       <Text
                         style={[styles.trackArtist, styles.trackArtistMeta, isCurrent && styles.trackArtistCurrent]}
                         numberOfLines={1}
@@ -258,11 +272,6 @@ export const Screen3: React.FC<Screen3Props> = ({
                         {track.artist}
                         {track.album ? ` • ${track.album}` : ""}
                       </Text>
-                      {isDownloaded(track.id) ? (
-                        <View style={styles.downloadBadge}>
-                          <Ionicons name="arrow-down" size={9} color="#FFFFFF" />
-                        </View>
-                      ) : null}
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -631,9 +640,15 @@ const styles = StyleSheet.create({
     width: 13,
     height: 13,
     borderRadius: 6.5,
-    backgroundColor: Color.accent,
     alignItems: "center",
     justifyContent: "center",
+  },
+  downloadBadgeActive: {
+    backgroundColor: Color.accent,
+  },
+  downloadBadgeMuted: {
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   trackArtistCurrent: {
     color: Color.accent,
