@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import { useLibrary } from "../context/LibraryContext";
 import { usePlayer } from "../context/PlayerContext";
 import { searchITunes } from "../services/musicApi";
@@ -46,21 +47,7 @@ interface PlaylistView {
 }
 
 const CATEGORY_MIXES: Record<string, PlaylistDef[]> = {
-  Recent: [
-    {
-      id: "rnb-playlist",
-      title: "R&B Playlist",
-      subtitle: "Chill your mind",
-      gradient: ["#6A1B9A", "#311B92"],
-      targetCategory: "R&B",
-    },
-    {
-      id: "daily-mix-2",
-      title: "Daily Mix 2",
-      subtitle: "Made for you",
-      color: "#2B4B7A",
-    },
-  ],
+  Recent: [],
   "Top 50": [
     {
       id: "top50-global",
@@ -91,12 +78,6 @@ const CATEGORY_MIXES: Record<string, PlaylistDef[]> = {
   ],
   "R&B": [
     {
-      id: "rnb-playlist",
-      title: "R&B Playlist",
-      subtitle: "Chill your mind",
-      gradient: ["#6A1B9A", "#311B92"],
-    },
-    {
       id: "rnb-soulful",
       title: "Soulful Vibes",
       subtitle: "Smooth & sultry",
@@ -121,6 +102,14 @@ const CATEGORY_MIXES: Record<string, PlaylistDef[]> = {
 
 const SEARCH_DEBOUNCE_MS = 300;
 const TRACK_LIMIT = 25;
+
+const FALLBACK_PLAYLIST_GRADIENTS: [string, string][] = [
+  ["#6A1B9A", "#311B92"],
+  ["#2B4B7A", "#0E7C7B"],
+  ["#8D67AB", "#503750"],
+  ["#D84000", "#E13300"],
+  ["#1A237E", "#6A1B9A"],
+];
 
 const DEFAULT_LIKED: Track[] = [
   {
@@ -228,12 +217,51 @@ function FeaturedCard({ mix, onPress }: { mix: PlaylistDef; onPress: () => void 
   );
 }
 
-export const Screen2: React.FC = () => {
+function PlaylistCard({
+  title,
+  subtitle,
+  coverUrl,
+  colors,
+  icon,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  coverUrl?: string;
+  colors: [string, string];
+  icon?: React.ReactNode;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.playlistCard} onPress={onPress} activeOpacity={0.8}>
+      {coverUrl ? (
+        <Image source={{ uri: coverUrl }} style={styles.playlistCardCover} resizeMode="cover" />
+      ) : (
+        <LinearGradient colors={colors} style={styles.playlistCardCover}>
+          {icon ?? null}
+        </LinearGradient>
+      )}
+      <Text style={styles.playlistCardTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      <Text style={styles.playlistCardSubtitle} numberOfLines={1}>
+        {subtitle}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreatePlaylist }) => {
   const { playTrack, currentTrack } = usePlayer();
-  const { likedSongs } = useLibrary();
+  const { likedSongs, likedMeta, playlists } = useLibrary();
 
   const [selectedCategory, setSelectedCategory] = React.useState("Recent");
   const [playlistView, setPlaylistView] = React.useState<PlaylistView | null>(null);
+  const [libraryView, setLibraryView] = React.useState<
+    | { kind: "liked" }
+    | { kind: "playlist"; id: string }
+    | null
+  >(null);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<Track[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
@@ -327,6 +355,36 @@ export const Screen2: React.FC = () => {
 
   const favouritesList = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
 
+  const countLabel = (count: number) => `${count} ${count === 1 ? "song" : "songs"}`;
+
+  const playlistCards: Array<{
+    key: string;
+    title: string;
+    subtitle: string;
+    coverUrl?: string;
+    colors: [string, string];
+    icon?: React.ReactNode;
+    onPress: () => void;
+  }> = [
+    {
+      key: "liked",
+      title: likedMeta.name || "Liked Songs",
+      subtitle: countLabel(likedSongs.length),
+      coverUrl: likedMeta.coverUrl,
+      colors: ["#450AF5", "#6A1B9A"],
+      icon: <Ionicons name="heart" size={26} color="#FFFFFF" />,
+      onPress: () => setLibraryView({ kind: "liked" }),
+    },
+    ...playlists.map((playlist, index) => ({
+      key: playlist.id,
+      title: playlist.name,
+      subtitle: countLabel(playlist.tracks?.length ?? 0),
+      coverUrl: playlist.coverUrl,
+      colors: FALLBACK_PLAYLIST_GRADIENTS[index % FALLBACK_PLAYLIST_GRADIENTS.length],
+      onPress: () => setLibraryView({ kind: "playlist", id: playlist.id }),
+    })),
+  ];
+
   const renderTracks = (tracks: Track[], onPlay: (track: Track) => void) =>
     tracks.map((track) => (
       <TrackListRow
@@ -347,6 +405,13 @@ export const Screen2: React.FC = () => {
         onBack={() => setPlaylistView(null)}
       />
     );
+  }
+
+  if (libraryView) {
+    if (libraryView.kind === "liked") {
+      return <Screen3 isLikedPlaylist onBack={() => setLibraryView(null)} />;
+    }
+    return <Screen3 playlistId={libraryView.id} onBack={() => setLibraryView(null)} />;
   }
 
 return (
@@ -419,6 +484,36 @@ return (
                   );
                 })}
               </ScrollView>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Your playlists</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.playlistRail}
+                >
+                  {playlistCards.map((card) => (
+                    <PlaylistCard
+                      key={card.key}
+                      title={card.title}
+                      subtitle={card.subtitle}
+                      coverUrl={card.coverUrl}
+                      colors={card.colors}
+                      icon={card.icon}
+                      onPress={card.onPress}
+                    />
+                  ))}
+                  {playlists.length === 0 ? (
+                    <PlaylistCard
+                      title="Create Playlist"
+                      subtitle="Start your own mix"
+                      colors={["#1DB954", "#0E7C7B"]}
+                      icon={<Ionicons name="add" size={28} color="#FFFFFF" />}
+                      onPress={() => onCreatePlaylist?.()}
+                    />
+                  ) : null}
+                </ScrollView>
+              </View>
 
               <View style={styles.featuredGrid}>
                 {(CATEGORY_MIXES[selectedCategory] ?? []).map((mix) => (
@@ -531,6 +626,32 @@ const styles = StyleSheet.create({
   featuredGrid: {
     flexDirection: "row",
     gap: 12,
+  },
+  playlistRail: {
+    gap: 12,
+    paddingRight: 16,
+  },
+  playlistCard: {
+    width: 140,
+    gap: 6,
+  },
+  playlistCardCover: {
+    width: 140,
+    height: 140,
+    borderRadius: Border.md,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Color.card,
+  },
+  playlistCardTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Color.textPrimary,
+  },
+  playlistCardSubtitle: {
+    fontSize: 12,
+    color: Color.textSecondary,
   },
   featuredCard: {
     flex: 1,

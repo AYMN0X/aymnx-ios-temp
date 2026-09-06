@@ -1086,10 +1086,64 @@ function AccountSheet({ visible, onClose }) {
   );
 }
 
+function CreatePlaylistModal({ visible, onClose }) {
+  const { createPlaylist } = useLibrary();
+  const [name, setName] = useState('');
+
+  useEffect(() => {
+    if (!visible) {
+      setName('');
+    }
+  }, [visible]);
+
+  const handleCreate = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+    await createPlaylist(trimmed);
+    setName('');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.atpBackdrop} onPress={onClose}>
+        <Pressable style={styles.atpCard} onPress={() => {}}>
+          <Text style={styles.atpTitle}>Create Playlist</Text>
+          <View style={styles.atpCreate}>
+            <TextInput
+              style={styles.atpInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Playlist name"
+              placeholderTextColor={COLORS.textSecondary}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleCreate}
+            />
+            <Pressable
+              style={[styles.atpCreateBtn, !name.trim() && styles.disabled]}
+              onPress={handleCreate}
+              disabled={!name.trim()}
+            >
+              <Text style={styles.atpCreateLabel}>Create</Text>
+            </Pressable>
+          </View>
+          <Pressable style={styles.atpCancel} onPress={onClose} hitSlop={8}>
+            <Text style={styles.atpCancelLabel}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function AppShell() {
   const [activeTab, setActiveTab] = useState('home');
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false);
   const [pendingPlaylistId, setPendingPlaylistId] = useState(null);
 
   const openImportedPlaylist = (id) => {
@@ -1101,7 +1155,7 @@ function AppShell() {
     <View style={styles.container}>
       <View style={styles.screenContent}>
         {activeTab === 'home' ? (
-          <Screen2 />
+          <Screen2 onCreatePlaylist={() => setCreatePlaylistOpen(true)} />
         ) : activeTab === 'search' ? (
           <SearchScreen />
         ) : activeTab === 'create' ? (
@@ -1129,6 +1183,10 @@ function AppShell() {
       </View>
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
       <AccountSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
+      <CreatePlaylistModal
+        visible={createPlaylistOpen}
+        onClose={() => setCreatePlaylistOpen(false)}
+      />
     </View>
   );
 }
@@ -1341,6 +1399,14 @@ disabled: {
     color: COLORS.textSecondary,
     textAlign: 'center',
     paddingVertical: 12,
+  },
+  atpCancel: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+  },
+  atpCancelLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
   },
   searchContainer: {
     flex: 1,
