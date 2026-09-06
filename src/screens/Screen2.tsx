@@ -457,7 +457,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     width: "100%",
+    maxWidth: "100%",
     alignSelf: "stretch",
+    overflow: "hidden",
     backgroundColor: "transparent",
   },
   safeArea: {
@@ -475,7 +477,7 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 40,
+    paddingBottom: 100,
     gap: 24,
   },
   header: {

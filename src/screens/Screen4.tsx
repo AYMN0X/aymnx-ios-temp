@@ -199,6 +199,9 @@ const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,
     width: "100%",
+    maxWidth: "100%",
+    overflow: "hidden",
+    alignItems: "center",
   },
   ambientFill: {
     position: "absolute",
@@ -229,12 +232,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   artworkWrapper: {
-    width: "82%",
+    width: "84%",
     aspectRatio: 1,
     alignSelf: "center",
     borderRadius: 16,
     overflow: "hidden",
-    marginVertical: 16,
   },
   artwork: {
     width: "100%",
