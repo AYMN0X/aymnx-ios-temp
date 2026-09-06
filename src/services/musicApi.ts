@@ -86,7 +86,8 @@ async function apiFetch<T>(path: string, instances: string[]): Promise<T> {
 }
 
 const JIOSAAVN_INSTANCES = [
-  'https://saavn.dev',
+  'https://jiosaavn-api-private-six.vercel.app',
+  'https://saavn.me',
   'https://shnwazdev-jiosaavn-apii.vercel.app',
   'https://jiosaavn.rajputhemant.me',
 ];

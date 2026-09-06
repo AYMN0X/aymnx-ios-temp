@@ -1,13 +1,5 @@
-import {
-  createContext,
-  ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { resolveStream, Track } from '../services/musicApi';
 import { getRecommendedNextTracks } from '../services/autoplayService';
@@ -116,6 +108,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | undefined;
     let artworkUri = track.artwork;
     const isCurrent = () => seq === startSeqRef.current;
+    const notifyStreamFailure = () => {
+      Alert.alert(
+        'Unable to stream this track',
+        `"${track.title}" by ${track.artist} could not be played. Pick a different track to continue.`
+      );
+    };
     try {
       const local = downloadedTracks.find((item) => item.id === track.id);
       if (local) {
@@ -134,6 +132,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       setPlaybackError('Could not find a playable source for this track.');
       setIsLoadingAudio(false);
+      notifyStreamFailure();
       return;
     } finally {
       if (isCurrent()) {
@@ -147,6 +146,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       console.error('[audio] No playable URL available for track:', track.title, track.artist);
       setPlaybackError('Could not find a playable source for this track.');
       setIsLoadingAudio(false);
+      notifyStreamFailure();
       return;
     }
     try {
