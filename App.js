@@ -12,7 +12,6 @@ import {
   Heart,
   Home,
   Library,
-  ListMusic,
   MoreHorizontal,
   Pause,
   Play,
@@ -42,6 +41,7 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
 import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
+import { TrackActionsProvider, useTrackActions } from './src/context/TrackActionsContext';
 import { AmbientBackground } from './src/components/AmbientBackground';
 import { Screen1 } from './src/screens/Screen1';
 import { Screen2 } from './src/screens/Screen2';
@@ -127,7 +127,11 @@ function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove }) {
         </View>
       </Pressable>
       <Pressable onPress={onToggleLike} hitSlop={8} style={styles.trackAction}>
-        <Heart size={18} color={COLORS.white} fill={liked ? COLORS.white : 'transparent'} />
+        <Ionicons
+          name={liked ? 'checkmark-circle' : 'add-circle-outline'}
+          size={20}
+          color={liked ? COLORS.accent : COLORS.white}
+        />
       </Pressable>
       {onMore ? (
         <Pressable onPress={onMore} hitSlop={8} style={styles.trackAction}>
@@ -142,93 +146,15 @@ function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove }) {
   );
 }
 
-function AddToPlaylistModal({ track, visible, onClose }) {
-  const { playlists, createPlaylist, addToPlaylist } = useLibrary();
-  const [name, setName] = useState('');
-
-  useEffect(() => {
-    if (!visible) {
-      setName('');
-    }
-  }, [visible]);
-
-  const saveTo = async (playlistId) => {
-    if (!track) {
-      return;
-    }
-    await addToPlaylist(playlistId, track);
-    onClose();
-  };
-
-  const handleCreate = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      return;
-    }
-    await createPlaylist(trimmed);
-    setName('');
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.atpBackdrop} onPress={onClose}>
-        <Pressable style={styles.atpCard} onPress={() => {}}>
-          <Text style={styles.atpTitle} numberOfLines={1}>
-            {track ? `Save "${track.title}"` : 'Add to playlist'}
-          </Text>
-          <View style={styles.atpCreate}>
-            <TextInput
-              style={styles.atpInput}
-              value={name}
-              onChangeText={setName}
-              placeholder="New playlist name"
-              placeholderTextColor={COLORS.textSecondary}
-              returnKeyType="done"
-              onSubmitEditing={handleCreate}
-            />
-            <Pressable
-              style={[styles.atpCreateBtn, !name.trim() && styles.disabled]}
-              onPress={handleCreate}
-              disabled={!name.trim()}
-            >
-              <Text style={styles.atpCreateLabel}>Create</Text>
-            </Pressable>
-          </View>
-          <ScrollView style={styles.atpList} bounces={false}>
-            {playlists.length === 0 ? (
-              <Text style={styles.atpEmpty}>No playlists yet</Text>
-            ) : (
-              playlists.map((playlist) => (
-                <Pressable
-                  key={playlist.id}
-                  style={styles.atpRow}
-                  onPress={() => saveTo(playlist.id)}
-                >
-                  <ListMusic size={18} color={COLORS.white} />
-                  <Text style={styles.atpRowLabel} numberOfLines={1}>
-                    {playlist.name}
-                  </Text>
-                </Pressable>
-              ))
-            )}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
 function SearchScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
-  const [sheetTrack, setSheetTrack] = useState(null);
-  const [playlistTrack, setPlaylistTrack] = useState(null);
   const debounceRef = useRef(null);
   const { playTrack } = usePlayer();
   const { isLiked, toggleLike } = useLibrary();
-  const { isDownloaded, toggleDownload } = useDownloads();
+  const { openTrack } = useTrackActions();
 
   useEffect(() => {
     return () => clearTimeout(debounceRef.current);
@@ -306,7 +232,7 @@ function SearchScreen() {
               liked={isLiked(item.id)}
               onPlay={() => playTrack(item, results)}
               onToggleLike={() => toggleLike(item)}
-              onMore={() => setSheetTrack(item)}
+              onMore={() => openTrack(item)}
             />
           )}
         />
@@ -329,115 +255,7 @@ function SearchScreen() {
           </View>
         </ScrollView>
       )}
-      <TrackOptionsSheet
-        track={sheetTrack}
-        visible={!!sheetTrack}
-        onClose={() => setSheetTrack(null)}
-        downloaded={!!sheetTrack && isDownloaded(sheetTrack.id)}
-        onToggleDownload={() => {
-          if (sheetTrack) {
-            toggleDownload(sheetTrack);
-          }
-          setSheetTrack(null);
-        }}
-        onAddToPlaylist={() => {
-          setPlaylistTrack(sheetTrack);
-          setSheetTrack(null);
-        }}
-        onRemove={() => {
-          if (sheetTrack) {
-            toggleLike(sheetTrack);
-          }
-          setSheetTrack(null);
-        }}
-        onQueue={() => {
-          if (sheetTrack) {
-            playTrack(sheetTrack, results);
-          }
-          setSheetTrack(null);
-        }}
-      />
-      <AddToPlaylistModal
-        track={playlistTrack}
-        visible={!!playlistTrack}
-        onClose={() => setPlaylistTrack(null)}
-      />
     </View>
-  );
-}
-
-function TrackOptionsSheet({
-  track,
-  visible,
-  onClose,
-  onAddToPlaylist,
-  onRemove,
-  onQueue,
-  downloaded,
-  onToggleDownload,
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.tosBackdrop} onPress={onClose}>
-        <Pressable style={styles.tosSheet} onPress={() => {}}>
-          <View style={styles.tosPill} />
-          {track ? (
-            <View style={styles.tosPreview}>
-              {track.artwork ? (
-                <Image source={{ uri: track.artwork }} style={styles.tosArtwork} />
-              ) : (
-                <View style={[styles.tosArtwork, styles.tosArtworkFallback]} />
-              )}
-              <View style={styles.tosPreviewText}>
-                <Text style={styles.tosPreviewTitle} numberOfLines={1}>
-                  {track.title}
-                </Text>
-                <Text style={styles.tosPreviewArtist} numberOfLines={1}>
-                  {track.artist}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-          <View style={styles.tosDivider} />
-          <Pressable style={styles.tosItem} onPress={onClose}>
-            <Feather name="share" size={20} color="#B3B3B3" />
-            <Text style={styles.tosItemLabel}>Share</Text>
-          </Pressable>
-          <Pressable style={styles.tosItem} onPress={onAddToPlaylist}>
-            <Feather name="plus-circle" size={20} color="#B3B3B3" />
-            <Text style={styles.tosItemLabel}>Add to playlist</Text>
-          </Pressable>
-          <Pressable style={styles.tosItem} onPress={onToggleDownload}>
-            {downloaded ? (
-              <MaterialCommunityIcons name="download-off" size={20} color="#1ED760" />
-            ) : (
-              <Feather name="download" size={20} color="#B3B3B3" />
-            )}
-            <Text style={styles.tosItemLabel}>{downloaded ? 'Remove download' : 'Download'}</Text>
-          </Pressable>
-          <Pressable style={styles.tosItem} onPress={onClose}>
-            <Feather name="x-circle" size={20} color="#B3B3B3" />
-            <Text style={styles.tosItemLabel}>Exclude track from your taste profile</Text>
-          </Pressable>
-          <Pressable style={styles.tosItem} onPress={onRemove}>
-            <Feather name="minus-circle" size={20} color="#B3B3B3" />
-            <Text style={styles.tosItemLabel}>Remove from this playlist</Text>
-          </Pressable>
-          <Pressable style={styles.tosItem} onPress={onQueue}>
-            <MaterialIcons name="queue-music" size={20} color="#B3B3B3" />
-            <Text style={styles.tosItemLabel}>Add to Queue</Text>
-          </Pressable>
-          <Pressable style={styles.tosItem} onPress={onClose}>
-            <Ionicons name="radio-outline" size={20} color="#B3B3B3" />
-            <Text style={styles.tosItemLabel}>Go to radio</Text>
-          </Pressable>
-          <Pressable style={styles.tosItem} onPress={onClose}>
-            <Ionicons name="disc-outline" size={20} color="#B3B3B3" />
-            <Text style={styles.tosItemLabel}>Go to album</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -1232,10 +1050,12 @@ function AuthGate() {
         <DownloadProvider>
           <PlayerProvider>
             <LibraryProvider>
-              <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-                <StatusBar style="light" />
-                {isAuthenticated ? <AppShell /> : <LoginScreen />}
-              </SafeAreaView>
+              <TrackActionsProvider>
+                <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+                  <StatusBar style="light" />
+                  {isAuthenticated ? <AppShell /> : <LoginScreen />}
+                </SafeAreaView>
+              </TrackActionsProvider>
             </LibraryProvider>
           </PlayerProvider>
         </DownloadProvider>
@@ -1337,76 +1157,6 @@ disabled: {
   },
   trackAction: {
     marginLeft: 12,
-  },
-  atpBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  atpCard: {
-    backgroundColor: COLORS.elevated,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
-    maxHeight: '70%',
-  },
-  atpTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  atpCreate: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  atpInput: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    color: COLORS.textPrimary,
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  atpCreateBtn: {
-    backgroundColor: COLORS.white,
-    borderRadius: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  atpCreateLabel: {
-    color: '#121212',
-    fontWeight: '600',
-  },
-  atpList: {
-    marginTop: 4,
-  },
-  atpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-  },
-  atpRowLabel: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    flex: 1,
-  },
-  atpEmpty: {
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    paddingVertical: 12,
-  },
-  atpCancel: {
-    alignSelf: 'center',
-    paddingVertical: 8,
-  },
-  atpCancelLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
   },
   searchContainer: {
     flex: 1,
@@ -1990,71 +1740,6 @@ disabled: {
     height: 2,
     backgroundColor: COLORS.green,
     borderRadius: 1,
-  },
-  tosBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'flex-end',
-  },
-  tosSheet: {
-    backgroundColor: '#282828',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    paddingBottom: 32,
-    maxHeight: '85%',
-  },
-  tosPill: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  tosPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  tosArtwork: {
-    width: 48,
-    height: 48,
-    borderRadius: 4,
-    backgroundColor: COLORS.card,
-  },
-  tosArtworkFallback: {
-    backgroundColor: '#7358FF',
-  },
-  tosPreviewText: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  tosPreviewTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  tosPreviewArtist: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  tosDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    marginVertical: 4,
-  },
-  tosItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-  },
-  tosItemLabel: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    marginLeft: 16,
-    flex: 1,
   },
   tabBar: {
     position: 'absolute',

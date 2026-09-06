@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useLibrary } from "../context/LibraryContext";
 import { usePlayer } from "../context/PlayerContext";
+import { useTrackActions } from "../context/TrackActionsContext";
 import { searchITunes } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 import { Border, Color } from "../theme/GlobalStyles";
@@ -172,10 +173,16 @@ function TrackListRow({
   track,
   active,
   onPress,
+  liked,
+  onToggleLike,
+  onMore,
 }: {
   track: Track;
   active: boolean;
   onPress: () => void;
+  liked: boolean;
+  onToggleLike: () => void;
+  onMore?: () => void;
 }) {
   return (
     <TouchableOpacity style={styles.trackRow} activeOpacity={0.7} onPress={onPress}>
@@ -199,6 +206,16 @@ function TrackListRow({
         </Text>
       </View>
       {active && <Text style={styles.playingDot}>●</Text>}
+      <TouchableOpacity onPress={onToggleLike} hitSlop={8} style={styles.rowQuickAdd}>
+        <Ionicons
+          name={liked ? 'checkmark-circle' : 'add-circle-outline'}
+          size={20}
+          color={liked ? Color.accent : Color.textSecondary}
+        />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onMore} hitSlop={8} style={styles.rowQuickAdd}>
+        <Ionicons name="ellipsis-horizontal" size={20} color={Color.textSecondary} />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -253,7 +270,8 @@ function PlaylistCard({
 
 export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreatePlaylist }) => {
   const { playTrack, currentTrack } = usePlayer();
-  const { likedSongs, likedMeta, playlists } = useLibrary();
+  const { likedSongs, likedMeta, playlists, isLiked, toggleLike } = useLibrary();
+  const { openTrack } = useTrackActions();
 
   const [selectedCategory, setSelectedCategory] = React.useState("Recent");
   const [playlistView, setPlaylistView] = React.useState<PlaylistView | null>(null);
@@ -391,6 +409,9 @@ export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreateP
         key={track.id}
         track={track}
         active={currentTrack?.id === track.id}
+        liked={isLiked(track.id)}
+        onToggleLike={() => toggleLike(track)}
+        onMore={() => openTrack(track)}
         onPress={() => onPlay(track)}
       />
     ));
@@ -747,6 +768,9 @@ const styles = StyleSheet.create({
   playingDot: {
     fontSize: 10,
     color: Color.accent,
+  },
+  rowQuickAdd: {
+    padding: 6,
   },
 });
 
