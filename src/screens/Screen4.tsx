@@ -117,7 +117,7 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
               <Ionicons
                 name={isLiked ? "heart" : "heart-outline"}
                 size={24}
-                color={isLiked ? "#8A22EB" : "#FFFFFF"}
+                color={isLiked ? Color.accent : "#FFFFFF"}
               />
             </TouchableOpacity>
           )}
@@ -146,38 +146,38 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             <Ionicons
               name="shuffle"
               size={22}
-              color={isShuffle ? "#8A22EB" : Color.textSecondary}
+              color={isShuffle ? Color.accent : "#D4D4D8"}
             />
-          </TouchableOpacity>
-
-          <View style={styles.controlsCluster}>
-            <TouchableOpacity
-              onPress={playPrevious}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="play-skip-back" size={28} color={Color.textPrimary} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.playButton}
-              onPress={togglePlayPause}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={isPlaying ? "pause" : "play"}
-                size={30}
-                color="#FFFFFF"
-                style={{ marginLeft: isPlaying ? 0 : 3 }}
-              />
-            </TouchableOpacity>
+            <View style={styles.controlsCluster}>
+              <TouchableOpacity
+                onPress={playPrevious}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="play-skip-back" size={30} color={Color.textPrimary} />
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={playNext}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="play-skip-forward" size={28} color={Color.textPrimary} />
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={styles.playButton}
+                onPress={togglePlayPause}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={isPlaying ? "pause" : "play"}
+                  size={30}
+                  color="#FFFFFF"
+                  style={{ marginLeft: isPlaying ? 0 : 3 }}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={playNext}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="play-skip-forward" size={30} color={Color.textPrimary} />
+              </TouchableOpacity>
+            </View>
 
           <TouchableOpacity
             onPress={() => setIsRepeat((v) => !v)}
@@ -186,7 +186,7 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             <Ionicons
               name="repeat"
               size={22}
-              color={isRepeat ? "#8A22EB" : Color.textSecondary}
+              color={isRepeat ? Color.accent : "#D4D4D8"}
             />
           </TouchableOpacity>
         </View>
@@ -207,8 +207,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingBottom: 44,
+    justifyContent: "flex-start",
   },
   header: {
     flexDirection: "row",
@@ -216,7 +215,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   iconButton: {
     width: 40,
@@ -225,15 +225,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   artworkWrapper: {
-    width: "84%",
+    width: "86%",
     aspectRatio: 1,
     alignSelf: "center",
-    borderRadius: 16,
-    overflow: "hidden",
+    marginTop: 12,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   artwork: {
     width: "100%",
     height: "100%",
+    borderRadius: 12,
   },
   artworkFallback: {
     backgroundColor: "#1F162B",
@@ -241,61 +247,65 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   trackInfoSection: {
-    width: "88%",
+    width: "100%",
     alignSelf: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 24,
+    paddingHorizontal: 24,
+    marginTop: 22,
   },
   titleColumn: {
     flex: 1,
     marginRight: 16,
   },
   trackTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "bold",
     color: Color.textPrimary,
   },
   trackArtist: {
-    fontSize: 14,
-    color: "#A7A7A7",
+    fontSize: 15,
+    color: "#A1A1AA",
     fontWeight: "500",
     marginTop: 4,
   },
   progressContainer: {
-    width: "88%",
+    width: "100%",
     alignSelf: "center",
-    marginTop: 22,
+    paddingHorizontal: 24,
+    marginVertical: 18,
   },
   progressBarBackground: {
-    height: 4,
+    height: 5,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 2,
+    borderRadius: 3,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 2,
+    backgroundColor: "#A855F7",
+    borderRadius: 3,
   },
   timeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 8,
+    marginTop: 6,
   },
   timeText: {
     fontSize: 12,
-    color: "#A7A7A7",
+    color: "#9CA3AF",
     fontVariant: ["tabular-nums"],
   },
   controlsRow: {
-    width: "88%",
+    width: "100%",
     alignSelf: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 28,
+    paddingHorizontal: 24,
+    marginTop: 12,
+    marginBottom: 36,
   },
   controlsCluster: {
     flexDirection: "row",
@@ -303,10 +313,10 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   playButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#8A22EB",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Color.accent,
     alignItems: "center",
     justifyContent: "center",
   },
