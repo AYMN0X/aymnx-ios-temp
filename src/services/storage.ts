@@ -190,3 +190,22 @@ export async function getAutoplayEnabled(): Promise<boolean | null> {
 export async function setAutoplayEnabled(value: boolean): Promise<void> {
   await AsyncStorage.setItem(AUTOPLAY_KEY, JSON.stringify(value));
 }
+
+const ONBOARDING_KEY = '@spotify_onboarding_seen';
+
+export async function getHasSeenOnboarding(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(ONBOARDING_KEY);
+    if (raw == null) {
+      return false;
+    }
+    return JSON.parse(raw) === true;
+  } catch (error) {
+    console.warn('[storage] Failed to read onboarding flag.', error);
+    return false;
+  }
+}
+
+export async function setHasSeenOnboarding(value: boolean): Promise<void> {
+  await AsyncStorage.setItem(ONBOARDING_KEY, JSON.stringify(value));
+}

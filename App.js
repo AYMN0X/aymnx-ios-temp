@@ -54,8 +54,10 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider, useDownloads } from './src/context/DownloadContext';
 import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
+import { Screen1 } from './src/screens/Screen1';
 import { fetchPopularHits, fetchTrendingNow, searchITunes } from './src/services/musicApi';
 import { importSpotifyPlaylist } from './src/services/spotifyImportService';
+import { getHasSeenOnboarding, setHasSeenOnboarding } from './src/services/storage';
 
 const COLORS = {
   background: '#121212',
@@ -2029,12 +2031,43 @@ function AppShell() {
 
 function AuthGate() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [onboardingSeen, setOnboardingSeen] = useState(null);
 
-  if (isLoading) {
+  useEffect(() => {
+    let mounted = true;
+    getHasSeenOnboarding()
+      .then((seen) => {
+        if (mounted) {
+          setOnboardingSeen(seen);
+        }
+      })
+      .catch((error) => console.warn('[app] Could not load onboarding flag.', error));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (isLoading || onboardingSeen === null) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <StatusBar style="light" />
       </SafeAreaView>
+    );
+  }
+
+  if (!onboardingSeen) {
+    return (
+      <View style={styles.onboardingRoot}>
+        <StatusBar style="light" />
+        <Screen1
+          onContinue={() => {
+            setOnboardingSeen(true);
+            setHasSeenOnboarding(true).catch((error) =>
+              console.warn('[app] Could not persist onboarding flag.', error)
+            );
+          }}
+        />
+      </View>
     );
   }
 
@@ -2063,10 +2096,14 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-safeArea: {
+  safeArea: {
     flex: 1,
     width: '100%',
     backgroundColor: COLORS.background,
+  },
+  onboardingRoot: {
+    flex: 1,
+    backgroundColor: '#000000',
   },
   container: {
     flex: 1,
