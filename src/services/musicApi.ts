@@ -10,7 +10,7 @@ export interface Track {
 export interface StreamResult {
   url: string;
   mimeType: string;
-  provider?: 'jiosaavn' | 'soundcloud';
+  provider?: 'jiosaavn' | 'soundcloud' | 'youtube';
 }
 
 interface ITunesResult {
@@ -86,8 +86,9 @@ async function apiFetch<T>(path: string, instances: string[]): Promise<T> {
 }
 
 const JIOSAAVN_INSTANCES = [
+  'https://saavn.dev.mahar.biz',
+  'https://jiosaavn-api-2-harsh-patel.vercel.app',
   'https://jiosaavn-api-private-six.vercel.app',
-  'https://saavn.me',
   'https://shnwazdev-jiosaavn-apii.vercel.app',
   'https://jiosaavn.rajputhemant.me',
 ];
@@ -113,6 +114,44 @@ interface JioSaavnSearchResponse {
 function parseJioSaavnQuality(quality: string): number {
   const match = String(quality).match(/(\d+)/);
   return match ? parseInt(match[1], 10) : 0;
+}
+
+export function normalizeTrackTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\u00c0-\u024f]+/g, ' ')
+    .replace(/^\s+|\s+$/g, '');
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, index) => index);
+  const curr = Array.from({ length: b.length + 1 }, () => 0);
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j += 1) {
+      prev[j] = curr[j];
+    }
+  }
+  return prev[b.length];
+}
+
+export function titleMatches(requested: string, candidate: string): boolean {
+  const req = normalizeTrackTitle(requested);
+  const cand = normalizeTrackTitle(candidate);
+  if (!req || !cand) {
+    return false;
+  }
+  if (req === cand) {
+    return true;
+  }
+  if (cand.includes(req) || req.includes(cand)) {
+    return true;
+  }
+  return levenshteinDistance(req, cand) <= Math.max(2, Math.floor(req.length * 0.25));
 }
 
 function pickJioSaavnDownload(song: JioSaavnSong): string | null {
@@ -152,7 +191,16 @@ export async function resolveJioSaavnStream(
     if (results.length === 0) {
       return null;
     }
-    const song = pickJioSaavnSong(results, artist);
+    const preferred = pickJioSaavnSong(results, artist);
+    let song: JioSaavnSong | null = null;
+    if (preferred && titleMatches(title, preferred.name ?? '')) {
+      song = preferred;
+    } else {
+      song = results.find((item) => titleMatches(title, item.name ?? '')) ?? null;
+    }
+    if (!song) {
+      return null;
+    }
     const url = pickJioSaavnDownload(song);
     if (!url) {
       return null;
@@ -393,6 +441,82 @@ export async function resolveSoundCloudStream(
   }
 }
 
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.adminforge.de',
+  'https://pipedapi.leptons.xyz',
+];
+
+interface PipedSearchItem {
+  url?: string;
+  title?: string;
+}
+
+interface PipedSearchResponse {
+  items?: PipedSearchItem[];
+}
+
+interface PipedAudioStream {
+  url?: string;
+  mimeType?: string;
+  bitrate?: number;
+}
+
+interface PipedStreamsResponse {
+  audioStreams?: PipedAudioStream[];
+}
+
+function extractYouTubeVideoId(url: string | undefined): string | null {
+  if (!url) {
+    return null;
+  }
+  const match = url.match(
+    /(?:watch\?v=|youtu\.be\/|\/watch\/|\/shorts\/|\/embed\/)([a-zA-Z0-9_-]{11})/
+  );
+  return match ? match[1] : null;
+}
+
+async function resolveYouTubeStream(title: string, artist: string): Promise<StreamResult | null> {
+  const query = `"${artist}" "${title}"`;
+  try {
+    const search = await apiFetch<PipedSearchResponse>(
+      `/search?q=${encodeURIComponent(query)}&filter=videos`,
+      PIPED_INSTANCES
+    );
+    const items = search.items ?? [];
+    for (const item of items) {
+      if (!titleMatches(title, item.title ?? '')) {
+        continue;
+      }
+      const videoId = extractYouTubeVideoId(item.url);
+      if (!videoId) {
+        continue;
+      }
+      try {
+        const streams = await apiFetch<PipedStreamsResponse>(
+          `/streams/${videoId}`,
+          PIPED_INSTANCES
+        );
+        const audioStreams = (streams.audioStreams ?? [])
+          .filter(
+            (stream) => stream.url && String(stream.mimeType ?? '').startsWith('audio/')
+          )
+          .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
+        const chosen = audioStreams[0];
+        if (chosen?.url) {
+          return { url: chosen.url, mimeType: chosen.mimeType ?? 'audio/mp4', provider: 'youtube' };
+        }
+      } catch (error) {
+        console.warn('[audio] Piped streams fetch failed.', error);
+      }
+    }
+    return null;
+  } catch (error) {
+    console.warn('[audio] Piped search failed.', error);
+    return null;
+  }
+}
+
 export async function resolveStream(
   title: string,
   artist: string
@@ -404,6 +528,10 @@ export async function resolveStream(
   const soundCloud = await resolveSoundCloudStream(title, artist);
   if (soundCloud) {
     return soundCloud;
+  }
+  const youTube = await resolveYouTubeStream(title, artist);
+  if (youTube) {
+    return youTube;
   }
   throw new Error('No playable full-length stream found from any provider');
 }

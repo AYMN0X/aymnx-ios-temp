@@ -105,7 +105,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playedSetRef.current.add(track.id);
     }
     let resolvedUrl = '';
-    let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | undefined;
+    let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | 'youtube' | undefined;
     let artworkUri = track.artwork;
     const isCurrent = () => seq === startSeqRef.current;
     const notifyStreamFailure = () => {
