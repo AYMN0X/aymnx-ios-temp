@@ -1744,7 +1744,7 @@ function NowPlayingModal({ visible, onClose }) {
                 <Ionicons name="chatbox-ellipses" size={24} color="#FFFFFF" />
               </Pressable>
               <Pressable hitSlop={12}>
-                <MaterialCommunityIcons name="airplay" size={24} color="#FFFFFF" />
+                <MaterialCommunityIcons name="cast-audio" size={24} color="#FFFFFF" />
               </Pressable>
               <Pressable hitSlop={12} onPress={() => setQueueOpen(true)}>
                 <Ionicons name="list" size={24} color="#FFFFFF" />

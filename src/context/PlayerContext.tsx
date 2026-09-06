@@ -56,6 +56,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [autoplayAddedIds, setAutoplayAddedIds] = useState<Set<string>>(new Set());
   const queueRef = useRef<Track[]>([]);
   const indexRef = useRef(-1);
+  const startSeqRef = useRef(0);
   const volumeRef = useRef(DEFAULT_VOLUME);
   const resolvingRef = useRef(false);
   const reportedErrorRef = useRef<string | null>(null);
@@ -97,6 +98,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const duration = Number.isFinite(status.duration) ? status.duration * 1000 : 0;
 
   const startTrack = async (track: Track, queue: Track[], index: number) => {
+    const seq = ++startSeqRef.current;
     setCurrentTrack(track);
     setPlaybackError(null);
     reportedErrorRef.current = null;
@@ -113,6 +115,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     let resolvedUrl = '';
     let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | undefined;
     let artworkUri = track.artwork;
+    const isCurrent = () => seq === startSeqRef.current;
     try {
       const local = downloadedTracks.find((item) => item.id === track.id);
       if (local) {
@@ -126,11 +129,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('[audio] No playable stream found for:', track.title, track.artist, error);
+      if (!isCurrent()) {
+        return;
+      }
       setPlaybackError('Could not find a playable source for this track.');
       setIsLoadingAudio(false);
       return;
     } finally {
-      resolvingRef.current = false;
+      if (isCurrent()) {
+        resolvingRef.current = false;
+      }
+    }
+    if (!isCurrent()) {
+      return;
     }
     if (!resolvedUrl) {
       console.error('[audio] No playable URL available for track:', track.title, track.artist);
@@ -234,23 +245,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [currentTrack]);
 
   useEffect(() => {
-    if (!isAutoplayEnabled || !currentTrack) {
-      return;
-    }
-    if (!Number.isFinite(duration) || duration <= 0) {
-      return;
-    }
-    const queueNow = queueRef.current;
-    if (queueNow.length === 0 || indexRef.current < queueNow.length - 1) {
-      return;
-    }
-    if (playbackPosition < Math.max(duration - 8000, duration * 0.9)) {
-      return;
-    }
-    ensureAutoplayTracks();
-  }, [playbackPosition, duration, currentTrack, isAutoplayEnabled, ensureAutoplayTracks]);
-
-  useEffect(() => {
     if (!status.didJustFinish) {
       return;
     }
@@ -270,14 +264,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (autoplayLoadingRef.current) {
-        const deadline = Date.now() + 6000;
-        while (autoplayLoadingRef.current && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 120));
-        }
-      } else {
-        await ensureAutoplayTracks();
-      }
+      await ensureAutoplayTracks();
 
       if (indexRef.current < queueRef.current.length - 1) {
         await playNext();
@@ -297,6 +284,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (user) {
       return;
     }
+    startSeqRef.current += 1;
     setCurrentTrack(null);
     setPlaybackError(null);
     reportedErrorRef.current = null;
