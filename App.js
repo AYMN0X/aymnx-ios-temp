@@ -9,7 +9,6 @@ import {
   ArrowUpDown,
   Cast,
   ChevronDown,
-  ChevronLeft,
   Download,
   Heart,
   Home,
@@ -24,7 +23,6 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
-  Trash2,
   User,
   X,
 } from 'lucide-react-native';
@@ -55,6 +53,7 @@ import { LibraryProvider, useLibrary } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
 import { Screen1 } from './src/screens/Screen1';
 import { Screen2 } from './src/screens/Screen2';
+import { Screen3 } from './src/screens/Screen3';
 import { searchITunes } from './src/services/musicApi';
 import { importSpotifyPlaylist } from './src/services/spotifyImportService';
 import { getHasSeenOnboarding, setHasSeenOnboarding } from './src/services/storage';
@@ -456,236 +455,13 @@ function TrackOptionsSheet({
   );
 }
 
-function LikedSongsScreen({ onBack }) {
-  const { likedSongs, toggleLike } = useLibrary();
-  const { playTrack, isPlaying, currentTrack, togglePlayPause } = usePlayer();
-  const {
-    isDownloaded,
-    downloadingIds,
-    toggleDownload,
-    downloadAll,
-    isBatchDownloading,
-    batchProgress,
-  } = useDownloads();
-  const [query, setQuery] = useState('');
-  const [chip, setChip] = useState(null);
-  const [sheetTrack, setSheetTrack] = useState(null);
-  const [playlistTrack, setPlaylistTrack] = useState(null);
-
-  const q = query.trim().toLowerCase();
-  const tracks = q
-    ? likedSongs.filter(
-        (t) => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q)
-      )
-    : likedSongs;
-
-  const nowPlayingLiked =
-    isPlaying && currentTrack && likedSongs.some((t) => t.id === currentTrack.id);
-
-  const allDownloaded =
-    likedSongs.length > 0 && likedSongs.every((t) => isDownloaded(t.id));
-
-  const handlePrimary = () => {
-    if (nowPlayingLiked) {
-      togglePlayPause();
-    } else if (likedSongs.length > 0) {
-      playTrack(likedSongs[0], likedSongs);
-    }
-  };
-
-  const handleDownloadAll = () => {
-    if (isBatchDownloading) {
-      return;
-    }
-    downloadAll(likedSongs);
-  };
-
-  const renderRow = ({ item }) => {
-    const active = !!currentTrack && currentTrack.id === item.id && isPlaying;
-    return (
-      <View style={styles.lgRow}>
-        <Pressable style={styles.lgRowMain} onPress={() => playTrack(item, likedSongs)}>
-          {item.artwork ? (
-            <Image source={{ uri: item.artwork }} style={styles.lgRowArtwork} />
-          ) : (
-            <View style={[styles.lgRowArtwork, styles.lgRowArtworkFallback]} />
-          )}
-          <View style={styles.lgRowInfo}>
-            <Text style={[styles.lgRowTitle, active && styles.lgRowTitleActive]} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <Text style={styles.lgRowArtist} numberOfLines={1}>
-              {item.artist} • {item.album}
-            </Text>
-          </View>
-        </Pressable>
-        <Pressable style={styles.lgRowMore} onPress={() => setSheetTrack(item)} hitSlop={10}>
-          {isDownloaded(item.id) ? (
-            <Download size={16} color={COLORS.green} style={styles.lgRowDownloaded} />
-          ) : null}
-          <Feather name="more-horizontal" size={20} color="#B3B3B3" />
-        </Pressable>
-      </View>
-    );
-  };
-
-  return (
-    <View style={styles.lgRoot}>
-      <LinearGradient
-        pointerEvents="none"
-        colors={['#2E3A75', '#121212']}
-        locations={[0, 0.55]}
-        style={styles.lgGradient}
-      />
-      <View style={styles.lgNavRow}>
-        <Pressable style={styles.lgBack} onPress={onBack} hitSlop={12}>
-          <ChevronLeft size={26} color="#FFFFFF" />
-        </Pressable>
-      </View>
-      <View style={styles.lgSearchRow}>
-        <View style={styles.lgSearchBox}>
-          <Search size={16} color="rgba(255,255,255,0.7)" />
-          <TextInput
-            style={styles.lgSearchInput}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Find in Liked Songs"
-            placeholderTextColor="rgba(255,255,255,0.7)"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-        </View>
-        <Pressable style={styles.lgSortBtn}>
-          <MaterialIcons name="sort" size={18} color="#FFFFFF" />
-          <Text style={styles.lgSortLabel}>Sort</Text>
-        </Pressable>
-      </View>
-      <FlatList
-        data={tracks}
-        keyExtractor={(item) => item.id}
-        style={styles.lgList}
-        contentContainerStyle={styles.lgListContent}
-        keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={
-          <View>
-            <Text style={styles.lgTitle}>Liked Songs</Text>
-            <Text style={styles.lgCount}>
-              {likedSongs.length === 1 ? '1 song' : `${likedSongs.length} songs`}
-            </Text>
-            <View style={styles.lgActionRow}>
-              <Pressable
-                style={[styles.lgDownload, allDownloaded && styles.lgDownloadDone]}
-                onPress={handleDownloadAll}
-                hitSlop={8}
-              >
-                {isBatchDownloading ? (
-                  <Activity size={18} color="#FFFFFF" />
-                ) : (
-                  <Ionicons
-                    name={allDownloaded ? 'download' : 'download-outline'}
-                    size={24}
-                    color={allDownloaded ? '#FFFFFF' : '#B3B3B3'}
-                  />
-                )}
-              </Pressable>
-              <View style={styles.lgActionRight}>
-                <Pressable style={styles.lgShuffle} hitSlop={8}>
-                  <Shuffle size={22} color="#1ED760" />
-                </Pressable>
-                <Pressable style={styles.lgPlayPrimary} onPress={handlePrimary}>
-                  {nowPlayingLiked ? (
-                    <Pause size={24} color="#000000" fill="#000000" />
-                  ) : (
-                    <Play size={24} color="#000000" fill="#000000" style={styles.lgPlayToken} />
-                  )}
-                </Pressable>
-              </View>
-            </View>
-            {isBatchDownloading && batchProgress ? (
-              <Text style={styles.lgDownloadProgress} numberOfLines={1}>
-                Downloading {batchProgress.downloaded} of {batchProgress.total} songs...
-              </Text>
-            ) : null}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.lgChipsScroll}
-              contentContainerStyle={styles.lgChipsContent}
-            >
-              {LIKED_FILTERS.map((f) => {
-                const selected = chip === f;
-                return (
-                  <Pressable
-                    key={f}
-                    onPress={() => setChip(selected ? null : f)}
-                    style={[styles.lgChip, selected && styles.lgChipActive]}
-                  >
-                    <Text style={[styles.lgChipText, selected && styles.lgChipTextActive]}>{f}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <Pressable style={styles.lgAddRow}>
-              <View style={styles.lgAddIcon}>
-                <Plus size={20} color="#FFFFFF" />
-              </View>
-              <Text style={styles.lgAddLabel}>Add songs</Text>
-            </Pressable>
-          </View>
-        }
-        ListEmptyComponent={
-          <Text style={styles.lgEmpty}>
-            {q ? 'No matches found.' : 'No liked songs yet'}
-          </Text>
-        }
-        renderItem={renderRow}
-      />
-      <TrackOptionsSheet
-        track={sheetTrack}
-        visible={!!sheetTrack}
-        onClose={() => setSheetTrack(null)}
-        downloaded={!!sheetTrack && isDownloaded(sheetTrack.id)}
-        onToggleDownload={() => {
-          if (sheetTrack) {
-            toggleDownload(sheetTrack);
-          }
-          setSheetTrack(null);
-        }}
-        onAddToPlaylist={() => {
-          setPlaylistTrack(sheetTrack);
-          setSheetTrack(null);
-        }}
-        onRemove={() => {
-          if (sheetTrack) {
-            toggleLike(sheetTrack);
-          }
-          setSheetTrack(null);
-        }}
-        onQueue={() => {
-          if (sheetTrack) {
-            playTrack(sheetTrack, likedSongs);
-          }
-          setSheetTrack(null);
-        }}
-      />
-      <AddToPlaylistModal
-        track={playlistTrack}
-        visible={!!playlistTrack}
-        onClose={() => setPlaylistTrack(null)}
-      />
-    </View>
-  );
-}
-
 function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
   const {
     likedSongs,
     playlists,
     createPlaylist,
-    removePlaylist,
     toggleLike,
     isLiked,
-    removeTrackFromPlaylist,
   } = useLibrary();
   const { playTrack } = usePlayer();
   const { downloadedTracks, deleteDownload } = useDownloads();
@@ -732,50 +508,17 @@ function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
 
   if (detail) {
     if (detail.type === 'liked') {
-      return <LikedSongsScreen onBack={backToRoot} />;
+      return <Screen3 isLikedPlaylist onBack={backToRoot} />;
     }
     const tracks = selectedPlaylist ? selectedPlaylist.tracks : [];
     return (
-      <View style={styles.libraryScreen}>
-        <View style={styles.libraryHeader}>
-          <Pressable onPress={backToRoot} hitSlop={10}>
-            <ChevronLeft size={24} color={COLORS.white} />
-          </Pressable>
-          <Text style={styles.libraryTitle} numberOfLines={1}>
-            {detail.type === 'liked' ? 'Liked Songs' : detail.name}
-          </Text>
-          {detail.type === 'playlist' && selectedPlaylist ? (
-            <Pressable onPress={() => removePlaylist(detail.id)} hitSlop={10}>
-              <Trash2 size={20} color={COLORS.textSecondary} />
-            </Pressable>
-          ) : null}
-        </View>
-        {selectedPlaylist && selectedPlaylist.coverUrl ? (
-          <Image source={{ uri: selectedPlaylist.coverUrl }} style={styles.libDetailCover} />
-        ) : null}
-        <Text style={styles.librarySubtitle}>
-          {tracks.length === 1 ? '1 song' : `${tracks.length} songs`}
-        </Text>
-        <FlatList
-          data={tracks}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.libraryList}
-          ListEmptyComponent={<Text style={styles.libraryEmpty}>No songs yet</Text>}
-          renderItem={({ item }) => (
-            <TrackRow
-              track={item}
-              liked={isLiked(item.id)}
-              onPlay={() => playTrack(item, tracks)}
-              onToggleLike={() => toggleLike(item)}
-              onRemove={
-                detail.type === 'playlist'
-                  ? () => removeTrackFromPlaylist(detail.id, item.id)
-                  : null
-              }
-            />
-          )}
-        />
-      </View>
+      <Screen3
+        title={selectedPlaylist ? selectedPlaylist.name : 'Playlist'}
+        subtitle={tracks.length === 1 ? '1 song' : `${tracks.length} songs`}
+        tracks={tracks}
+        coverImage={selectedPlaylist?.coverUrl}
+        onBack={backToRoot}
+      />
     );
   }
 
@@ -1993,11 +1736,6 @@ disabled: {
   libRowSubtitle: {
     ...TYPE.body,
   },
-  librarySubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    marginBottom: 8,
-  },
   libraryList: {
     paddingBottom: 24,
   },
@@ -2129,14 +1867,6 @@ disabled: {
     color: '#000000',
     fontSize: 14,
     fontWeight: '700',
-  },
-  libDetailCover: {
-    width: 120,
-    height: 120,
-    borderRadius: 8,
-    alignSelf: 'center',
-    marginBottom: 14,
-    backgroundColor: COLORS.card,
   },
   loginRoot: {
     flex: 1,
@@ -2401,10 +2131,7 @@ disabled: {
   npArtworkWrap: {
     marginTop: 24,
     elevation: 10,
-    shadowColor: '#000000',
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    boxShadow: '0 6px 12px rgba(0, 0, 0, 0.4)',
   },
   npArtwork: {
     borderRadius: 12,
@@ -2670,228 +2397,6 @@ disabled: {
     fontSize: 15,
     marginLeft: 16,
     flex: 1,
-  },
-  lgRoot: {
-    flex: 1,
-    backgroundColor: '#121212',
-  },
-  lgGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '55%',
-  },
-  lgNavRow: {
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  lgBack: {
-    padding: 8,
-  },
-  lgSearchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 4,
-  },
-  lgSearchBox: {
-    flex: 1,
-    height: 36,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    marginRight: 8,
-  },
-  lgSearchInput: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 13,
-    marginLeft: 8,
-    paddingVertical: 0,
-  },
-  lgSortBtn: {
-    height: 36,
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-  },
-  lgSortLabel: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  lgList: {
-    flex: 1,
-  },
-  lgListContent: {
-    paddingBottom: 32,
-  },
-  lgTitle: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '700',
-    marginTop: 16,
-    marginBottom: 4,
-    paddingHorizontal: 16,
-  },
-  lgCount: {
-    color: '#B3B3B3',
-    fontSize: 12,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  lgActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  lgDownload: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#B3B3B3',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lgDownloadDone: {
-    borderColor: '#1ED760',
-    backgroundColor: '#1ED760',
-  },
-  lgDownloadProgress: {
-    color: '#B3B3B3',
-    fontSize: 12,
-    paddingHorizontal: 20,
-    marginBottom: 10,
-  },
-  lgActionRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  lgShuffle: {
-    marginRight: 16,
-    padding: 4,
-  },
-  lgPlayPrimary: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#1ED760',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lgPlayToken: {
-    marginLeft: 2,
-  },
-  lgChipsScroll: {
-    flexGrow: 0,
-    marginBottom: 16,
-  },
-  lgChipsContent: {
-    paddingHorizontal: 16,
-  },
-  lgChip: {
-    height: 32,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    backgroundColor: '#282828',
-    marginRight: 8,
-    justifyContent: 'center',
-  },
-  lgChipActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  lgChipText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  lgChipTextActive: {
-    color: '#000000',
-  },
-  lgAddRow: {
-    height: 56,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  lgAddIcon: {
-    width: 48,
-    height: 48,
-    backgroundColor: '#282828',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lgAddLabel: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    marginLeft: 12,
-  },
-  lgRow: {
-    height: 60,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  lgRowMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  lgRowArtwork: {
-    width: 48,
-    height: 48,
-    borderRadius: 4,
-    backgroundColor: COLORS.card,
-  },
-  lgRowArtworkFallback: {
-    backgroundColor: '#7358FF',
-  },
-  lgRowInfo: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: 'center',
-  },
-  lgRowTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  lgRowTitleActive: {
-    color: '#1ED760',
-  },
-  lgRowArtist: {
-    color: '#B3B3B3',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  lgRowMore: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 4,
-  },
-  lgRowDownloaded: {
-    marginRight: 12,
-  },
-  lgEmpty: {
-    color: '#B3B3B3',
-    marginTop: 24,
-    textAlign: 'center',
   },
   tabBar: {
     width: '100%',

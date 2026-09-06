@@ -38,6 +38,13 @@ interface PlaylistDef {
   targetCategory?: string;
 }
 
+interface PlaylistView {
+  title: string;
+  subtitle: string;
+  tracks: Track[];
+  coverColor: string;
+}
+
 const CATEGORY_MIXES: Record<string, PlaylistDef[]> = {
   Recent: [
     {
@@ -226,7 +233,7 @@ export const Screen2: React.FC = () => {
   const { likedSongs } = useLibrary();
 
   const [selectedCategory, setSelectedCategory] = React.useState("Recent");
-  const [showRnbPlaylist, setShowRnbPlaylist] = React.useState(false);
+  const [playlistView, setPlaylistView] = React.useState<PlaylistView | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<Track[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
@@ -305,16 +312,17 @@ export const Screen2: React.FC = () => {
   };
 
   const handlePlayMix = async (mix: PlaylistDef) => {
-    if (mix.id === "rnb-playlist") {
-      setShowRnbPlaylist(true);
-      return;
-    }
     const target = mix.targetCategory ?? selectedCategory;
     const tracks = await loadCategory(target);
     if (tracks.length === 0) {
       return;
     }
-    playTrack(tracks[0], tracks);
+    setPlaylistView({
+      title: mix.title,
+      subtitle: mix.subtitle,
+      tracks,
+      coverColor: mix.color ?? mix.gradient?.[0] ?? Color.accent,
+    });
   };
 
   const favouritesList = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
@@ -329,8 +337,16 @@ export const Screen2: React.FC = () => {
       />
     ));
 
-  if (showRnbPlaylist) {
-    return <Screen3 onBack={() => setShowRnbPlaylist(false)} />;
+  if (playlistView) {
+    return (
+      <Screen3
+        title={playlistView.title}
+        subtitle={playlistView.subtitle}
+        tracks={playlistView.tracks}
+        coverColor={playlistView.coverColor}
+        onBack={() => setPlaylistView(null)}
+      />
+    );
   }
 
   return (
