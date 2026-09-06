@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Color, Border } from "../theme/GlobalStyles";
 import { usePlayer } from "../context/PlayerContext";
@@ -207,6 +208,15 @@ export const Screen3: React.FC<Screen3Props> = ({
         ) : (
           <View style={[styles.heroGradient, { backgroundColor: coverBackground, opacity: 0.45 }]} />
         )}
+        <LinearGradient
+          colors={["transparent", "rgba(15, 8, 23, 0.6)", "#0F0817"]}
+          locations={[0, 0.6, 1]}
+          style={styles.heroFade}
+        />
+        <LinearGradient
+          colors={["rgba(15, 8, 23, 0.45)", "transparent"]}
+          style={styles.heroTopFade}
+        />
         <SafeAreaView style={styles.safeTop}>
           <View style={styles.topNav}>
             <TouchableOpacity onPress={onBack} style={styles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -546,6 +556,20 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
+  },
+  heroFade: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 120,
+  },
+  heroTopFade: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 90,
   },
   topNav: {
     flexDirection: "row",
