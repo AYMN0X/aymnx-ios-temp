@@ -456,15 +456,19 @@ return (
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    width: "100%",
     backgroundColor: "transparent",
   },
   safeArea: {
     flex: 1,
+    width: "100%",
   },
   scrollView: {
     flex: 1,
+    width: "100%",
   },
   scrollContent: {
+    width: "100%",
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 40,

@@ -1,14 +1,15 @@
 import * as React from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 interface AmbientBackgroundProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
-export const AmbientBackground: React.FC<AmbientBackgroundProps> = ({ children }) => {
+export const AmbientBackground: React.FC<AmbientBackgroundProps> = ({ children, style }) => {
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, style]} pointerEvents={children ? "auto" : "none"}>
       <LinearGradient
         colors={["#3D1466", "#230E3D", "#11071F", "#0A0512"]}
         locations={[0.0, 0.35, 0.7, 1.0]}
