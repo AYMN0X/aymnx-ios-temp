@@ -619,6 +619,7 @@ function ImportScreen({ onOpenImportedPlaylist }) {
 }
 
 function MiniPlayer({ onOpen }) {
+  const insets = useSafeAreaInsets();
   const {
     currentTrack,
     isPlaying,
@@ -635,7 +636,7 @@ function MiniPlayer({ onOpen }) {
   }
 
   return (
-    <View style={styles.miniPlayer}>
+    <View style={[styles.miniPlayer, { marginBottom: insets.bottom }]}>
       <Pressable style={styles.miniPlayerMain} onPress={onOpen}>
         {currentTrack.artwork ? (
           <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
@@ -1121,12 +1122,9 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   bottomBarWrap: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 150,
-    overflow: 'hidden',
+    flexDirection: 'column',
+    justifyContent: 'flex-end',
+    paddingBottom: 0,
   },
   bottomFade: {
     position: 'absolute',
@@ -1687,8 +1685,6 @@ disabled: {
     marginLeft: 16,
   },
   miniPlayer: {
-    position: 'absolute',
-    bottom: 64,
     left: 8,
     right: 8,
     height: 56,
@@ -1700,6 +1696,7 @@ disabled: {
     overflow: 'hidden',
     zIndex: 10,
     elevation: 10,
+    marginBottom: 8,
   },
   miniPlayerMain: {
     flex: 1,
@@ -1756,12 +1753,6 @@ disabled: {
     borderRadius: 1,
   },
   tabBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    width: '100%',
-    height: 56,
     backgroundColor: 'transparent',
     borderTopWidth: 0,
     zIndex: 10,
