@@ -444,6 +444,7 @@ function TrackOptionsSheet({
 function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
   const {
     likedSongs,
+    likedMeta,
     playlists,
     createPlaylist,
     toggleLike,
@@ -510,7 +511,13 @@ function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
   }
 
   const libraryItems = [
-    { type: 'liked', key: 'liked', title: 'Liked Songs', subtitle: `Playlist • ${likedSongs.length} songs` },
+    {
+      type: 'liked',
+      key: 'liked',
+      title: likedMeta.name || 'Liked Songs',
+      subtitle: `Playlist • ${likedSongs.length} songs`,
+      coverUrl: likedMeta.coverUrl,
+    },
     ...playlists.map((item) => ({
       type: 'playlist',
       key: item.id,
@@ -626,14 +633,18 @@ function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
           if (item.type === 'liked') {
             return (
               <Pressable style={styles.libRow} onPress={() => setDetail({ type: 'liked' })}>
-                <LinearGradient
-                  colors={LIKED_GRADIENT}
-                  style={styles.libCover}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Heart size={20} color={COLORS.white} fill={COLORS.white} />
-                </LinearGradient>
+                {item.coverUrl ? (
+                  <Image source={{ uri: item.coverUrl }} style={styles.libCover} />
+                ) : (
+                  <LinearGradient
+                    colors={LIKED_GRADIENT}
+                    style={styles.libCover}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Heart size={20} color={COLORS.white} fill={COLORS.white} />
+                  </LinearGradient>
+                )}
                 <View style={styles.libRowInfo}>
                   <Text style={styles.libRowTitle} numberOfLines={1}>
                     {item.title}

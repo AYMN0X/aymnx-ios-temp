@@ -20,6 +20,33 @@ export interface AuthAccount {
 
 export const ACCOUNTS_KEY = '@aymnx_auth_accounts';
 
+export interface LikedMeta {
+  name?: string;
+  description?: string;
+  coverUrl?: string;
+}
+
+export const LIKED_META_KEY = '@aymnx_liked_meta';
+
+export async function getLikedMeta(userId: string): Promise<LikedMeta> {
+  try {
+    const raw = await AsyncStorage.getItem(`${LIKED_META_KEY}_${userId}`);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as LikedMeta;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    console.warn('[storage] Failed to read liked meta.', error);
+    return {};
+  }
+}
+
+export async function setLikedMeta(userId: string, meta: LikedMeta): Promise<LikedMeta> {
+  await AsyncStorage.setItem(`${LIKED_META_KEY}_${userId}`, JSON.stringify(meta));
+  return meta;
+}
+
 const normalizeIdentifier = (value: string): string => value.trim().toLowerCase();
 
 async function readAccounts(): Promise<AuthAccount[]> {
@@ -157,6 +184,30 @@ export async function removeLikedSong(userId: string, trackId: string): Promise<
 
 export async function isLiked(userId: string, trackId: string): Promise<boolean> {
   return (await getLikedSongs(userId)).some((item) => item.id === trackId);
+}
+
+export async function reorderLikedSongs(
+  userId: string,
+  fromIndex: number,
+  toIndex: number
+): Promise<Track[]> {
+  const data = await updateUserData(userId, (d) => {
+    const songs = d.likedSongs ?? [];
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      fromIndex >= songs.length ||
+      toIndex < 0 ||
+      toIndex >= songs.length
+    ) {
+      return d;
+    }
+    const next = [...songs];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    return { ...d, likedSongs: next };
+  });
+  return data.likedSongs ?? [];
 }
 
 export async function getPlaylists(userId: string): Promise<SavedPlaylist[]> {

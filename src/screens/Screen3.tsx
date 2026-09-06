@@ -64,12 +64,15 @@ export const Screen3: React.FC<Screen3Props> = ({
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const {
     likedSongs,
+    likedMeta,
     isLiked,
     toggleLike,
     playlists,
     updatePlaylistDetails,
     removeTrackFromPlaylist,
     reorderPlaylistTracks,
+    reorderLikedSongs,
+    updateLikedMeta,
   } = useLibrary();
   const { downloadedIds, isDownloaded, isBatchDownloading, batchProgress, downloadAll } = useDownloads();
 
@@ -80,11 +83,15 @@ export const Screen3: React.FC<Screen3Props> = ({
     : livePlaylist
     ? livePlaylist.tracks
     : (tracks ?? []);
-  const displayTitle = isLikedPlaylist ? "Liked Songs" : (livePlaylist?.name ?? title ?? "Playlist");
+  const displayTitle = isLikedPlaylist
+    ? likedMeta.name || "Liked Songs"
+    : livePlaylist?.name ?? title ?? "Playlist";
   const displaySubtitle =
     subtitle || `${displayTracks.length} ${displayTracks.length === 1 ? "song" : "songs"}`;
   const coverBackground = isLikedPlaylist ? "#450AF5" : (coverColor ?? Color.accent);
-  const effectiveCover = livePlaylist?.coverUrl ?? coverImage;
+  const effectiveCover = isLikedPlaylist
+    ? likedMeta.coverUrl
+    : livePlaylist?.coverUrl ?? coverImage;
 
   const artworkFor = (track: Track) =>
     (track as Track & { albumArt?: string }).albumArt || track.artwork;
@@ -102,7 +109,7 @@ export const Screen3: React.FC<Screen3Props> = ({
   const [detailsDescription, setDetailsDescription] = React.useState("");
   const [detailsCover, setDetailsCover] = React.useState("");
 
-  const canEdit = !isLikedPlaylist && !!livePlaylist;
+  const canEdit = !!livePlaylist || isLikedPlaylist;
 
   const pendingForDownload = displayTracks.filter((track) => !downloadedIds.has(track.id));
   const allDownloaded = displayTracks.length > 0 && pendingForDownload.length === 0;
@@ -116,9 +123,15 @@ export const Screen3: React.FC<Screen3Props> = ({
   };
 
   const openDetails = () => {
-    setDetailsName(livePlaylist?.name ?? displayTitle);
-    setDetailsDescription(livePlaylist?.description ?? "");
-    setDetailsCover(livePlaylist?.coverUrl ?? coverImage ?? "");
+    setDetailsName(isLikedPlaylist ? likedMeta.name || "Liked Songs" : livePlaylist?.name ?? displayTitle);
+    setDetailsDescription(
+      isLikedPlaylist ? likedMeta.description ?? "" : livePlaylist?.description ?? ""
+    );
+    setDetailsCover(
+      isLikedPlaylist
+        ? likedMeta.coverUrl ?? ""
+        : livePlaylist?.coverUrl ?? coverImage ?? ""
+    );
     setSheetView("details");
   };
 
@@ -140,25 +153,44 @@ export const Screen3: React.FC<Screen3Props> = ({
 
   const saveDetails = async () => {
     const trimmed = detailsName.trim();
-    if (!playlistId || !trimmed) {
+    if (!trimmed) {
       return;
     }
-    await updatePlaylistDetails(playlistId, trimmed, detailsDescription.trim(), detailsCover || undefined);
+    if (isLikedPlaylist) {
+      await updateLikedMeta({
+        name: trimmed,
+        description: detailsDescription.trim(),
+        coverUrl: detailsCover || undefined,
+      });
+    } else if (playlistId) {
+      await updatePlaylistDetails(playlistId, trimmed, detailsDescription.trim(), detailsCover || undefined);
+    } else {
+      return;
+    }
     setSheetView("options");
   };
 
   const moveTrack = (index: number, delta: number) => {
+    const toIndex = index + delta;
+    if (isLikedPlaylist) {
+      reorderLikedSongs(index, toIndex);
+      return;
+    }
     if (!playlistId) {
       return;
     }
-    reorderPlaylistTracks(playlistId, index, index + delta);
+    reorderPlaylistTracks(playlistId, index, toIndex);
   };
 
-  const removeTrack = (trackId: string) => {
+  const removeTrack = (track: Track) => {
+    if (isLikedPlaylist) {
+      toggleLike(track);
+      return;
+    }
     if (!playlistId) {
       return;
     }
-    removeTrackFromPlaylist(playlistId, trackId);
+    removeTrackFromPlaylist(playlistId, track.id);
   };
 
   return (
@@ -299,9 +331,9 @@ export const Screen3: React.FC<Screen3Props> = ({
                           color={index === displayTracks.length - 1 ? Color.textSecondary : Color.textPrimary}
                         />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => removeTrack(track.id)} hitSlop={6}>
-                        <Ionicons name="trash-outline" size={20} color="#E05A47" />
-                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => removeTrack(track)} hitSlop={6}>
+                          <Ionicons name="trash-outline" size={20} color="#E05A47" />
+                        </TouchableOpacity>
                     </View>
                   ) : (
                     <TouchableOpacity onPress={() => toggleLike(track)} hitSlop={10} style={styles.likeButton}>
@@ -342,7 +374,7 @@ export const Screen3: React.FC<Screen3Props> = ({
                 <Text style={styles.sheetTitle} numberOfLines={1}>
                   {displayTitle}
                 </Text>
-                <Text style={styles.sheetSubtitle}>{isLikedPlaylist ? "Liked Songs" : "Public playlist"}</Text>
+                <Text style={styles.sheetSubtitle}>{isLikedPlaylist ? displayTitle : "Public playlist"}</Text>
               </View>
             </View>
 

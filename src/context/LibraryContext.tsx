@@ -8,6 +8,7 @@ type SavedPlaylist = storage.SavedPlaylist;
 interface LibraryContextValue {
   likedSongs: Track[];
   playlists: SavedPlaylist[];
+  likedMeta: storage.LikedMeta;
   isLiked: (trackId: string) => boolean;
   toggleLike: (track: Track) => Promise<void>;
   createPlaylist: (name: string) => Promise<void>;
@@ -17,6 +18,8 @@ interface LibraryContextValue {
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   updatePlaylistDetails: (playlistId: string, name: string, description: string, coverUrl?: string) => Promise<void>;
   reorderPlaylistTracks: (playlistId: string, fromIndex: number, toIndex: number) => Promise<void>;
+  reorderLikedSongs: (fromIndex: number, toIndex: number) => Promise<void>;
+  updateLikedMeta: (meta: storage.LikedMeta) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(undefined);
@@ -26,22 +29,26 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const userId = user?.id ?? null;
   const [likedSongs, setLikedSongs] = useState<Track[]>([]);
   const [playlists, setPlaylists] = useState<SavedPlaylist[]>([]);
+  const [likedMeta, setLikedMeta] = useState<storage.LikedMeta>({});
 
   useEffect(() => {
     let active = true;
     if (!userId) {
       setLikedSongs([]);
       setPlaylists([]);
+      setLikedMeta({});
       return;
     }
     (async () => {
-      const [songs, savedPlaylists] = await Promise.all([
+      const [songs, savedPlaylists, meta] = await Promise.all([
         storage.getLikedSongs(userId),
         storage.getPlaylists(userId),
+        storage.getLikedMeta(userId),
       ]);
       if (active) {
         setLikedSongs(songs);
         setPlaylists(savedPlaylists);
+        setLikedMeta(meta);
       }
     })();
     return () => {
@@ -142,10 +149,27 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setPlaylists(next);
   };
 
+  const reorderLikedSongs = async (fromIndex: number, toIndex: number) => {
+    if (!userId) {
+      return;
+    }
+    const next = await storage.reorderLikedSongs(userId, fromIndex, toIndex);
+    setLikedSongs(next);
+  };
+
+  const updateLikedMeta = async (meta: storage.LikedMeta) => {
+    if (!userId) {
+      return;
+    }
+    const next = await storage.setLikedMeta(userId, meta);
+    setLikedMeta(next);
+  };
+
   const value = useMemo<LibraryContextValue>(
     () => ({
       likedSongs,
       playlists,
+      likedMeta,
       isLiked,
       toggleLike,
       createPlaylist,
@@ -155,8 +179,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removeTrackFromPlaylist,
       updatePlaylistDetails,
       reorderPlaylistTracks,
+      reorderLikedSongs,
+      updateLikedMeta,
     }),
-    [likedSongs, playlists]
+    [likedSongs, playlists, likedMeta]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
