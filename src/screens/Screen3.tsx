@@ -374,7 +374,7 @@ export const Screen3: React.FC<Screen3Props> = ({
         </View>
       </ScrollView>
 
-      <Modal visible={sheetOpen} transparent animationType="slide" onRequestClose={() => setSheetOpen(false)}>
+      <Modal visible={sheetOpen} transparent animationType="fade" onRequestClose={() => setSheetOpen(false)}>
         <View style={styles.sheetOverlay}>
           <Pressable
             style={styles.sheetBackdrop}
@@ -727,10 +727,11 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.15)",
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
   },
   sheet: {
     width: "100%",
+    alignSelf: "stretch",
     backgroundColor: "#170D26",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
