@@ -116,8 +116,8 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             >
               <Ionicons
                 name={isLiked ? "heart" : "heart-outline"}
-                size={26}
-                color={isLiked ? Color.accent : Color.textSecondary}
+                size={24}
+                color={isLiked ? "#8A22EB" : "#FFFFFF"}
               />
             </TouchableOpacity>
           )}
@@ -146,36 +146,38 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             <Ionicons
               name="shuffle"
               size={22}
-              color={isShuffle ? Color.accent : Color.textSecondary}
+              color={isShuffle ? "#8A22EB" : Color.textSecondary}
             />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={playPrevious}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="play-skip-back" size={28} color={Color.textPrimary} />
-          </TouchableOpacity>
+          <View style={styles.controlsCluster}>
+            <TouchableOpacity
+              onPress={playPrevious}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="play-skip-back" size={28} color={Color.textPrimary} />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.playButton}
-            onPress={togglePlayPause}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name={isPlaying ? "pause" : "play"}
-              size={30}
-              color="#FFFFFF"
-              style={{ marginLeft: isPlaying ? 0 : 3 }}
-            />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.playButton}
+              onPress={togglePlayPause}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={30}
+                color="#FFFFFF"
+                style={{ marginLeft: isPlaying ? 0 : 3 }}
+              />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={playNext}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="play-skip-forward" size={28} color={Color.textPrimary} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              onPress={playNext}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="play-skip-forward" size={28} color={Color.textPrimary} />
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             onPress={() => setIsRepeat((v) => !v)}
@@ -184,7 +186,7 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             <Ionicons
               name="repeat"
               size={22}
-              color={isRepeat ? Color.accent : Color.textSecondary}
+              color={isRepeat ? "#8A22EB" : Color.textSecondary}
             />
           </TouchableOpacity>
         </View>
@@ -206,7 +208,7 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 20,
+    paddingBottom: 44,
   },
   header: {
     flexDirection: "row",
@@ -239,17 +241,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   trackInfoSection: {
-    width: "86%",
+    width: "88%",
     alignSelf: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 20,
+    marginTop: 24,
   },
   titleColumn: {
     flex: 1,
     marginRight: 16,
-    gap: 4,
   },
   trackTitle: {
     fontSize: 20,
@@ -258,45 +259,54 @@ const styles = StyleSheet.create({
   },
   trackArtist: {
     fontSize: 14,
-    color: Color.textSecondary,
+    color: "#A7A7A7",
     fontWeight: "500",
+    marginTop: 4,
   },
   progressContainer: {
-    width: "86%",
+    width: "88%",
     alignSelf: "center",
-    gap: 8,
+    marginTop: 22,
   },
   progressBarBackground: {
-    height: 3,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: 1.5,
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 2,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: Color.accent,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 2,
   },
   timeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    marginTop: 8,
   },
   timeText: {
-    fontSize: 11,
-    color: Color.textSecondary,
+    fontSize: 12,
+    color: "#A7A7A7",
     fontVariant: ["tabular-nums"],
   },
   controlsRow: {
-    width: "86%",
+    width: "88%",
     alignSelf: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginTop: 28,
+  },
+  controlsCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 24,
   },
   playButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Color.accent,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#8A22EB",
     alignItems: "center",
     justifyContent: "center",
   },
