@@ -517,6 +517,7 @@ function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }) {
         subtitle={tracks.length === 1 ? '1 song' : `${tracks.length} songs`}
         tracks={tracks}
         coverImage={selectedPlaylist?.coverUrl}
+        playlistId={detail.id}
         onBack={backToRoot}
       />
     );

@@ -15,6 +15,8 @@ interface LibraryContextValue {
   removePlaylist: (playlistId: string) => Promise<void>;
   addToPlaylist: (playlistId: string, track: Track) => Promise<void>;
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
+  updatePlaylistDetails: (playlistId: string, name: string, description: string) => Promise<void>;
+  reorderPlaylistTracks: (playlistId: string, fromIndex: number, toIndex: number) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(undefined);
@@ -115,6 +117,26 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     setPlaylists(next);
   };
 
+  const updatePlaylistDetails = async (playlistId: string, name: string, description: string) => {
+    if (!userId) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return;
+    }
+    const next = await storage.updatePlaylistDetails(userId, playlistId, trimmed, description);
+    setPlaylists(next);
+  };
+
+  const reorderPlaylistTracks = async (playlistId: string, fromIndex: number, toIndex: number) => {
+    if (!userId) {
+      return;
+    }
+    const next = await storage.reorderPlaylistTracks(userId, playlistId, fromIndex, toIndex);
+    setPlaylists(next);
+  };
+
   const value = useMemo<LibraryContextValue>(
     () => ({
       likedSongs,
@@ -126,6 +148,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       removePlaylist,
       addToPlaylist,
       removeTrackFromPlaylist,
+      updatePlaylistDetails,
+      reorderPlaylistTracks,
     }),
     [likedSongs, playlists]
   );

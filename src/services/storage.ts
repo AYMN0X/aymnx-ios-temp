@@ -5,6 +5,7 @@ import type { Track } from './musicApi';
 export interface SavedPlaylist {
   id: string;
   name: string;
+  description?: string;
   tracks: Track[];
   coverUrl?: string;
 }
@@ -117,6 +118,48 @@ export async function removePlaylist(userId: string, playlistId: string): Promis
     ...d,
     playlists: (d.playlists ?? []).filter((playlist) => playlist.id !== playlistId),
   }));
+  return data.playlists ?? [];
+}
+
+export async function updatePlaylistDetails(
+  userId: string,
+  playlistId: string,
+  name: string,
+  description: string
+): Promise<SavedPlaylist[]> {
+  const data = await updateUserData(userId, (d) => ({
+    ...d,
+    playlists: (d.playlists ?? []).map((playlist) =>
+      playlist.id === playlistId
+        ? { ...playlist, name, description: description.length > 0 ? description : undefined }
+        : playlist
+    ),
+  }));
+  return data.playlists ?? [];
+}
+
+export async function reorderPlaylistTracks(
+  userId: string,
+  playlistId: string,
+  fromIndex: number,
+  toIndex: number
+): Promise<SavedPlaylist[]> {
+  const data = await updateUserData(userId, (d) => {
+    const playlists = (d.playlists ?? []).map((playlist) => {
+      if (playlist.id !== playlistId) {
+        return playlist;
+      }
+      const tracks = playlist.tracks;
+      if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= tracks.length || toIndex < 0 || toIndex >= tracks.length) {
+        return playlist;
+      }
+      const next = [...tracks];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return { ...playlist, tracks: next };
+    });
+    return { ...d, playlists };
+  });
   return data.playlists ?? [];
 }
 
