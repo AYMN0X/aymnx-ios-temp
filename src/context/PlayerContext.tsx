@@ -51,6 +51,8 @@ interface ResolvedPlayable {
   artist: string;
   album: string;
   artwork?: string;
+  contentType?: string;
+  userAgent?: string;
 }
 
 const delayMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -135,6 +137,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         artist: track.artist,
         album: track.album,
         artwork: track.artwork || undefined,
+        contentType: result.mimeType,
+        userAgent:
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)',
       };
     } catch (error) {
       console.error('[audio] No playable stream found for:', track.title, track.artist, error);
@@ -567,6 +572,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         await TrackPlayer.setupPlayer({
           iosCategory: IOSCategory.Playback,
           autoHandleInterruptions: true,
+          minBuffer: 60,
+          maxBuffer: 60,
+          playBuffer: 5,
         });
         await TrackPlayer.updateOptions({
           capabilities: [

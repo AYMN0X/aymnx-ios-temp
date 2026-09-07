@@ -38,6 +38,20 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise
   }
 }
 
+/**
+ * iOS ATS blocks cleartext http streams, so upgrade any http stream URL to
+ * https (which most CDNs redirect/accept) and reject non-http(s) schemes.
+ */
+function toHttps(url: string | null | undefined): string | null {
+  if (!url) {
+    return null;
+  }
+  if (url.startsWith('http://')) {
+    return url.replace(/^http:\/\//i, 'https://');
+  }
+  return /^https:\/\//i.test(url) ? url : null;
+}
+
 export async function fetchTrendingNow(): Promise<Track[]> {
   return searchITunes('trending now', 30);
 }
@@ -167,16 +181,17 @@ export function titleMatches(requested: string, candidate: string): boolean {
 }
 
 function pickJioSaavnDownload(song: JioSaavnSong): string | null {
-  const downloads = (song.downloadUrl ?? []).filter((item) =>
-    String(item.url ?? '').startsWith('http')
-  );
+  const downloads = (song.downloadUrl ?? []).filter((item) => {
+    const value = String(item.url ?? '');
+    return /^https?:\/\//i.test(value);
+  });
   if (downloads.length === 0) {
     return null;
   }
   downloads.sort(
     (a, b) => parseJioSaavnQuality(b.quality ?? '') - parseJioSaavnQuality(a.quality ?? '')
   );
-  return downloads[0]?.url ?? null;
+  return toHttps(downloads[0]?.url) ?? null;
 }
 
 function pickJioSaavnSong(results: JioSaavnSong[], artist: string): JioSaavnSong {
@@ -411,7 +426,7 @@ async function resolveSoundCloudWithClientId(
   const result = await soundCloudFetch<SoundCloudTranscodingResponse>(
     `${transcodingUrl}${separator}client_id=${clientId}`
   );
-  const url = result.url;
+  const url = result.url ? toHttps(result.url) : null;
   if (!url) {
     return null;
   }
@@ -515,8 +530,9 @@ async function resolveYouTubeStream(title: string, artist: string): Promise<Stre
           )
           .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
         const chosen = audioStreams[0];
-        if (chosen?.url) {
-          return { url: chosen.url, mimeType: chosen.mimeType ?? 'audio/mp4', provider: 'youtube' };
+        const streamUrl = chosen?.url ? toHttps(chosen.url) : null;
+        if (streamUrl) {
+          return { url: streamUrl, mimeType: chosen.mimeType ?? 'audio/mp4', provider: 'youtube' };
         }
       } catch (error) {
         console.warn('[audio] Piped streams fetch failed.', error);
@@ -534,16 +550,25 @@ export async function resolveStream(
   artist: string
 ): Promise<StreamResult> {
   const jioSaavn = await resolveJioSaavnStream(title, artist);
-  if (jioSaavn) {
-    return jioSaavn;
+  if (jioSaavn?.url) {
+    const url = toHttps(jioSaavn.url);
+    if (url) {
+      return { ...jioSaavn, url };
+    }
   }
   const soundCloud = await resolveSoundCloudStream(title, artist);
-  if (soundCloud) {
-    return soundCloud;
+  if (soundCloud?.url) {
+    const url = toHttps(soundCloud.url);
+    if (url) {
+      return { ...soundCloud, url };
+    }
   }
   const youTube = await resolveYouTubeStream(title, artist);
-  if (youTube) {
-    return youTube;
+  if (youTube?.url) {
+    const url = toHttps(youTube.url);
+    if (url) {
+      return { ...youTube, url };
+    }
   }
-  throw new Error('No playable full-length stream found from any provider');
+  throw new Error('No playable https stream found from any provider');
 }

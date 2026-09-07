@@ -619,6 +619,7 @@ function ImportScreen({ onOpenImportedPlaylist }) {
 }
 
 function MiniPlayer({ onOpen }) {
+  const insets = useSafeAreaInsets();
   const {
     currentTrack,
     isPlaying,
@@ -635,7 +636,7 @@ function MiniPlayer({ onOpen }) {
   }
 
   return (
-    <View style={styles.miniPlayer}>
+    <View style={[styles.miniPlayer, { bottom: 49 + insets.bottom }]}>
       <Pressable style={styles.miniPlayerMain} onPress={onOpen}>
         {currentTrack.artwork ? (
           <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
@@ -695,12 +696,11 @@ function NowPlayingModal({ visible, onClose }) {
 
 function TabBar({ active, onChange }) {
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, 12);
   return (
     <View
       style={[
         styles.tabBar,
-        { paddingBottom: bottomInset, height: 56 + bottomInset },
+        { paddingBottom: insets.bottom, height: 49 + insets.bottom },
       ]}
     >
       {TABS.map((tab) => {
@@ -962,6 +962,8 @@ function CreatePlaylistModal({ visible, onClose }) {
 }
 
 function AppShell() {
+  const insets = useSafeAreaInsets();
+  const { currentTrack } = usePlayer();
   const [activeTab, setActiveTab] = useState('home');
   const [tabKeys, setTabKeys] = useState({ home: 0, search: 0, create: 0, library: 0 });
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
@@ -984,7 +986,7 @@ function AppShell() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.screenContent}>
+      <View style={[styles.screenContent, { marginBottom: 49 + insets.bottom + (currentTrack ? 64 : 0) }]}>
         {activeTab === 'home' ? (
           <Screen2 key={tabKeys.home} onCreatePlaylist={() => setCreatePlaylistOpen(true)} />
         ) : activeTab === 'search' ? (
@@ -1002,17 +1004,16 @@ function AppShell() {
           />
         )}
       </View>
-      <View style={styles.bottomBarWrap} pointerEvents="box-none">
-        <LinearGradient
-          colors={['rgba(10, 5, 18, 0)', 'rgba(10, 5, 18, 0.75)', 'rgba(10, 5, 18, 0.98)']}
-          locations={[0.0, 0.35, 1.0]}
-          start={{ x: 0.5, y: 0.0 }}
-          end={{ x: 0.5, y: 1.0 }}
-          style={styles.bottomFade}
-        />
-        <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
-        <TabBar active={activeTab} onChange={handleTabChange} />
-      </View>
+      <LinearGradient
+        colors={['rgba(10, 5, 18, 0)', 'rgba(10, 5, 18, 0.75)', 'rgba(10, 5, 18, 0.98)']}
+        locations={[0.0, 0.35, 1.0]}
+        start={{ x: 0.5, y: 0.0 }}
+        end={{ x: 0.5, y: 1.0 }}
+        style={styles.bottomFade}
+        pointerEvents="none"
+      />
+      <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
+      <TabBar active={activeTab} onChange={handleTabChange} />
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
       <AccountSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
       <CreatePlaylistModal
@@ -1120,20 +1121,12 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
-  bottomBarWrap: {
+  bottomFade: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: 150,
-    overflow: 'hidden',
-  },
-  bottomFade: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
     paddingTop: 18,
     pointerEvents: 'none',
   },
@@ -1688,7 +1681,6 @@ disabled: {
   },
   miniPlayer: {
     position: 'absolute',
-    bottom: 64,
     left: 8,
     right: 8,
     height: 56,
@@ -1761,7 +1753,7 @@ disabled: {
     left: 0,
     right: 0,
     width: '100%',
-    height: 56,
+    height: 49,
     backgroundColor: 'transparent',
     borderTopWidth: 0,
     zIndex: 10,
