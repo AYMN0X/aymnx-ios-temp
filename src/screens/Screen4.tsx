@@ -8,6 +8,10 @@ import {
   StatusBar,
   Dimensions,
   GestureResponderEvent,
+  LayoutChangeEvent,
+  Modal,
+  PanResponder,
+  Pressable,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,6 +43,8 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
     playbackPosition,
     duration,
     seekTo,
+    volume,
+    setVolume,
   } = usePlayer();
 
   const { likedSongs, toggleLike } = useLibrary();
@@ -54,6 +60,58 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
   const [isShuffle, setIsShuffle] = React.useState(false);
   const [isRepeat, setIsRepeat] = React.useState(false);
   const [barWidth, setBarWidth] = React.useState(0);
+
+  const [optionsOpen, setOptionsOpen] = React.useState(false);
+  const [muted, setMuted] = React.useState(false);
+  const volumeBarWidthRef = React.useRef(0);
+  const mutedRef = React.useRef(false);
+  const lastVolumeRef = React.useRef(volume > 0 ? volume : 0.5);
+
+  const syncMuted = (next: boolean) => {
+    mutedRef.current = next;
+    setMuted(next);
+  };
+
+  const applyVolumeFromTouch = (locationX: number) => {
+    const width = volumeBarWidthRef.current > 0 ? volumeBarWidthRef.current : SCREEN_WIDTH * 0.8;
+    const next = Math.max(0, Math.min(1, locationX / width));
+    setVolume(next);
+    if (next > 0 && mutedRef.current) {
+      syncMuted(false);
+    }
+  };
+
+  const volumePanResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => applyVolumeFromTouch(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => applyVolumeFromTouch(e.nativeEvent.locationX),
+    })
+  ).current;
+
+  const handleMuteToggle = () => {
+    if (mutedRef.current) {
+      setVolume(lastVolumeRef.current);
+      syncMuted(false);
+    } else {
+      lastVolumeRef.current = volume > 0 ? volume : 0.5;
+      setVolume(0);
+      syncMuted(true);
+    }
+  };
+
+  const handleMaxVolume = () => {
+    setVolume(1);
+    syncMuted(false);
+  };
+
+  const handleVolumeLayout = (e: LayoutChangeEvent) => {
+    volumeBarWidthRef.current = e.nativeEvent.layout.width;
+  };
+
+  const volumePct = Math.round(volume * 100);
+  const effectivelyMuted = muted || volume === 0;
 
   const handleSeekPress = (e: GestureResponderEvent) => {
     const touchX = e.nativeEvent.locationX;
@@ -79,6 +137,7 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconButton}
+            onPress={() => setOptionsOpen(true)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
@@ -191,6 +250,77 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+
+      <Modal
+        transparent
+        visible={optionsOpen}
+        animationType="slide"
+        onRequestClose={() => setOptionsOpen(false)}
+      >
+        <View style={styles.optionsRoot}>
+          <Pressable style={styles.optionsBackdrop} onPress={() => setOptionsOpen(false)} />
+          <View style={styles.optionsSheet}>
+            <View style={styles.optionsGrab} />
+            {currentTrack ? (
+              <View style={styles.optionsTrackRow}>
+                <Image
+                  source={{ uri: artworkUri || undefined }}
+                  style={styles.optionsArt}
+                  contentFit="cover"
+                />
+                <View style={styles.optionsTrackMeta}>
+                  <Text style={styles.optionsTrackTitle} numberOfLines={1}>
+                    {currentTrack.title}
+                  </Text>
+                  <Text style={styles.optionsTrackArtist} numberOfLines={1}>
+                    {currentTrack.artist}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+            <Text style={styles.optionsSectionLabel}>Volume</Text>
+            <View style={styles.volumeRow}>
+              <TouchableOpacity
+                onPress={handleMuteToggle}
+                hitSlop={10}
+                style={styles.volumeSideBtn}
+              >
+                <Ionicons
+                  name={effectivelyMuted ? "volume-mute" : "volume-low"}
+                  size={24}
+                  color={Color.textPrimary}
+                />
+              </TouchableOpacity>
+              <View
+                style={styles.volumeTouchArea}
+                onLayout={handleVolumeLayout}
+                {...volumePanResponder.panHandlers}
+              >
+                <View style={styles.volumeTrack} pointerEvents="none" />
+                <View
+                  style={[styles.volumeFill, { width: `${volumePct}%` }]}
+                  pointerEvents="none"
+                />
+              </View>
+              <TouchableOpacity
+                onPress={handleMaxVolume}
+                hitSlop={10}
+                style={styles.volumeSideBtn}
+              >
+                <Ionicons name="volume-high" size={24} color={Color.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.volumePct}>{volumePct}%</Text>
+            <TouchableOpacity
+              style={styles.optionsDoneBtn}
+              onPress={() => setOptionsOpen(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.optionsDoneLabel}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -215,8 +345,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 25,
+    paddingBottom: 0,
   },
   iconButton: {
     width: 40,
@@ -225,10 +355,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   artworkWrapper: {
-    width: "86%",
+    width: "88%",
     aspectRatio: 1,
     alignSelf: "center",
-    marginTop: 12,
+    marginTop: 60,
     borderRadius: 12,
     shadowColor: "#000",
     shadowOpacity: 0.4,
@@ -253,7 +383,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    marginTop: 22,
+    marginTop: 50,
   },
   titleColumn: {
     flex: 1,
@@ -274,10 +404,10 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: "center",
     paddingHorizontal: 24,
-    marginVertical: 18,
+    marginVertical: 30,
   },
   progressBarBackground: {
-    height: 5,
+    height: 7,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     borderRadius: 3,
     overflow: "hidden",
@@ -304,13 +434,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    marginTop: 12,
+    marginTop: -10,
     marginBottom: 36,
   },
   controlsCluster: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 24,
+    gap: 34,
   },
   playButton: {
     width: 64,
@@ -319,6 +449,120 @@ const styles = StyleSheet.create({
     backgroundColor: Color.accent,
     alignItems: "center",
     justifyContent: "center",
+  },
+  optionsRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  optionsBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "transparent",
+  },
+  optionsSheet: {
+    backgroundColor: "#1F162B",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 34,
+  },
+  optionsGrab: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignSelf: "center",
+    marginBottom: 14,
+  },
+  optionsTrackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  optionsArt: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    backgroundColor: "#2A2040",
+  },
+  optionsTrackMeta: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  optionsTrackTitle: {
+    fontSize: 17,
+    fontWeight: "bold",
+    color: Color.textPrimary,
+  },
+  optionsTrackArtist: {
+    fontSize: 13,
+    color: "#A1A1AA",
+    fontWeight: "500",
+    marginTop: 3,
+  },
+  optionsSectionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#9CA3AF",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  volumeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  volumeSideBtn: {
+    padding: 6,
+  },
+  volumeTouchArea: {
+    flex: 1,
+    height: 32,
+    justifyContent: "center",
+  },
+  volumeTrack: {
+    position: "absolute",
+    top: 13,
+    left: 0,
+    right: 0,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  volumeFill: {
+    position: "absolute",
+    top: 13,
+    left: 0,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Color.accent,
+  },
+  volumePct: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontWeight: "600",
+    alignSelf: "flex-end",
+    marginTop: 4,
+    fontVariant: ["tabular-nums"],
+  },
+  optionsDoneBtn: {
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: Color.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+  },
+  optionsDoneLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 });
 
