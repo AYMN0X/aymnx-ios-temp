@@ -636,7 +636,18 @@ function MiniPlayer({ onOpen }) {
   }
 
   return (
-    <View style={[styles.miniPlayer, { bottom: 49 + insets.bottom }]}>
+    <View
+      style={[
+        styles.miniPlayer,
+        {
+          position: 'absolute',
+          bottom: 49 + insets.bottom + 8,
+          left: 8,
+          right: 8,
+          zIndex: 999,
+        },
+      ]}
+    >
       <Pressable style={styles.miniPlayerMain} onPress={onOpen}>
         {currentTrack.artwork ? (
           <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
@@ -700,7 +711,14 @@ function TabBar({ active, onChange }) {
     <View
       style={[
         styles.tabBar,
-        { paddingBottom: insets.bottom, height: 49 + insets.bottom },
+        {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 49 + insets.bottom,
+          paddingBottom: insets.bottom,
+        },
       ]}
     >
       {TABS.map((tab) => {
@@ -1690,7 +1708,7 @@ disabled: {
     alignItems: 'center',
     paddingHorizontal: 8,
     overflow: 'hidden',
-    zIndex: 10,
+    zIndex: 900,
     elevation: 10,
   },
   miniPlayerMain: {
@@ -1747,16 +1765,16 @@ disabled: {
     backgroundColor: COLORS.green,
     borderRadius: 1,
   },
-  tabBar: {
+ tabBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     width: '100%',
-    height: 49,
-    backgroundColor: 'transparent',
-    borderTopWidth: 0,
-    zIndex: 10,
+    backgroundColor: '#121212',
+    borderTopWidth: 0.5,
+    borderTopColor: '#282828',
+    zIndex: 1000,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
