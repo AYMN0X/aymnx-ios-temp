@@ -29,8 +29,12 @@ interface PlayerContextValue {
   playTrack: (track: Track, queue?: Track[]) => Promise<void>;
   togglePlayPause: () => void;
   seekTo: (millis: number) => Promise<void>;
-  playNext: () => Promise<void>;
+  playNext: (track?: Track) => Promise<void>;
   playPrevious: () => Promise<void>;
+  addToQueue: (track: Track) => Promise<void>;
+  removeFromQueue: (index: number) => Promise<void>;
+  jumpToQueueIndex: (index: number) => Promise<void>;
+  clearQueue: () => Promise<void>;
   queue: Track[];
   queueIndex: number;
   isAutoplayEnabled: boolean;
@@ -254,12 +258,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const playNext = async () => {
+  const playNext = async (track?: Track) => {
+    if (!track) {
+      const q = queueRef.current;
+      if (q.length === 0 || !currentTrackRef.current) {
+        return;
+      }
+      await advanceToNextPlayable(indexRef.current + 1);
+      return;
+    }
     const q = queueRef.current;
     if (q.length === 0 || !currentTrackRef.current) {
       return;
     }
-    await advanceToNextPlayable(indexRef.current + 1);
+    const newIndex = Math.min(indexRef.current + 1, q.length);
+    const nextQueue = [...q.slice(0, newIndex), track, ...q.slice(newIndex)];
+    queueGenRef.current += 1;
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    const playable = await resolveTrackSource(track);
+    if (!playable) {
+      return;
+    }
+    const position = mirrorPositionForIndex(newIndex);
+    await TrackPlayer.add(playable, position);
+    mirrorIdsRef.current.add(track.id);
   };
 
   const playPrevious = async () => {
@@ -289,6 +312,106 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     await TrackPlayer.add(playable, position);
     mirrorIdsRef.current.add(target.id);
     await TrackPlayer.skipToPrevious();
+  };
+
+  const addToQueue = async (track: Track) => {
+    if (!track || !track.id || !currentTrackRef.current) {
+      return;
+    }
+    const nextQueue = [...queueRef.current, track];
+    queueGenRef.current += 1;
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    const playable = await resolveTrackSource(track);
+    if (!playable) {
+      return;
+    }
+    const position = mirrorPositionForIndex(nextQueue.length - 1);
+    await TrackPlayer.add(playable, position);
+    mirrorIdsRef.current.add(track.id);
+    if (lastMirrorIndexRef.current < nextQueue.length - 1) {
+      lastMirrorIndexRef.current = nextQueue.length - 1;
+    }
+  };
+
+  const removeFromQueue = async (index: number) => {
+    const q = queueRef.current;
+    if (index < 0 || index >= q.length) {
+      return;
+    }
+    if (index === indexRef.current) {
+      return;
+    }
+    const removed = q[index];
+    const position = mirrorPositionForIndex(index);
+    const nextQueue = q.filter((_, i) => i !== index);
+    queueGenRef.current += 1;
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    if (removed?.id && mirrorIdsRef.current.has(removed.id)) {
+      try {
+        await TrackPlayer.remove(position);
+      } catch (error) {
+        console.warn('[player] Could not remove mirrored track.', error);
+      }
+      mirrorIdsRef.current.delete(removed.id);
+    }
+    if (index < indexRef.current) {
+      indexRef.current -= 1;
+      setQueueIndex(indexRef.current);
+    }
+  };
+
+  const jumpToQueueIndex = async (index: number) => {
+    const q = queueRef.current;
+    if (index < 0 || index >= q.length) {
+      return;
+    }
+    const target = q[index];
+    if (!target || !target.id) {
+      return;
+    }
+    const position = mirrorPositionForIndex(index);
+    if (mirrorIdsRef.current.has(target.id)) {
+      await TrackPlayer.skip(position);
+      return;
+    }
+    const playable = await resolveTrackSource(target);
+    if (!playable) {
+      return;
+    }
+    queueGenRef.current += 1;
+    await TrackPlayer.add(playable, position);
+    mirrorIdsRef.current.add(target.id);
+    await TrackPlayer.skip(position);
+  };
+
+  const clearQueue = async () => {
+    const q = queueRef.current;
+    const idx = indexRef.current;
+    if (idx < 0) {
+      return;
+    }
+    const removed = q.slice(idx + 1);
+    if (removed.length === 0) {
+      return;
+    }
+    const nextQueue = q.slice(0, idx + 1);
+    queueGenRef.current += 1;
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    await TrackPlayer.removeUpcomingTracks().catch((error) =>
+      console.warn('[player] Could not clear upcoming tracks.', error)
+    );
+    removed.forEach((item) => {
+      if (item?.id) {
+        mirrorIdsRef.current.delete(item.id);
+      }
+    });
+    if (autoplayAddedIds.size > 0) {
+      setAutoplayAddedIds(new Set());
+    }
+    lastMirrorIndexRef.current = idx;
   };
 
   const ensureAutoplayTracks = useCallback(async () => {
@@ -690,6 +813,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       seekTo,
       playNext,
       playPrevious,
+      addToQueue,
+      removeFromQueue,
+      jumpToQueueIndex,
+      clearQueue,
       queue,
       queueIndex,
       isAutoplayEnabled,

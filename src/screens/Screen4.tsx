@@ -12,7 +12,9 @@ import {
   Modal,
   PanResponder,
   Pressable,
+  ScrollView,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Color } from "../theme/GlobalStyles";
@@ -45,6 +47,11 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
     seekTo,
     volume,
     setVolume,
+    queue,
+    queueIndex,
+    jumpToQueueIndex,
+    removeFromQueue,
+    clearQueue,
   } = usePlayer();
 
   const { likedSongs, toggleLike } = useLibrary();
@@ -62,6 +69,8 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
   const [barWidth, setBarWidth] = React.useState(0);
 
   const [optionsOpen, setOptionsOpen] = React.useState(false);
+  const [queueOpen, setQueueOpen] = React.useState(false);
+  const insets = useSafeAreaInsets();
   const [muted, setMuted] = React.useState(false);
   const volumeBarWidthRef = React.useRef(0);
   const mutedRef = React.useRef(false);
@@ -141,6 +150,13 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => setQueueOpen(true)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="list" size={24} color={Color.textPrimary} />
           </TouchableOpacity>
         </View>
 
@@ -231,7 +247,7 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={playNext}
+                onPress={() => playNext()}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons name="play-skip-forward" size={30} color={Color.textPrimary} />
@@ -317,6 +333,119 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
               activeOpacity={0.8}
             >
               <Text style={styles.optionsDoneLabel}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        visible={queueOpen}
+        animationType="slide"
+        onRequestClose={() => setQueueOpen(false)}
+      >
+        <View style={styles.optionsRoot}>
+          <Pressable style={styles.optionsBackdrop} onPress={() => setQueueOpen(false)} />
+          <View style={[styles.queueSheet, { paddingBottom: 24 + insets.bottom }]}>
+            <View style={styles.optionsGrab} />
+
+            <Text style={styles.optionsSectionLabel}>Now Playing</Text>
+            {currentTrack ? (
+              <View style={styles.queueNowPlayingRow}>
+                <Image
+                  source={{ uri: artworkUri || undefined }}
+                  style={styles.queueNowArt}
+                  contentFit="cover"
+                />
+                <View style={styles.queueRowMeta}>
+                  <Text style={styles.queueNowTitle} numberOfLines={1}>
+                    {currentTrack.title}
+                  </Text>
+                  <Text style={styles.queueRowArtist} numberOfLines={1}>
+                    {currentTrack.artist}
+                  </Text>
+                </View>
+                <View style={styles.queuePlayingBadge}>
+                  <Ionicons name="volume-high" size={12} color={Color.accent} />
+                  <Text style={styles.queuePlayingText}>Playing</Text>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.queueSectionHeader}>
+              <Text style={styles.optionsSectionLabel}>Up Next</Text>
+              {queue && queue.length > queueIndex + 1 ? (
+                <TouchableOpacity
+                  onPress={() => clearQueue()}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={styles.queueClear}>Clear</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {queue && queue.length > queueIndex + 1 ? (
+              <ScrollView
+                style={styles.queueList}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.queueListContent}
+              >
+                {queue.slice(queueIndex + 1).map((item, offset) => {
+                  const itemIndex = queueIndex + 1 + offset;
+                  const rowArt = item.artwork || (item as any)?.coverUrl;
+                  const rowDuration = (item as any)?.duration;
+                  return (
+                    <TouchableOpacity
+                      key={`${item.id}-${itemIndex}`}
+                      style={styles.queueRow}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        jumpToQueueIndex(itemIndex);
+                        setQueueOpen(false);
+                      }}
+                    >
+                      {rowArt ? (
+                        <Image source={{ uri: rowArt }} style={styles.queueRowArt} contentFit="cover" />
+                      ) : (
+                        <View style={[styles.queueRowArt, styles.queueArtFallback]}>
+                          <Ionicons name="musical-notes" size={18} color="rgba(255,255,255,0.35)" />
+                        </View>
+                      )}
+                      <View style={styles.queueRowMeta}>
+                        <Text style={styles.queueRowTitle} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.queueRowArtist} numberOfLines={1}>
+                          {item.artist}
+                        </Text>
+                      </View>
+                      {rowDuration ? (
+                        <Text style={styles.queueDuration}>{formatTime(Number(rowDuration) * 1000)}</Text>
+                      ) : null}
+                      <TouchableOpacity
+                        onPress={() => removeFromQueue(itemIndex)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        style={styles.queueRemoveBtn}
+                      >
+                        <Ionicons name="close" size={18} color="#9CA3AF" />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <View style={styles.queueEmpty}>
+                <Ionicons name="list" size={28} color="rgba(255,255,255,0.2)" />
+                <Text style={styles.queueEmptyText}>No tracks in queue</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.queueDoneBtn}
+              onPress={() => setQueueOpen(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.queueDoneLabel}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -560,6 +689,129 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   optionsDoneLabel: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  queueSheet: {
+    backgroundColor: "#1F162B",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    maxHeight: "80%",
+  },
+  queueNowPlayingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 18,
+  },
+  queueNowArt: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    backgroundColor: "#2A2040",
+  },
+  queueRowMeta: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  queueNowTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: Color.textPrimary,
+  },
+  queueRowTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Color.textPrimary,
+  },
+  queueRowArtist: {
+    fontSize: 13,
+    color: "#A1A1AA",
+    marginTop: 3,
+  },
+  queuePlayingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(120,30,207,0.18)",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  queuePlayingText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Color.accent,
+  },
+  queueSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  queueClear: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Color.accent,
+  },
+  queueList: {
+    flexGrow: 0,
+    maxHeight: 320,
+  },
+  queueListContent: {
+    paddingBottom: 4,
+  },
+  queueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  queueRowArt: {
+    width: 46,
+    height: 46,
+    borderRadius: 6,
+  },
+  queueArtFallback: {
+    backgroundColor: "#2A2040",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueDuration: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    marginRight: 12,
+    fontVariant: ["tabular-nums"],
+  },
+  queueRemoveBtn: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 32,
+    gap: 8,
+  },
+  queueEmptyText: {
+    fontSize: 14,
+    color: "#A1A1AA",
+  },
+  queueDoneBtn: {
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: Color.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+  },
+  queueDoneLabel: {
     fontSize: 15,
     fontWeight: "700",
     color: "#FFFFFF",
