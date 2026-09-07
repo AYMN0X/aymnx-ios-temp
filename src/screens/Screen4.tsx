@@ -52,6 +52,8 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
     jumpToQueueIndex,
     removeFromQueue,
     clearQueue,
+    repeatMode,
+    toggleRepeatMode,
   } = usePlayer();
 
   const { likedSongs, toggleLike } = useLibrary();
@@ -65,7 +67,6 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
   const artworkUri = currentTrack?.artwork || (currentTrack as any)?.coverUrl;
 
   const [isShuffle, setIsShuffle] = React.useState(false);
-  const [isRepeat, setIsRepeat] = React.useState(false);
   const [barWidth, setBarWidth] = React.useState(0);
 
   const [optionsOpen, setOptionsOpen] = React.useState(false);
@@ -255,14 +256,22 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
             </View>
 
           <TouchableOpacity
-            onPress={() => setIsRepeat((v) => !v)}
+            onPress={toggleRepeatMode}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons
-              name="repeat"
-              size={22}
-              color={isRepeat ? Color.accent : "#D4D4D8"}
-            />
+            <View style={styles.repeatWrap}>
+              <Ionicons
+                name="repeat"
+                size={22}
+                color={repeatMode === "off" ? "#8E8A9A" : Color.accent}
+              />
+              {repeatMode === "all" ? <View style={styles.repeatActiveDot} /> : null}
+              {repeatMode === "one" ? (
+                  <View style={styles.repeatOneBadge}>
+                    <Text style={styles.repeatOneText}>1</Text>
+                  </View>
+              ) : null}
+            </View>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -578,6 +587,38 @@ const styles = StyleSheet.create({
     backgroundColor: Color.accent,
     alignItems: "center",
     justifyContent: "center",
+  },
+  repeatWrap: {
+    width: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  repeatActiveDot: {
+    position: "absolute",
+    bottom: -3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Color.accent,
+  },
+  repeatOneBadge: {
+    position: "absolute",
+    top: -3,
+    right: -4,
+    minWidth: 10,
+    height: 10,
+    borderRadius: 5,
+    paddingHorizontal: 1.5,
+    backgroundColor: Color.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  repeatOneText: {
+    color: "#FFFFFF",
+    fontSize: 8,
+    fontWeight: "700",
+    lineHeight: 10,
   },
   optionsRoot: {
     flex: 1,

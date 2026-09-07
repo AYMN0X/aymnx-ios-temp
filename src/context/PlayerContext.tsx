@@ -1,10 +1,11 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import TrackPlayer, {
   AppKilledPlaybackBehavior,
   Capability,
   Event,
   IOSCategory,
+  RepeatMode,
   State,
   usePlaybackState,
   useProgress,
@@ -37,6 +38,8 @@ interface PlayerContextValue {
   clearQueue: () => Promise<void>;
   queue: Track[];
   queueIndex: number;
+  repeatMode: RepeatModeState;
+  toggleRepeatMode: () => void;
   isAutoplayEnabled: boolean;
   autoplayAddedIds: Set<string>;
   toggleAutoplay: () => void;
@@ -44,9 +47,25 @@ interface PlayerContextValue {
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 
+type RepeatModeState = 'off' | 'all' | 'one';
+
+const REPEAT_CYCLE: RepeatModeState[] = ['off', 'all', 'one'];
+
 const DEFAULT_VOLUME = 0.5;
 const FILL_BATCH = 6;
 const PREVIOUS_RESTART_THRESHOLD_MS = 3000;
+
+const WEB_REPEAT_MODE = {
+  off: 'REPEAT_OFF',
+  all: 'REPEAT_PLAYLIST',
+  one: 'REPEAT_TRACK',
+} as const;
+
+const NATIVE_REPEAT_MODE: Record<RepeatModeState, RepeatMode> = {
+  off: RepeatMode.Off,
+  all: RepeatMode.Queue,
+  one: RepeatMode.Track,
+};
 
 interface ResolvedPlayable {
   id: string;
@@ -73,12 +92,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [queueIndex, setQueueIndex] = useState(-1);
   const [isAutoplayEnabled, setIsAutoplayEnabled] = useState(true);
   const [autoplayAddedIds, setAutoplayAddedIds] = useState<Set<string>>(new Set());
+  const [repeatMode, setRepeatMode] = useState<RepeatModeState>('off');
   const queueRef = useRef<Track[]>([]);
   const indexRef = useRef(-1);
   const currentTrackRef = useRef<Track | null>(null);
   const startSeqRef = useRef(0);
   const queueGenRef = useRef(0);
   const volumeRef = useRef(DEFAULT_VOLUME);
+  const repeatModeRef = useRef<RepeatModeState>('off');
   const resolvingRef = useRef(false);
   const reportedErrorRef = useRef<string | null>(null);
   const playedSetRef = useRef<Set<string>>(new Set());
@@ -720,6 +741,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           },
         });
         await TrackPlayer.setVolume(DEFAULT_VOLUME);
+        await applyRepeatMode('off');
       } catch (error) {
         console.warn('[player] Failed to initialize TrackPlayer.', error);
       }
@@ -741,6 +763,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     indexRef.current = -1;
     setQueue([]);
     setQueueIndex(-1);
+    setRepeatMode('off');
+    repeatModeRef.current = 'off';
     setAutoplayAddedIds(new Set());
     playedSetRef.current = new Set();
     autoplayLoadingRef.current = false;
@@ -748,6 +772,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     mirrorIdsRef.current = new Set();
     lastMirrorIndexRef.current = -1;
     TrackPlayer.reset().catch((error) => console.warn('[player] Could not reset on logout.', error));
+    applyRepeatMode('off');
   }, [user]);
 
   useEffect(() => {
@@ -775,6 +800,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       storage
         .setAutoplayEnabled(next)
         .catch((error) => console.warn('[player] Could not save autoplay setting.', error));
+      return next;
+    });
+  };
+
+  const applyRepeatMode = useCallback((mode: RepeatModeState) => {
+    if (Platform.OS === 'web') {
+      return TrackPlayer.setRepeatMode(WEB_REPEAT_MODE[mode] as unknown as RepeatMode).catch((error) =>
+        console.warn('[player] Could not apply repeat mode.', error)
+      );
+    }
+    return TrackPlayer.setRepeatMode(NATIVE_REPEAT_MODE[mode]).catch((error) =>
+      console.warn('[player] Could not apply repeat mode.', error)
+    );
+  }, []);
+
+  const toggleRepeatMode = () => {
+    setRepeatMode((prev) => {
+      const next = REPEAT_CYCLE[(REPEAT_CYCLE.indexOf(prev) + 1) % REPEAT_CYCLE.length];
+      repeatModeRef.current = next;
+      applyRepeatMode(next);
       return next;
     });
   };
@@ -819,6 +864,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       clearQueue,
       queue,
       queueIndex,
+      repeatMode,
+      toggleRepeatMode,
       isAutoplayEnabled,
       autoplayAddedIds,
       toggleAutoplay,
@@ -831,8 +878,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       isLoadingAudio,
       playbackError,
       volume,
+      playTrack,
+      togglePlayPause,
+      seekTo,
+      playNext,
+      playPrevious,
+      addToQueue,
+      removeFromQueue,
+      jumpToQueueIndex,
+      clearQueue,
       queue,
       queueIndex,
+      repeatMode,
+      toggleRepeatMode,
       isAutoplayEnabled,
       autoplayAddedIds,
     ]
