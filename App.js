@@ -639,13 +639,7 @@ function MiniPlayer({ onOpen }) {
     <View
       style={[
         styles.miniPlayer,
-        {
-          position: 'absolute',
-          bottom: 54 + (insets.bottom > 0 ? insets.bottom - 8 : 0),
-          left: 12,
-          right: 12,
-          zIndex: 999,
-        },
+        { bottom: (49 + insets.bottom) + 8 },
       ]}
     >
       <Pressable style={styles.miniPlayerMain} onPress={onOpen}>
@@ -711,15 +705,7 @@ function TabBar({ active, onChange }) {
     <View
       style={[
         styles.tabBar,
-        {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 52 + insets.bottom,
-          paddingBottom: insets.bottom > 0 ? insets.bottom - 12 : 0,
-          zIndex: 1000,
-        },
+        { height: 49 + insets.bottom, paddingBottom: insets.bottom },
       ]}
     >
       {TABS.map((tab) => {
@@ -1005,7 +991,7 @@ function AppShell() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.screenContent, { marginBottom: 49 + insets.bottom + (currentTrack ? 64 : 0) }]}>
+      <View style={[styles.screenContent, { paddingBottom: 49 + insets.bottom + (currentTrack ? 64 : 0) }]}>
         {activeTab === 'home' ? (
           <Screen2 key={tabKeys.home} onCreatePlaylist={() => setCreatePlaylistOpen(true)} />
         ) : activeTab === 'search' ? (
@@ -1065,7 +1051,7 @@ function AuthGate() {
     <View style={styles.appRoot}>
       <AmbientBackground style={styles.ambientLayer} />
       {isLoading || onboardingSeen === null ? (
-        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
           <StatusBar style="light" />
         </SafeAreaView>
       ) : !onboardingSeen ? (
@@ -1085,7 +1071,7 @@ function AuthGate() {
           <PlayerProvider>
             <LibraryProvider>
               <TrackActionsProvider>
-                <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+                <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
                   <StatusBar style="light" />
                   {isAuthenticated ? <AppShell /> : <LoginScreen />}
                 </SafeAreaView>
@@ -1112,7 +1098,7 @@ const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
     width: '100%',
-    backgroundColor: 'transparent',
+    backgroundColor: '#0A0512',
   },
   ambientLayer: {
     position: 'absolute',
@@ -1149,7 +1135,7 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     pointerEvents: 'none',
   },
-disabled: {
+  disabled: {
     opacity: 0.5,
   },
   trackRow: {
@@ -1700,8 +1686,8 @@ disabled: {
   },
   miniPlayer: {
     position: 'absolute',
-    left: 8,
-    right: 8,
+    left: 12,
+    right: 12,
     height: 56,
     backgroundColor: '#282828',
     borderRadius: 8,
@@ -1709,7 +1695,7 @@ disabled: {
     alignItems: 'center',
     paddingHorizontal: 8,
     overflow: 'hidden',
-    zIndex: 900,
+    zIndex: 999,
     elevation: 10,
   },
   miniPlayerMain: {
@@ -1766,7 +1752,7 @@ disabled: {
     backgroundColor: COLORS.green,
     borderRadius: 1,
   },
- tabBar: {
+  tabBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
