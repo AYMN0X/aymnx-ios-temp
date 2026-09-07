@@ -94,7 +94,7 @@ function AppShell() {
 
 function AuthGate() {
   const { isAuthenticated, isLoading } = useAuth();
-  const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
+  const [onboardingSeen, setOnboardingSeen] = useState(null);
 
   useEffect(() => {
     let mounted = true;
