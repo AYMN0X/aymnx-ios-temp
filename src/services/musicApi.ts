@@ -13,7 +13,7 @@ export interface Track {
 export interface StreamResult {
   url: string;
   mimeType: string;
-  provider?: 'jiosaavn' | 'soundcloud' | 'youtube';
+  provider?: 'jiosaavn' | 'soundcloud';
 }
 
 interface ITunesResult {
@@ -94,6 +94,9 @@ const API_HEADERS = {
 async function apiFetch<T>(path: string, instances: string[]): Promise<T> {
   let lastError: unknown;
   for (const instance of instances) {
+    if (!/^https:\/\//i.test(instance)) {
+      continue;
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
     try {
@@ -421,13 +424,13 @@ async function resolveSoundCloudWithClientId(
     return null;
   }
   const transcoding = pickSoundCloudTranscoding(best);
-  const transcodingUrl = transcoding?.url;
-  if (!transcodingUrl) {
+  const transcodingHttps = toHttps(transcoding?.url);
+  if (!transcodingHttps) {
     return null;
   }
-  const separator = transcodingUrl.includes('?') ? '&' : '?';
+  const separator = transcodingHttps.includes('?') ? '&' : '?';
   const result = await soundCloudFetch<SoundCloudTranscodingResponse>(
-    `${transcodingUrl}${separator}client_id=${clientId}`
+    `${transcodingHttps}${separator}client_id=${clientId}`
   );
   const url = result.url ? toHttps(result.url) : null;
   if (!url) {
@@ -471,83 +474,6 @@ export async function resolveSoundCloudStream(
   }
 }
 
-const PIPED_INSTANCES = [
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.adminforge.de',
-  'https://pipedapi.leptons.xyz',
-];
-
-interface PipedSearchItem {
-  url?: string;
-  title?: string;
-}
-
-interface PipedSearchResponse {
-  items?: PipedSearchItem[];
-}
-
-interface PipedAudioStream {
-  url?: string;
-  mimeType?: string;
-  bitrate?: number;
-}
-
-interface PipedStreamsResponse {
-  audioStreams?: PipedAudioStream[];
-}
-
-function extractYouTubeVideoId(url: string | undefined): string | null {
-  if (!url) {
-    return null;
-  }
-  const match = url.match(
-    /(?:watch\?v=|youtu\.be\/|\/watch\/|\/shorts\/|\/embed\/)([a-zA-Z0-9_-]{11})/
-  );
-  return match ? match[1] : null;
-}
-
-async function resolveYouTubeStream(title: string, artist: string): Promise<StreamResult | null> {
-  const query = `"${artist}" "${title}"`;
-  try {
-    const search = await apiFetch<PipedSearchResponse>(
-      `/search?q=${encodeURIComponent(query)}&filter=videos`,
-      PIPED_INSTANCES
-    );
-    const items = search.items ?? [];
-    for (const item of items) {
-      if (!titleMatches(title, item.title ?? '')) {
-        continue;
-      }
-      const videoId = extractYouTubeVideoId(item.url);
-      if (!videoId) {
-        continue;
-      }
-      try {
-        const streams = await apiFetch<PipedStreamsResponse>(
-          `/streams/${videoId}`,
-          PIPED_INSTANCES
-        );
-        const audioStreams = (streams.audioStreams ?? [])
-          .filter(
-            (stream) => stream.url && String(stream.mimeType ?? '').startsWith('audio/')
-          )
-          .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-        const chosen = audioStreams[0];
-        const streamUrl = chosen?.url ? toHttps(chosen.url) : null;
-        if (streamUrl) {
-          return { url: streamUrl, mimeType: chosen.mimeType ?? 'audio/mp4', provider: 'youtube' };
-        }
-      } catch (error) {
-        console.warn('[audio] Piped streams fetch failed.', error);
-      }
-    }
-    return null;
-  } catch (error) {
-    console.warn('[audio] Piped search failed.', error);
-    return null;
-  }
-}
-
 export async function resolveStream(
   title: string,
   artist: string
@@ -564,13 +490,6 @@ export async function resolveStream(
     const url = toHttps(soundCloud.url);
     if (url) {
       return { ...soundCloud, url };
-    }
-  }
-  const youTube = await resolveYouTubeStream(title, artist);
-  if (youTube?.url) {
-    const url = toHttps(youTube.url);
-    if (url) {
-      return { ...youTube, url };
     }
   }
   throw new Error('No playable https stream found from any provider');

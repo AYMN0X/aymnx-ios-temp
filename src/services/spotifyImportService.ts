@@ -1,4 +1,3 @@
-import { Platform } from 'react-native';
 import { searchITunes, Track } from './musicApi';
 
 export interface ImportedPlaylist {
@@ -24,8 +23,22 @@ const FETCH_TIMEOUT_MS = 12000;
 const USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)';
 
 function extractPlaylistId(input: string): string {
-  const match = input.match(/playlist\/([a-zA-Z0-9]+)/);
-  const id = (match || [])[1] || input.trim();
+  const trimmed = input.trim();
+  if (!trimmed) {
+    throw new Error('Playlist link is empty.');
+  }
+  const isBareId = /^[a-zA-Z0-9_-]+$/.test(trimmed);
+  if (!isBareId) {
+    const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed)?.[1]?.toLowerCase();
+    if (scheme && scheme !== 'http' && scheme !== 'https') {
+      throw new Error('Only http(s) URLs or a bare playlist ID are supported.');
+    }
+    if (!/^https?:\/\//i.test(trimmed)) {
+      throw new Error('Playlist link must be a valid http(s) URL.');
+    }
+  }
+  const match = trimmed.match(/playlist\/([a-zA-Z0-9]+)/);
+  const id = (match || [])[1] || trimmed;
   if (!id) {
     throw new Error('Playlist link is empty.');
   }
@@ -33,21 +46,7 @@ function extractPlaylistId(input: string): string {
 }
 
 async function corsSafeFetch(url: string, options?: RequestInit): Promise<Response> {
-  if (Platform.OS !== 'web') {
-    return fetch(url, options);
-  }
-  const proxyUrls = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  ];
-  for (const proxyUrl of proxyUrls) {
-    try {
-      return await fetch(proxyUrl, options);
-    } catch (error) {
-      console.warn('[import] CORS proxy failed:', proxyUrl, error);
-    }
-  }
-  throw new Error('The browser blocked cross-origin requests and both CORS proxies failed.');
+  return fetch(url, options);
 }
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
