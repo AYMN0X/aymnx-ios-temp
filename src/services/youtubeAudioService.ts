@@ -1,6 +1,14 @@
 import type { Track } from './musicApi';
+import { Platform } from 'react-native';
 
 const REQUEST_TIMEOUT_MS = 8000;
+const TOTAL_TIMEOUT_MS = 30000;
+
+const CORS_PROXIES = [
+  'https://api.allorigins.win/raw?url=',
+  'https://corsproxy.io/?',
+  'https://api.codetabs.com/v1/proxy?quest=',
+];
 
 const REQUEST_HEADERS = {
   Accept: 'application/json',
@@ -16,9 +24,12 @@ interface YouTubeInstance {
 }
 
 const YOUTUBE_INSTANCES: YouTubeInstance[] = [
-  { baseUrl: 'https://api-piped.mha.fi', kind: 'piped' },
-  { baseUrl: 'https://pipedapi.kavin.rocks', kind: 'piped' },
-  { baseUrl: 'https://inv.nadeko.net', kind: 'invidious' },
+  { baseUrl: 'https://piped.video/api/v1', kind: 'piped' },
+  { baseUrl: 'https://api.piped.privacydev.net', kind: 'piped' },
+  { baseUrl: 'https://invidious.privacydev.net', kind: 'invidious' },
+  { baseUrl: 'https://inv.tux.pizza', kind: 'invidious' },
+  { baseUrl: 'https://invidious.nerdvpn.de', kind: 'invidious' },
+  { baseUrl: 'https://invidious.drgns.space', kind: 'invidious' },
 ];
 
 interface PipedAudioStream {
@@ -52,6 +63,7 @@ interface InvidiousVideoResponse {
   videoThumbnails?: InvidiousThumbnail[];
   lengthSeconds?: number;
   adaptiveFormats?: InvidiousFormat[];
+  formatStreams?: InvidiousFormat[];
 }
 
 interface CandidateStream {
@@ -91,21 +103,47 @@ function toHttps(url: string | null | undefined): string | null {
   return /^https:\/\//i.test(url) ? url : null;
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
+function budgetRemaining(deadline: number): number {
+  return Math.max(0, deadline - Date.now());
+}
+
+async function fetchWithBudget(url: string, deadline: number): Promise<unknown> {
+  const remaining = budgetRemaining(deadline);
+  if (remaining <= 0) {
+    throw new Error('YouTube resolution timed out.');
+  }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, remaining));
   try {
     const response = await fetch(url, {
       headers: REQUEST_HEADERS,
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
+      throw new Error(`HTTP ${response.status}`);
     }
-    return (await response.json()) as T;
+    return (await response.json()) as unknown;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchEndpoint(url: string, deadline: number): Promise<unknown> {
+  const attempts: string[] = [url];
+  if (Platform.OS === 'web') {
+    for (const proxy of CORS_PROXIES) {
+      attempts.push(`${proxy}${encodeURIComponent(url)}`);
+    }
+  }
+  let lastError: unknown = new Error('Fetch failed.');
+  for (const attempt of attempts) {
+    try {
+      return await fetchWithBudget(attempt, deadline);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 function normalizeMimeType(type: string): string {
@@ -151,50 +189,65 @@ function buildYouTubeTrack(parts: ParsedVideo): Track {
   };
 }
 
-async function fetchPipedVideo(videoId: string, baseUrl: string): Promise<Track | null> {
-  for (const suffix of ['?local=true', '']) {
-    try {
-      const json = await fetchJson<PipedStreamsResponse>(
-        `${baseUrl}/streams/${videoId}${suffix}`
-      );
-      const chosen = pickAudioStream(
-        (json.audioStreams ?? []).map((stream) => ({
-          url: stream.url ?? '',
-          mimeType: normalizeMimeType(stream.mimeType ?? ''),
-          bitrate: stream.bitrate ?? 0,
-        }))
-      );
-      if (!chosen) {
-        continue;
-      }
-      const url = toHttps(chosen.url);
-      if (!url) {
-        continue;
-      }
-      return buildYouTubeTrack({
-        videoId,
-        title: json.title ?? '',
-        artist: json.uploader ?? '',
-        artwork: json.thumbnailUrl ?? '',
-        durationSeconds: json.duration,
-        streamUrl: url,
-        streamMimeType: chosen.mimeType,
-      });
-    } catch (error) {
-      if (!suffix) {
-        throw error;
-      }
-    }
+async function fetchPipedVideo(
+  videoId: string,
+  baseUrl: string,
+  deadline: number
+): Promise<Track | null> {
+  let json = (await fetchEndpoint(
+    `${baseUrl}/streams/${videoId}?local=true`,
+    deadline
+  )) as PipedStreamsResponse;
+  let chosen = pickAudioStream(
+    (json.audioStreams ?? []).map((stream) => ({
+      url: stream.url ?? '',
+      mimeType: normalizeMimeType(stream.mimeType ?? ''),
+      bitrate: stream.bitrate ?? 0,
+    }))
+  );
+  if (!chosen) {
+    json = (await fetchEndpoint(
+      `${baseUrl}/streams/${videoId}`,
+      deadline
+    )) as PipedStreamsResponse;
+    chosen = pickAudioStream(
+      (json.audioStreams ?? []).map((stream) => ({
+        url: stream.url ?? '',
+        mimeType: normalizeMimeType(stream.mimeType ?? ''),
+        bitrate: stream.bitrate ?? 0,
+      }))
+    );
   }
-  return null;
+  if (!chosen) {
+    return null;
+  }
+  const url = toHttps(chosen.url);
+  if (!url) {
+    return null;
+  }
+  return buildYouTubeTrack({
+    videoId,
+    title: json.title ?? '',
+    artist: json.uploader ?? '',
+    artwork: json.thumbnailUrl ?? '',
+    durationSeconds: json.duration,
+    streamUrl: url,
+    streamMimeType: chosen.mimeType,
+  });
 }
 
-async function fetchInvidiousVideo(videoId: string, baseUrl: string): Promise<Track | null> {
-  const json = await fetchJson<InvidiousVideoResponse>(
-    `${baseUrl}/api/v1/videos/${videoId}`
-  );
+async function fetchInvidiousVideo(
+  videoId: string,
+  baseUrl: string,
+  deadline: number
+): Promise<Track | null> {
+  const json = (await fetchEndpoint(
+    `${baseUrl}/api/v1/videos/${videoId}`,
+    deadline
+  )) as InvidiousVideoResponse;
+  const formats = [...(json.adaptiveFormats ?? []), ...(json.formatStreams ?? [])];
   const chosen = pickAudioStream(
-    (json.adaptiveFormats ?? []).map((format) => ({
+    formats.map((format) => ({
       url: format.url ?? '',
       mimeType: normalizeMimeType(format.type ?? ''),
       bitrate: format.bitrate ?? 0,
@@ -225,13 +278,17 @@ export async function resolveYouTubeTrack(urlOrId: string): Promise<Track> {
       'Invalid YouTube link. Paste a link like youtube.com/watch?v=..., music.youtube.com/watch?v=..., or youtu.be/....'
     );
   }
+  const deadline = Date.now() + TOTAL_TIMEOUT_MS;
   let lastError: unknown = new Error('No available provider could serve this video.');
   for (const instance of YOUTUBE_INSTANCES) {
+    if (budgetRemaining(deadline) <= 0) {
+      break;
+    }
     try {
       const parsed =
         instance.kind === 'piped'
-          ? await fetchPipedVideo(videoId, instance.baseUrl)
-          : await fetchInvidiousVideo(videoId, instance.baseUrl);
+          ? await fetchPipedVideo(videoId, instance.baseUrl, deadline)
+          : await fetchInvidiousVideo(videoId, instance.baseUrl, deadline);
       if (parsed) {
         return parsed;
       }
@@ -241,6 +298,6 @@ export async function resolveYouTubeTrack(urlOrId: string): Promise<Track> {
   }
   console.warn('[youtube] All instances failed for video', videoId, lastError);
   throw new Error(
-    'Could not fetch audio for that video. The link may be private, region-locked, or the service is temporarily unreachable. Try another video.'
+    'Could not fetch audio for that video. The YouTube services may be temporarily unreachable, your browser may be blocked, or the video is private or region-locked. Try a different video or check the link.'
   );
 }
