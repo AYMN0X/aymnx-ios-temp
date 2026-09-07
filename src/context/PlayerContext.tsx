@@ -80,6 +80,115 @@ interface ResolvedPlayable {
 
 const delayMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+interface ProgressSnapshot {
+  position: number;
+  duration: number;
+  buffered: number;
+}
+
+const INITIAL_PROGRESS_SNAPSHOT: ProgressSnapshot = { position: 0, duration: 0, buffered: 0 };
+const WEB_AUDIO_ELEMENT_ID = 'react-native-track-player';
+
+function useWebProgress(updateIntervalMs = 250): ProgressSnapshot {
+  const [progress, setProgress] = useState<ProgressSnapshot>(INITIAL_PROGRESS_SNAPSHOT);
+
+  useTrackPlayerEvents([Event.PlaybackActiveTrackChanged], () => {
+    setProgress(INITIAL_PROGRESS_SNAPSHOT);
+  });
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') {
+      return undefined;
+    }
+    let mounted = true;
+    let detachListeners: (() => void) | null = null;
+
+    const snapshot = (element: HTMLAudioElement): ProgressSnapshot => {
+      const buffer = element.buffered;
+      return {
+        position: element.currentTime,
+        duration: element.duration || 0,
+        buffered: buffer && buffer.length > 0 ? buffer.end(buffer.length - 1) : 0,
+      };
+    };
+
+    const attach = (): boolean => {
+      const element = document.getElementById(WEB_AUDIO_ELEMENT_ID) as HTMLAudioElement | null;
+      if (!element) {
+        return false;
+      }
+      if (detachListeners) {
+        detachListeners();
+        detachListeners = null;
+      }
+      const onUpdate = () => {
+        if (mounted) {
+          setProgress(snapshot(element));
+        }
+      };
+      element.addEventListener('timeupdate', onUpdate);
+      element.addEventListener('loadedmetadata', onUpdate);
+      element.addEventListener('durationchange', onUpdate);
+      element.addEventListener('seeked', onUpdate);
+      element.addEventListener('play', onUpdate);
+      element.addEventListener('pause', onUpdate);
+      detachListeners = () => {
+        element.removeEventListener('timeupdate', onUpdate);
+        element.removeEventListener('loadedmetadata', onUpdate);
+        element.removeEventListener('durationchange', onUpdate);
+        element.removeEventListener('seeked', onUpdate);
+        element.removeEventListener('play', onUpdate);
+        element.removeEventListener('pause', onUpdate);
+      };
+      if (mounted) {
+        setProgress(snapshot(element));
+      }
+      return true;
+    };
+
+    let waiter: number | null = null;
+    if (!attach()) {
+      const id = window.setInterval(() => {
+        if (mounted && attach()) {
+          window.clearInterval(id);
+        }
+      }, 500);
+      waiter = id;
+    }
+
+    const poll = window.setInterval(async () => {
+      if (!mounted) {
+        return;
+      }
+      try {
+        const value = await TrackPlayer.getProgress();
+        if (mounted) {
+          setProgress({
+            position: value.position,
+            duration: value.duration || 0,
+            buffered: value.buffered ?? 0,
+          });
+        }
+      } catch {
+        return;
+      }
+    }, updateIntervalMs);
+
+    return () => {
+      mounted = false;
+      if (waiter != null) {
+        window.clearInterval(waiter);
+      }
+      window.clearInterval(poll);
+      if (detachListeners) {
+        detachListeners();
+      }
+    };
+  }, [updateIntervalMs]);
+
+  return progress;
+}
+
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { downloadedTracks } = useDownloads();
@@ -114,9 +223,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const fillPendingRequestRef = useRef<{ full: boolean } | null>(null);
 
   const { state } = usePlaybackState();
-  const progress = useProgress(500);
-  const playbackPosition = Number.isFinite(progress.position) ? progress.position * 1000 : 0;
-  const duration = Number.isFinite(progress.duration) ? progress.duration * 1000 : 0;
+  const nativeProgress = useProgress(250);
+  const webProgress = useWebProgress(250);
+  const progress = Platform.OS === 'web' ? webProgress : nativeProgress;
+
+  const rawDurationMs =
+    Number.isFinite(progress.duration) && progress.duration > 0 ? progress.duration * 1000 : 0;
+  const duration = rawDurationMs > 0 ? rawDurationMs : (currentTrack?.duration ?? 0) * 1000;
+  const rawPositionMs =
+    Number.isFinite(progress.position) && progress.position > 0 ? progress.position * 1000 : 0;
+  const playbackPosition = duration > 0 ? Math.min(rawPositionMs, duration) : rawPositionMs;
 
   useEffect(() => {
     autoplayEnabledRef.current = isAutoplayEnabled;
@@ -858,13 +974,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const seekTo = async (millis: number) => {
-    if (millis == null || !Number.isFinite(millis)) {
+    if (millis == null || !Number.isFinite(millis) || millis < 0) {
       return;
     }
-    if (duration <= 0) {
-      return;
+    const targetSeconds = millis / 1000;
+    try {
+      if (duration > 0) {
+        await TrackPlayer.seekTo(Math.min(targetSeconds, duration / 1000));
+      } else {
+        await TrackPlayer.seekTo(targetSeconds);
+      }
+    } catch (error) {
+      console.warn('[player] Seek failed.', error);
     }
-    await TrackPlayer.seekTo(millis / 1000);
   };
 
   const value = useMemo<PlayerContextValue>(

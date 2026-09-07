@@ -28,10 +28,15 @@ interface Screen4Props {
 }
 
 const formatTime = (millis: number): string => {
-  if (!millis || isNaN(millis)) return "0:00";
+  if (typeof millis !== "number" || !Number.isFinite(millis) || millis < 0) return "-:--";
   const totalSeconds = Math.floor(millis / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}:${remainingMinutes < 10 ? "0" : ""}${remainingMinutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  }
   return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 };
 
@@ -62,12 +67,20 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
     currentTrack && likedSongs.some((t: any) => t.id === currentTrack.id)
   );
 
-  const progress = duration > 0 ? playbackPosition / duration : 0;
-
   const artworkUri = currentTrack?.artwork || (currentTrack as any)?.coverUrl;
 
   const [isShuffle, setIsShuffle] = React.useState(false);
-  const [barWidth, setBarWidth] = React.useState(0);
+  const [isScrubbing, setIsScrubbing] = React.useState(false);
+  const [scrubRatio, setScrubRatio] = React.useState(0);
+  const barWidthRef = React.useRef(0);
+  const scrubRatioRef = React.useRef(0);
+  const scrubbingRef = React.useRef(false);
+  const durationRef = React.useRef(duration);
+  durationRef.current = duration;
+
+  const progressRatio = duration > 0 ? Math.max(0, Math.min(1, playbackPosition / duration)) : 0;
+  const showProgressRatio = isScrubbing ? Math.max(0, Math.min(1, scrubRatio)) : progressRatio;
+  const shownPositionMs = isScrubbing ? scrubRatio * (duration || 0) : playbackPosition;
 
   const [optionsOpen, setOptionsOpen] = React.useState(false);
   const [queueOpen, setQueueOpen] = React.useState(false);
@@ -123,14 +136,43 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
   const volumePct = Math.round(volume * 100);
   const effectivelyMuted = muted || volume === 0;
 
-  const handleSeekPress = (e: GestureResponderEvent) => {
-    const touchX = e.nativeEvent.locationX;
-    const width = barWidth > 0 ? barWidth : SCREEN_WIDTH * 0.86;
-    const seekPercentage = Math.max(0, Math.min(1, touchX / width));
-    if (duration > 0 && seekTo) {
-      seekTo(seekPercentage * duration);
+  const ratioFromTouch = (e: GestureResponderEvent): number => {
+    const width = barWidthRef.current > 0 ? barWidthRef.current : SCREEN_WIDTH * 0.86;
+    return Math.max(0, Math.min(1, e.nativeEvent.locationX / width));
+  };
+
+  const commitScrub = (apply: boolean) => {
+    if (!scrubbingRef.current) {
+      return;
+    }
+    scrubbingRef.current = false;
+    setIsScrubbing(false);
+    const ratio = scrubRatioRef.current;
+    if (apply && seekTo && durationRef.current > 0) {
+      seekTo(ratio * durationRef.current).catch(() => undefined);
     }
   };
+
+  const scrubPanResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => {
+        const ratio = ratioFromTouch(e);
+        scrubRatioRef.current = ratio;
+        scrubbingRef.current = true;
+        setIsScrubbing(true);
+        setScrubRatio(ratio);
+      },
+      onPanResponderMove: (e) => {
+        const ratio = ratioFromTouch(e);
+        scrubRatioRef.current = ratio;
+        setScrubRatio(ratio);
+      },
+      onPanResponderRelease: () => commitScrub(true),
+      onPanResponderTerminate: () => commitScrub(false),
+    })
+  ).current;
 
   return (
     <View style={styles.screenRoot}>
@@ -200,17 +242,18 @@ export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
         </View>
 
         <View style={styles.progressContainer}>
-          <TouchableOpacity
+          <View
             style={styles.progressBarBackground}
-            activeOpacity={1}
-            onPress={handleSeekPress}
-            onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+            {...scrubPanResponder.panHandlers}
+            onLayout={(e) => {
+              barWidthRef.current = e.nativeEvent.layout.width;
+            }}
           >
-            <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
-          </TouchableOpacity>
+            <View style={[styles.progressBarFill, { width: `${showProgressRatio * 100}%` }]} />
+          </View>
           <View style={styles.timeRow}>
-            <Text style={styles.timeText}>{formatTime(playbackPosition)}</Text>
-            <Text style={styles.timeText}>{formatTime(duration)}</Text>
+            <Text style={styles.timeText}>{formatTime(shownPositionMs)}</Text>
+            <Text style={styles.timeText}>{formatTime(duration > 0 ? duration : Number.POSITIVE_INFINITY)}</Text>
           </View>
         </View>
 
