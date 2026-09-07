@@ -153,6 +153,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         artwork: local.localArtworkUri || track.artwork || undefined,
       };
     }
+    if (track.streamUrl) {
+      return {
+        id: track.id,
+        url: track.streamUrl,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artwork: track.artwork || undefined,
+        contentType: track.streamMimeType || 'audio/mp4',
+        userAgent:
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)',
+      };
+    }
     try {
       const result = await resolveStream(track.title, track.artist);
       return {
@@ -555,6 +568,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const isCurrent = () => seq === startSeqRef.current;
     let resolvedUrl = '';
     let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | 'youtube' | undefined;
+    let resolvedMimeType: string | undefined;
     let artworkUri = track.artwork;
     try {
       const local = downloadedRef.current.find((item) => item.id === track.id);
@@ -562,10 +576,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         resolvedUrl = local.localAudioUri;
         resolvedProvider = 'local';
         artworkUri = local.localArtworkUri || track.artwork;
+      } else if (track.streamUrl) {
+        resolvedUrl = track.streamUrl;
+        resolvedProvider = 'youtube';
+        resolvedMimeType = track.streamMimeType || 'audio/mp4';
       } else {
         const result = await resolveStream(track.title, track.artist);
         resolvedUrl = result.url;
         resolvedProvider = result.provider;
+        resolvedMimeType = result.mimeType;
       }
     } catch (error) {
       console.error('[audio] No playable stream found for:', track.title, track.artist, error);
@@ -600,6 +619,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         artist: track.artist,
         album: track.album,
         artwork: artworkUri || undefined,
+        contentType: resolvedMimeType,
+        userAgent:
+          resolvedProvider === 'local'
+            ? undefined
+            : 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)',
       };
       await TrackPlayer.add(playable);
       mirrorIdsRef.current.add(track.id);

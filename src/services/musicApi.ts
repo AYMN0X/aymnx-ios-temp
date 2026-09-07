@@ -5,6 +5,9 @@ export interface Track {
   album: string;
   artwork: string;
   previewUrl: string;
+  streamUrl?: string;
+  streamMimeType?: string;
+  duration?: number;
 }
 
 export interface StreamResult {

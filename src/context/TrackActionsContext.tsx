@@ -1,6 +1,7 @@
 import React, {
   createContext,
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -28,6 +29,7 @@ import { Border, Color } from '../theme/GlobalStyles';
 
 interface TrackActionsValue {
   openTrack: (track: Track) => void;
+  showToast: (message: string) => void;
 }
 
 const TrackActionsContext = createContext<TrackActionsValue | undefined>(undefined);
@@ -75,7 +77,7 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
     setNewName('');
   };
 
-  const showToast = (message: string) => {
+  const showToast = useCallback((message: string) => {
     if (feedbackTimer.current) {
       clearTimeout(feedbackTimer.current);
     }
@@ -106,7 +108,7 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
         }),
       ]).start(() => setFeedback(null));
     }, 1600);
-  };
+  }, [feedbackOpacity, feedbackTranslate, feedbackTimer]);
 
   const toggleLiked = () => {
     if (track) {
@@ -158,7 +160,7 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
     return playlists.filter((playlist) => playlist.name.toLowerCase().includes(q));
   }, [playlists, filter]);
 
-  const value = useMemo<TrackActionsValue>(() => ({ openTrack }), []);
+  const value = useMemo<TrackActionsValue>(() => ({ openTrack, showToast }), [openTrack, showToast]);
 
   return (
     <TrackActionsContext.Provider value={value}>
