@@ -641,9 +641,9 @@ function MiniPlayer({ onOpen }) {
         styles.miniPlayer,
         {
           position: 'absolute',
-          bottom: 49 + insets.bottom + 8,
-          left: 8,
-          right: 8,
+          bottom: 54 + (insets.bottom > 0 ? insets.bottom - 8 : 0),
+          left: 12,
+          right: 12,
           zIndex: 999,
         },
       ]}
@@ -716,8 +716,9 @@ function TabBar({ active, onChange }) {
           bottom: 0,
           left: 0,
           right: 0,
-          height: 49 + insets.bottom,
-          paddingBottom: insets.bottom,
+          height: 52 + insets.bottom,
+          paddingBottom: insets.bottom > 0 ? insets.bottom - 12 : 0,
+          zIndex: 1000,
         },
       ]}
     >
