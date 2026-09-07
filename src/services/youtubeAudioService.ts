@@ -26,6 +26,8 @@ interface InvidiousFormat {
   url?: string;
   type?: string;
   bitrate?: number;
+  audioQuality?: string;
+  itag?: number | string;
 }
 
 interface InvidiousThumbnail {
@@ -52,26 +54,38 @@ interface CandidateStream {
   url: string;
   mimeType: string;
   bitrate: number;
+  audioQuality: string;
+  itag: string;
 }
 
 function budgetRemaining(deadline: number): number {
   return deadline - Date.now();
 }
 
-function normalizeMimeType(type: string): string {
-  const cleanup = (value: string) =>
-    value.toLowerCase().split(';')[0].replace(/\s+/g, '').trim();
-  const cleaned = cleanup(type);
-  if (cleaned === 'audio/webm' || cleaned === 'audio/mp4' || cleaned === 'audio/mpeg') {
-    return cleaned;
+function deriveFormatType(type: string): string {
+  const cleaned = type.replace(/\s+/g, '').toLowerCase();
+  const codecsMatch = /codecs="?([^";]+)/.exec(cleaned);
+  const codecs = codecsMatch ? codecsMatch[1] : '';
+  if (/^audio\/mp4/.test(cleaned)) {
+    return 'audio/mp4';
   }
-  if (/^audio\//.test(cleaned)) {
+  if (/^audio\/(webm|opus)/.test(cleaned)) {
     return 'audio/webm';
   }
-  if (/^video\//.test(cleaned)) {
-    return `${cleaned.split(';')[0].replace(/\s+/g, '')}`;
+  if (/^video\/mp4/.test(cleaned)) {
+    const hasAudioCodec = /mp4a|aac/.test(codecs);
+    const hasVideoCodec = /avc1|h264|av01/.test(codecs);
+    return hasAudioCodec && !hasVideoCodec ? 'audio/mp4' : 'video/mp4';
   }
-  return cleaned;
+  if (/^video\/(webm|x-matroska)/.test(cleaned)) {
+    const hasAudioCodec = /opus|vorbis/.test(codecs);
+    const hasVideoCodec = /vp8|vp9|av01|vp09/.test(codecs);
+    return hasAudioCodec && !hasVideoCodec ? 'audio/webm' : 'video/webm';
+  }
+  if (/^audio\//.test(cleaned)) {
+    return cleaned;
+  }
+  return 'video/mp4';
 }
 
 function toHttps(url: string): string | null {
@@ -85,22 +99,34 @@ function toHttps(url: string): string | null {
 }
 
 function pickAudioFormat(formats: InvidiousFormat[]): CandidateStream | null {
-  const candidates = formats
+  const available = formats
     .map((format) => ({
       url: format.url ?? '',
-      mimeType: normalizeMimeType(format.type ?? ''),
-      bitrate: format.bitrate ?? 0,
+      mimeType: deriveFormatType(format.type ?? ''),
+      bitrate: typeof format.bitrate === 'number' ? format.bitrate : 0,
+      audioQuality: format.audioQuality ?? '',
+      itag: typeof format.itag === 'number' ? String(format.itag) : format.itag ?? '',
     }))
     .filter(
       (candidate) =>
         candidate.url &&
         (candidate.mimeType === 'audio/mp4' || candidate.mimeType === 'audio/webm'),
     );
-  if (candidates.length === 0) {
+  if (available.length === 0) {
     return null;
   }
-  candidates.sort((a, b) => b.bitrate - a.bitrate);
-  return candidates[0];
+  const containerRank = (mimeType: string) => (mimeType === 'audio/mp4' ? 0 : 1);
+  const itagRank = (itag: string) => (itag === '140' ? 0 : 1);
+  const qualityRank = (audioQuality: string) =>
+    audioQuality === 'AUDIO_QUALITY_MEDIUM' ? 0 : 1;
+  available.sort(
+    (a, b) =>
+      containerRank(a.mimeType) - containerRank(b.mimeType) ||
+      itagRank(a.itag) - itagRank(b.itag) ||
+      qualityRank(a.audioQuality) - qualityRank(b.audioQuality) ||
+      b.bitrate - a.bitrate,
+  );
+  return available[0];
 }
 
 function pickVideoThumbnail(thumbnails: InvidiousThumbnail[]): string {
@@ -169,6 +195,28 @@ async function fetchWithTimeout(url: string, deadline: number): Promise<unknown>
   }
 }
 
+async function fetchRedirectFinalUrl(url: string, deadline: number): Promise<string | null> {
+  const remaining = budgetRemaining(deadline);
+  if (remaining <= 0) {
+    return null;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, remaining));
+  try {
+    const response = await fetch(url, { headers: REQUEST_HEADERS, signal: controller.signal });
+    if (!response.ok) {
+      return null;
+    }
+    const finalUrl = toHttps(response.url);
+    return finalUrl && /^https:\/\//.test(finalUrl) ? finalUrl : null;
+  } catch (error) {
+    console.warn('[youtube] Direct stream redirect failed', url, error);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchInvidiousVideo(
   instance: string,
   videoId: string,
@@ -180,24 +228,45 @@ async function fetchInvidiousVideo(
   if (!json || typeof json !== 'object') {
     return null;
   }
+
+  const duration =
+    typeof json.lengthSeconds === 'number' && json.lengthSeconds > 0 ? json.lengthSeconds : 0;
+  const thumbnailUrl = pickVideoThumbnail(json.videoThumbnails ?? []);
+
   const chosen =
     pickAudioFormat(json.adaptiveFormats ?? []) ?? pickAudioFormat(json.formatStreams ?? []);
-  if (!chosen) {
-    return null;
+  if (chosen) {
+    const streamUrl = ensureAbsoluteStreamUrl(chosen.url, instance);
+    if (streamUrl) {
+      return buildInvidiousTrack({
+        videoId,
+        title: json.title ?? '',
+        author: json.author ?? '',
+        thumbnailUrl,
+        lengthSeconds: duration,
+        streamUrl,
+        streamMimeType: chosen.mimeType,
+      });
+    }
   }
-  const streamUrl = ensureAbsoluteStreamUrl(chosen.url, instance);
-  if (!streamUrl) {
-    return null;
+
+  const directUrl = await fetchRedirectFinalUrl(
+    `${instance}/latest_version?id=${videoId}&itag=140`,
+    deadline,
+  );
+  if (directUrl) {
+    return buildInvidiousTrack({
+      videoId,
+      title: json.title ?? '',
+      author: json.author ?? '',
+      thumbnailUrl,
+      lengthSeconds: duration,
+      streamUrl: directUrl,
+      streamMimeType: 'audio/mp4',
+    });
   }
-  return buildInvidiousTrack({
-    videoId,
-    title: json.title ?? '',
-    author: json.author ?? '',
-    thumbnailUrl: pickVideoThumbnail(json.videoThumbnails ?? []),
-    lengthSeconds: typeof json.lengthSeconds === 'number' ? json.lengthSeconds : 0,
-    streamUrl,
-    streamMimeType: chosen.mimeType,
-  });
+
+  return null;
 }
 
 async function resolveFromInstances(videoId: string, deadline: number): Promise<Track | null> {
