@@ -42,7 +42,8 @@ export function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove 
         <Pressable onPress={onMore} hitSlop={8} style={styles.trackAction}>
           <MoreHorizontal size={18} color={COLORS.textSecondary} />
         </Pressable>
-      ) : onRemove ? (
+      ) : null}
+      {onRemove ? (
         <Pressable onPress={onRemove} hitSlop={8} style={styles.trackAction}>
           <X size={18} color={COLORS.textSecondary} />
         </Pressable>

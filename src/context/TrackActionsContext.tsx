@@ -2,12 +2,16 @@ import React, {
   createContext,
   ReactNode,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
+  Animated,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +19,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { Track } from '../services/musicApi';
 import { useLibrary } from './LibraryContext';
@@ -31,13 +36,20 @@ type SheetView = 'options' | 'picker';
 
 export function TrackActionsProvider({ children }: { children: ReactNode }) {
   const { playlists, isLiked, toggleLike, addToPlaylist, createPlaylist } = useLibrary();
-  const { playTrack } = usePlayer();
+  const { playTrack, playNext, addToQueue, currentTrack } = usePlayer();
+
+  const insets = useSafeAreaInsets();
 
   const [track, setTrack] = useState<Track | null>(null);
   const [view, setView] = useState<SheetView>('options');
   const [filter, setFilter] = useState('');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const feedbackOpacity = useRef(new Animated.Value(0)).current;
+  const feedbackTranslate = useRef(new Animated.Value(14)).current;
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const close = () => {
     setTrack(null);
@@ -47,6 +59,14 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
     setNewName('');
   };
 
+  useEffect(() => {
+    return () => {
+      if (feedbackTimer.current) {
+        clearTimeout(feedbackTimer.current);
+      }
+    };
+  }, []);
+
   const openTrack = (next: Track) => {
     setTrack(next);
     setView('options');
@@ -55,15 +75,67 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
     setNewName('');
   };
 
+  const showToast = (message: string) => {
+    if (feedbackTimer.current) {
+      clearTimeout(feedbackTimer.current);
+    }
+    setFeedback(message);
+    Animated.parallel([
+      Animated.timing(feedbackOpacity, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.timing(feedbackTranslate, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    ]).start();
+    feedbackTimer.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(feedbackOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(feedbackTranslate, {
+          toValue: 14,
+          duration: 220,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]).start(() => setFeedback(null));
+    }, 1600);
+  };
+
   const toggleLiked = () => {
     if (track) {
       toggleLike(track);
     }
   };
 
-  const addToQueue = () => {
+  const playNextTrack = () => {
     if (track) {
-      playTrack(track, [track]);
+      if (currentTrack) {
+        playNext(track);
+        showToast('Playing next');
+      } else {
+        playTrack(track, [track]);
+        showToast('Now playing');
+      }
+    }
+    close();
+  };
+
+  const addTrackToQueue = () => {
+    if (track) {
+      if (currentTrack) {
+        addToQueue(track);
+        showToast('Added to queue');
+      } else {
+        playTrack(track, [track]);
+        showToast('Now playing');
+      }
     }
     close();
   };
@@ -93,7 +165,10 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
       {children}
       <Modal visible={!!track} transparent animationType="slide" onRequestClose={close}>
         <Pressable style={styles.backdrop} onPress={close}>
-          <Pressable style={styles.sheet} onPress={() => {}}>
+          <Pressable
+            style={[styles.sheet, { paddingBottom: 24 + insets.bottom }]}
+            onPress={() => {}}
+          >
             <View style={styles.pill} />
             {view === 'options' ? (
               <>
@@ -115,6 +190,14 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                   </View>
                 ) : null}
                 <View style={styles.divider} />
+                <Pressable style={styles.item} onPress={playNextTrack}>
+                  <Ionicons name="play-forward" size={20} color="#B3B3B3" />
+                  <Text style={styles.itemLabel}>Play Next</Text>
+                </Pressable>
+                <Pressable style={styles.item} onPress={addTrackToQueue}>
+                  <Ionicons name="list-outline" size={20} color="#B3B3B3" />
+                  <Text style={styles.itemLabel}>Add to Queue</Text>
+                </Pressable>
                 <Pressable style={styles.item} onPress={toggleLiked}>
                   <Ionicons
                     name={track && isLiked(track.id) ? 'heart' : 'heart-outline'}
@@ -128,10 +211,6 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                 <Pressable style={styles.item} onPress={() => setView('picker')}>
                   <Ionicons name="add-circle-outline" size={20} color="#B3B3B3" />
                   <Text style={styles.itemLabel}>Add to playlist</Text>
-                </Pressable>
-                <Pressable style={styles.item} onPress={addToQueue}>
-                  <Ionicons name="list-outline" size={20} color="#B3B3B3" />
-                  <Text style={styles.itemLabel}>Add to Queue</Text>
                 </Pressable>
                 <Pressable style={styles.item} onPress={close}>
                   <Text style={styles.cancelLabel}>Cancel</Text>
@@ -248,6 +327,23 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
           </Pressable>
         </Pressable>
       </Modal>
+      {feedback ? (
+        <View style={styles.toastOverlay} pointerEvents="box-none">
+          <Animated.View
+            style={[
+              styles.toast,
+              {
+                bottom: 72 + insets.bottom,
+                opacity: feedbackOpacity,
+                transform: [{ translateY: feedbackTranslate }],
+              },
+            ]}
+          >
+            <Ionicons name="checkmark-circle" size={18} color={Color.accent} />
+            <Text style={styles.toastText}>{feedback}</Text>
+          </Animated.View>
+        </View>
+      ) : null}
     </TrackActionsContext.Provider>
   );
 }
@@ -267,7 +363,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: Color.surface,
+    backgroundColor: '#1F162B',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
@@ -441,5 +537,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  toastOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 200,
+  },
+  toast: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#1F162B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    elevation: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  toastText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Color.textPrimary,
   },
 });

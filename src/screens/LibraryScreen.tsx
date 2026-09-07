@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDownloads } from '../context/DownloadContext';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlayer } from '../context/PlayerContext';
+import { useTrackActions } from '../context/TrackActionsContext';
 import type { Track } from '../services/musicApi';
 import { COLORS, TYPE } from '../theme/appTheme';
 import { Screen3 } from './Screen3';
@@ -46,6 +47,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
     isLiked,
   } = useLibrary();
   const { playTrack } = usePlayer();
+  const { openTrack } = useTrackActions();
   const { downloadedTracks, deleteDownload } = useDownloads();
   const { user } = useAuth();
   const userInitial = (user?.name || user?.username || 'S').charAt(0).toUpperCase();
@@ -260,6 +262,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
                 liked={isLiked(item.track!.id)}
                 onPlay={() => item.track && playTrack(item.track, downloadedTracks)}
                 onToggleLike={() => item.track && toggleLike(item.track)}
+                onMore={() => item.track && openTrack(item.track)}
                 onRemove={() => item.track && deleteDownload(item.track.id)}
               />
             );
