@@ -24,6 +24,7 @@
     "shaka-player": "^4.16.48"
   },
   "scripts": {
+    "postinstall": "node scripts/patch-expo-av.js",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
