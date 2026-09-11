@@ -34,10 +34,17 @@ patchFile('EXAV.h', (src) => {
   return src;
 });
 
-// 2. Video/EXVideoView.h – replace EXLegacyExpoViewProtocol.h import
+// 2. Video/EXVideoView.h – replace import and add protocol definition
 patchFile(path.join('Video', 'EXVideoView.h'), (src) => {
-  return src.replace(
+  src = src.replace(
     '#import <ExpoModulesCore/EXLegacyExpoViewProtocol.h>',
     '#import <ExpoModulesCore/ExpoModulesCore.h>'
   );
+
+  const protoDef = '@protocol EXLegacyExpoViewProtocol <NSObject>\n@end\n\n';
+  if (!src.includes('@protocol EXLegacyExpoViewProtocol')) {
+    src = src.replace('@interface EXVideoView', protoDef + '@interface EXVideoView');
+  }
+
+  return src;
 });
