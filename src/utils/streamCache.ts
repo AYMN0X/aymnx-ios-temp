@@ -1,6 +1,44 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
-export const LAN_STREAM_HTTP_PORT = 8080;
+const LAN_HOST_FROM_ENV = process.env.EXPO_PUBLIC_LAN_STREAM_HOST;
+const LAN_PORT_FROM_ENV = process.env.EXPO_PUBLIC_LAN_STREAM_PORT;
+
+export const LAN_STREAM_DEFAULT_HOST = (LAN_HOST_FROM_ENV || '100.97.76.123').trim();
+export const LAN_STREAM_HTTP_PORT = Number.parseInt(LAN_PORT_FROM_ENV || '8080', 10) || 8080;
+
+export function lanStreamBaseUrl(host: string = LAN_STREAM_DEFAULT_HOST): string {
+  let clean = host.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (!/:\d+$/.test(clean)) {
+    clean = `${clean}:${LAN_STREAM_HTTP_PORT}`;
+  }
+  return `http://${clean}`;
+}
+
+export function isLanHost(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  if (h === LAN_STREAM_DEFAULT_HOST.toLowerCase()) {
+    return true;
+  }
+  if (h === 'localhost' || h.endsWith('.local')) {
+    return true;
+  }
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+    return true;
+  }
+  return false;
+}
+
+export function isLanStreamUrl(input: string): boolean {
+  const url = toHttpUrl(input);
+  if (!url) {
+    return false;
+  }
+  try {
+    return isLanHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
 
 const CACHE_DIR_NAME = 'stream-cache';
 
@@ -147,6 +185,9 @@ export async function resolveStreamForPlayback(
     return null;
   }
   if (/^https?:\/\//i.test(trimmed)) {
+    if (isLanStreamUrl(trimmed)) {
+      return resolveLanStreamForCache(trimmed, mimeType);
+    }
     return { uri: trimmed, kind: 'network' };
   }
   const httpUrl = toHttpUrl(trimmed);
@@ -154,6 +195,13 @@ export async function resolveStreamForPlayback(
     console.warn('[stream-cache] Unrecognized stream reference:', trimmed);
     return null;
   }
+  return resolveLanStreamForCache(httpUrl, mimeType);
+}
+
+async function resolveLanStreamForCache(
+  httpUrl: string,
+  mimeType?: string
+): Promise<StreamResolveResult | null> {
   try {
     const cached = await getCachedStream(httpUrl);
     if (cached) {
@@ -166,7 +214,7 @@ export async function resolveStreamForPlayback(
     const uri = await cacheStream(httpUrl, mimeType);
     return { uri, kind: 'cached' };
   } catch (error) {
-    console.warn('[stream-cache] Mirror download failed; no playable fallback for:', httpUrl, error);
+    console.warn('[stream-cache] LAN mirror download failed; no playable fallback for:', httpUrl, error);
     return null;
   }
 }

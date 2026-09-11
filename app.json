@@ -22,7 +22,11 @@
           "audio"
         ],
         "CFBundleDisplayName": "AYMNX",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "NSLocalNetworkUsageDescription": "AYMNX connects to your computer over your local/Tailscale network to stream your personal music files."
       }
     },
     "android": {
