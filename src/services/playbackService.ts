@@ -1,5 +1,5 @@
-import TrackPlayer from 'react-native-track-player';
-import { Event } from 'react-native-track-player';
+//import TrackPlayer from 'react-native-track-player';
+//import { Event } from 'react-native-track-player';
 
 export interface PlaybackServiceBridge {
   onRemoteNext: () => Promise<void>;

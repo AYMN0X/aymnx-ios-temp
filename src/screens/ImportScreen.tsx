@@ -104,9 +104,9 @@ export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
           disabled={!link.trim() || importing}
         >
           {importing ? (
-            <Activity size={18} color="#000000" />
+            <Activity size={18} color="#FFFFFF" />
           ) : (
-            <Feather name="download" size={20} color="#000000" />
+            <Feather name="download" size={20} color="#FFFFFF" />
           )}
           <Text style={styles.importButtonLabel}>{importing ? 'Importing...' : 'Import'}</Text>
         </Pressable>
@@ -146,6 +146,7 @@ export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
 const styles = StyleSheet.create({
   importScroll: {
     flex: 1,
+    backgroundColor: COLORS.background,
   },
   importContent: {
     padding: 16,
@@ -160,8 +161,10 @@ const styles = StyleSheet.create({
   },
   importInput: {
     height: 50,
-    backgroundColor: '#282828',
-    borderRadius: 8,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 12,
     paddingHorizontal: 16,
     color: COLORS.textPrimary,
     fontSize: 15,
@@ -169,7 +172,7 @@ const styles = StyleSheet.create({
   importButton: {
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#1ED760',
+    backgroundColor: COLORS.accent,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -180,12 +183,12 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   importButtonLabel: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
   importProgress: {
-    color: '#1ED760',
+    color: COLORS.accent,
     fontSize: 13,
     fontWeight: '600',
     marginTop: 14,
@@ -202,8 +205,10 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   importSuccess: {
-    backgroundColor: '#282828',
-    borderRadius: 8,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
     padding: 16,
     marginTop: 24,
   },

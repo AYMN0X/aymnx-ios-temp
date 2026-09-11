@@ -193,25 +193,25 @@ export function TrackActionsProvider({ children }: { children: ReactNode }) {
                 ) : null}
                 <View style={styles.divider} />
                 <Pressable style={styles.item} onPress={playNextTrack}>
-                  <Ionicons name="play-forward" size={20} color="#B3B3B3" />
+                  <Ionicons name="play-forward" size={20} color={Color.tabInactive} />
                   <Text style={styles.itemLabel}>Play Next</Text>
                 </Pressable>
                 <Pressable style={styles.item} onPress={addTrackToQueue}>
-                  <Ionicons name="list-outline" size={20} color="#B3B3B3" />
+                  <Ionicons name="list-outline" size={20} color={Color.tabInactive} />
                   <Text style={styles.itemLabel}>Add to Queue</Text>
                 </Pressable>
                 <Pressable style={styles.item} onPress={toggleLiked}>
                   <Ionicons
                     name={track && isLiked(track.id) ? 'heart' : 'heart-outline'}
                     size={20}
-                    color={track && isLiked(track.id) ? Color.accent : '#B3B3B3'}
+                    color={track && isLiked(track.id) ? Color.accent : Color.tabInactive}
                   />
                   <Text style={styles.itemLabel}>
                     {track && isLiked(track.id) ? 'Remove from Liked Songs' : 'Add to Liked Songs'}
                   </Text>
                 </Pressable>
                 <Pressable style={styles.item} onPress={() => setView('picker')}>
-                  <Ionicons name="add-circle-outline" size={20} color="#B3B3B3" />
+                  <Ionicons name="add-circle-outline" size={20} color={Color.tabInactive} />
                   <Text style={styles.itemLabel}>Add to playlist</Text>
                 </Pressable>
                 <Pressable style={styles.item} onPress={close}>
@@ -365,9 +365,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#1F162B',
+    backgroundColor: '#16171B',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#23252B',
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 28,
@@ -409,7 +411,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#23252B',
     marginVertical: 14,
   },
   item: {
@@ -453,8 +455,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: Border.sm,
+    backgroundColor: Color.surface,
+    borderWidth: 1,
+    borderColor: Color.inputBorder,
+    borderRadius: 12,
     paddingHorizontal: 12,
     height: 40,
     marginBottom: 10,
@@ -554,9 +558,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1F162B',
+    backgroundColor: '#16171B',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: '#23252B',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,

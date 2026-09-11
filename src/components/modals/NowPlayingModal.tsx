@@ -1,5 +1,4 @@
-import { Modal, StyleSheet } from 'react-native';
-import { AmbientBackground } from '../AmbientBackground';
+import { Modal, StyleSheet, View } from 'react-native';
 import { Screen4 } from '../../screens/Screen4';
 
 interface NowPlayingModalProps {
@@ -15,19 +14,19 @@ export function NowPlayingModal({ visible, onClose }: NowPlayingModalProps) {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <AmbientBackground style={styles.ambientLayer} />
+      <View style={styles.background} />
       <Screen4 onClose={onClose} />
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  ambientLayer: {
+  background: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    overflow: 'hidden',
+    backgroundColor: '#0B0C0E',
   },
 });

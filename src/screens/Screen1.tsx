@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Color } from '../theme/GlobalStyles';
 
 interface Screen1Props {
   onContinue?: () => void;
@@ -28,7 +29,7 @@ export const Screen1: React.FC<Screen1Props> = ({ onContinue }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: Color.background,
   },
   content: {
     flex: 1,

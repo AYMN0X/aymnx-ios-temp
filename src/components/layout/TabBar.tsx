@@ -41,7 +41,7 @@ export function TabBar({ active, onChange }: TabBarProps) {
             style={styles.tabItem}
             onPress={() => onChange(tab.key, isActive)}
           >
-            <Icon size={24} color={isActive ? COLORS.accent : COLORS.textSecondary} />
+            <Icon size={24} color={isActive ? COLORS.accent : COLORS.tabInactive} />
             <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
           </Pressable>
         );
@@ -57,9 +57,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     width: '100%',
-    backgroundColor: '#121212',
-    borderTopWidth: 0.5,
-    borderTopColor: '#282828',
+    backgroundColor: COLORS.tabBarBg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.tabBarBorder,
     zIndex: 1000,
     flexDirection: 'row',
     justifyContent: 'space-around',

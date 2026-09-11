@@ -13,7 +13,6 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Color, Border } from "../theme/GlobalStyles";
 import { usePlayer } from "../context/PlayerContext";
@@ -90,7 +89,7 @@ export const Screen3: React.FC<Screen3Props> = ({
     : livePlaylist?.name ?? title ?? "Playlist";
   const displaySubtitle =
     subtitle || `${displayTracks.length} ${displayTracks.length === 1 ? "song" : "songs"}`;
-  const coverBackground = isLikedPlaylist ? "#450AF5" : (coverColor ?? Color.accent);
+  const coverBackground = isLikedPlaylist ? Color.accent : (coverColor ?? Color.accent);
   const effectiveCover = isLikedPlaylist
     ? likedMeta.coverUrl
     : livePlaylist?.coverUrl ?? coverImage;
@@ -206,11 +205,6 @@ export const Screen3: React.FC<Screen3Props> = ({
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <LinearGradient
-        colors={["#3b156b", "#0F0817"]}
-        locations={[0, 0.45]}
-        style={StyleSheet.absoluteFill}
-      />
 
       <ScrollView
         style={styles.scrollView}
@@ -410,7 +404,7 @@ export const Screen3: React.FC<Screen3Props> = ({
               <Ionicons
                 name={allDownloaded ? "checkmark-circle" : isDownloading ? "refresh" : "download-outline"}
                 size={22}
-                color={allDownloaded ? "#1DB954" : Color.textPrimary}
+                color={allDownloaded ? Color.accent : Color.textPrimary}
               />
               <View style={styles.sheetActionBody}>
                 <Text style={styles.sheetActionLabel}>
@@ -468,7 +462,7 @@ export const Screen3: React.FC<Screen3Props> = ({
                         <View style={[styles.detailsArtwork, { backgroundColor: coverBackground }]} />
                       )}
                       <View style={styles.detailsPencilBadge}>
-                        <Ionicons name="pencil" size={13} color="#0F0817" />
+                        <Ionicons name="pencil" size={13} color="#0B0C0E" />
                       </View>
                     </Pressable>
                     <View style={styles.detailsFields}>
@@ -546,7 +540,7 @@ export const Screen3: React.FC<Screen3Props> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "transparent",
+    backgroundColor: Color.background,
   },
   safeTop: {
     zIndex: 10,
@@ -593,9 +587,10 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    backgroundColor: Color.background,
   },
   scrollContent: {
-    backgroundColor: "transparent",
+    backgroundColor: Color.background,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 90,
@@ -651,14 +646,18 @@ const styles = StyleSheet.create({
   trackRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
-    gap: 14,
+    backgroundColor: Color.surface,
+    borderRadius: 12,
+    marginBottom: 8,
+    padding: 10,
+    paddingHorizontal: 12,
+    gap: 12,
   },
   trackRowMain: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 12,
   },
   editControls: {
     flexDirection: "row",
@@ -669,9 +668,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   trackArtwork: {
-    width: 46,
-    height: 46,
-    borderRadius: Border.sm,
+    width: 44,
+    height: 44,
+    borderRadius: 8,
   },
   trackDetails: {
     flex: 1,
@@ -686,7 +685,7 @@ const styles = StyleSheet.create({
     color: Color.accent,
   },
   trackArtist: {
-    fontSize: 12,
+    fontSize: 13,
     color: Color.textSecondary,
   },
   trackArtistMeta: {
@@ -733,11 +732,11 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     alignSelf: "stretch",
-    backgroundColor: "#170D26",
+    backgroundColor: "#16171B",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    borderTopColor: "#23252B",
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 32,
@@ -793,7 +792,7 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#2A2237",
+    backgroundColor: "#23252B",
     flexDirection: "row",
     overflow: "hidden",
     marginTop: 8,
@@ -870,7 +869,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   detailsInput: {
-    backgroundColor: "#161224",
+    backgroundColor: "#1D1F24",
     borderRadius: Border.sm,
     paddingHorizontal: 12,
     paddingVertical: 10,

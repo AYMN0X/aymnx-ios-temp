@@ -1,16 +1,31 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
-import TrackPlayer, {
-  AppKilledPlaybackBehavior,
-  Capability,
-  Event,
-  IOSCategory,
-  RepeatMode,
-  State,
-  usePlaybackState,
-  useProgress,
-  useTrackPlayerEvents,
-} from 'react-native-track-player';
+// --- Mocked TrackPlayer for Expo Go ---
+const TrackPlayer: any = {
+  setupPlayer: async () => {},
+  updateOptions: async () => {},
+  add: async () => {},
+  reset: async () => {},
+  play: async () => {},
+  pause: async () => {},
+  seekTo: async () => {},
+  skipToNext: async () => {},
+  skipToPrevious: async () => {},
+  setVolume: async () => {},
+  setRepeatMode: async () => {},
+  getActiveTrack: async () => null,
+  getQueue: async () => [],
+};
+const AppKilledPlaybackBehavior: any = {};
+const Capability: any = {};
+const Event: any = { PlaybackActiveTrackChanged: 'PlaybackActiveTrackChanged', PlaybackState: 'PlaybackState' };
+const IOSCategory: any = {};
+const RepeatMode: any = { Off: 0, Track: 1, Queue: 2 };
+const State: any = { None: 'none', Ready: 'ready', Playing: 'playing', Paused: 'paused', Stopped: 'stopped', Loading: 'loading', Buffering: 'buffering' };
+const usePlaybackState: any = () => ({ state: 'paused' });
+const useProgress: any = () => ({ position: 0, duration: 0, buffered: 0 });
+const useTrackPlayerEvents: any = () => {};
+// -------------------------------------
 import { resolveStream, Track } from '../services/musicApi';
 import { getRecommendedNextTracks } from '../services/autoplayService';
 import { setPlaybackServiceBridge } from '../services/playbackService';

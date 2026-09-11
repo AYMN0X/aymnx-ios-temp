@@ -49,12 +49,12 @@ export function MiniPlayer({ onOpen }: MiniPlayerProps) {
         </View>
       </Pressable>
       <View style={styles.miniPlayerActions}>
-        <Cast size={20} color={COLORS.green} />
+        <Cast size={20} color={COLORS.textSecondary} />
         <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={8}>
           <Heart
             size={18}
-            color={COLORS.white}
-            fill={isLiked(currentTrack.id) ? COLORS.white : 'transparent'}
+            color={isLiked(currentTrack.id) ? COLORS.accent : COLORS.textSecondary}
+            fill={isLiked(currentTrack.id) ? COLORS.accent : 'transparent'}
           />
         </Pressable>
         <Pressable
@@ -82,8 +82,10 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     height: 56,
-    backgroundColor: '#282828',
-    borderRadius: 8,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
@@ -99,10 +101,10 @@ const styles = StyleSheet.create({
   miniPlayerArtwork: {
     width: 42,
     height: 42,
-    borderRadius: 4,
+    borderRadius: 8,
   },
   miniPlayerArtworkFallback: {
-    backgroundColor: '#7358FF',
+    backgroundColor: COLORS.cardPress,
   },
   miniPlayerInfo: {
     flex: 1,
@@ -110,8 +112,8 @@ const styles = StyleSheet.create({
   },
   miniPlayerTitle: {
     color: COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '600',
   },
   miniPlayerArtist: {
     ...TYPE.body,
@@ -137,12 +139,12 @@ const styles = StyleSheet.create({
     left: 0,
     height: 2,
     width: '100%',
-    backgroundColor: '#565656',
+    backgroundColor: '#23252B',
     borderRadius: 1,
   },
   miniProgressFill: {
     height: 2,
-    backgroundColor: COLORS.green,
+    backgroundColor: COLORS.accent,
     borderRadius: 1,
   },
 });

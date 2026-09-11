@@ -30,37 +30,101 @@ export function CreatePlaylistModal({ visible, onClose }: CreatePlaylistModalPro
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable onPress={onClose}>
-        <Pressable onPress={() => {}}>
-          <Text>Create Playlist</Text>
-          <View>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Playlist name"
-              placeholderTextColor={COLORS.textSecondary}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleCreate}
-            />
+      <View style={styles.backdrop}>
+        <Pressable style={styles.backdropFill} onPress={onClose} />
+        <View style={styles.card}>
+          <Text style={styles.title}>Create Playlist</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Playlist name"
+            placeholderTextColor={COLORS.placeholder}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleCreate}
+          />
+          <View style={styles.actions}>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Text style={styles.cancel}>Cancel</Text>
+            </Pressable>
             <Pressable
-              style={!name.trim() && styles.disabled}
+              style={[styles.createBtn, !name.trim() && styles.disabled]}
               onPress={handleCreate}
               disabled={!name.trim()}
             >
-              <Text>Create</Text>
+              <Text style={styles.createLabel}>Create</Text>
             </Pressable>
           </View>
-          <Pressable onPress={onClose} hitSlop={8}>
-            <Text>Cancel</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  backdropFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  card: {
+    width: '100%',
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 20,
+  },
+  title: {
+    color: COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  input: {
+    height: 46,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cancel: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  createBtn: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   disabled: {
     opacity: 0.5,
   },

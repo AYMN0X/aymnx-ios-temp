@@ -298,6 +298,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
 const styles = StyleSheet.create({
   libraryScreen: {
     flex: 1,
+    backgroundColor: COLORS.background,
     paddingTop: 12,
     paddingBottom: 8,
   },
@@ -345,21 +346,24 @@ const styles = StyleSheet.create({
     height: 32,
     paddingHorizontal: 16,
     borderRadius: 16,
-    backgroundColor: '#282828',
+    backgroundColor: COLORS.pill,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     marginRight: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   libraryPillActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
   },
   libraryPillText: {
     color: COLORS.textPrimary,
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   libraryPillTextActive: {
-    color: '#000000',
+    color: '#FFFFFF',
   },
   libraryToolbar: {
     flexDirection: 'row',
@@ -388,7 +392,7 @@ const styles = StyleSheet.create({
   libCover: {
     width: 48,
     height: 48,
-    borderRadius: 6,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',

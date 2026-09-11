@@ -87,13 +87,13 @@ export function SearchScreen() {
         </Pressable>
       </View>
       <View style={styles.searchPill}>
-        <Ionicons name="search" size={22} color="#121212" />
+        <Ionicons name="search" size={22} color={COLORS.placeholder} />
         <TextInput
           style={styles.searchPillInput}
           value={query}
           onChangeText={handleChange}
           placeholder="What do you want to play?"
-          placeholderTextColor="#535353"
+          placeholderTextColor={COLORS.placeholder}
           autoCorrect={false}
           returnKeyType="search"
           onSubmitEditing={() => runSearch(query)}
@@ -153,6 +153,7 @@ export function SearchScreen() {
 const styles = StyleSheet.create({
   searchContainer: {
     flex: 1,
+    backgroundColor: COLORS.background,
   },
   searchHeader: {
     flexDirection: 'row',
@@ -174,15 +175,17 @@ const styles = StyleSheet.create({
     height: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
-    borderRadius: 8,
+    backgroundColor: COLORS.elevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
     marginHorizontal: 16,
     marginBottom: 16,
     paddingHorizontal: 12,
   },
   searchPillInput: {
     flex: 1,
-    color: '#121212',
+    color: COLORS.textPrimary,
     fontSize: 15,
     fontWeight: '600',
     marginLeft: 8,
@@ -207,6 +210,7 @@ const styles = StyleSheet.create({
   },
   searchBrowse: {
     flex: 1,
+    backgroundColor: COLORS.background,
   },
   searchBrowseContent: {
     paddingBottom: 90,

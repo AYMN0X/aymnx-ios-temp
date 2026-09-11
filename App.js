@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -7,7 +6,6 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { AmbientBackground } from './src/components/AmbientBackground';
 import { TabBar } from './src/components/layout/TabBar';
 import { AccountSheet } from './src/components/modals/AccountSheet';
 import { CreatePlaylistModal } from './src/components/modals/CreatePlaylistModal';
@@ -58,7 +56,11 @@ function AppShell() {
         ]}
       >
         {activeTab === 'home' ? (
-          <Screen2 key={tabKeys.home} onCreatePlaylist={() => setCreatePlaylistOpen(true)} />
+          <Screen2
+            key={tabKeys.home}
+            onCreatePlaylist={() => setCreatePlaylistOpen(true)}
+            onOpenAccount={() => setAccountOpen(true)}
+          />
         ) : activeTab === 'search' ? (
           <SearchScreen key={tabKeys.search} />
         ) : activeTab === 'create' ? (
@@ -72,14 +74,6 @@ function AppShell() {
           />
         )}
       </View>
-      <LinearGradient
-        colors={['rgba(10, 5, 18, 0)', 'rgba(10, 5, 18, 0.75)', 'rgba(10, 5, 18, 0.98)']}
-        locations={[0.0, 0.35, 1.0]}
-        start={{ x: 0.5, y: 0.0 }}
-        end={{ x: 0.5, y: 1.0 }}
-        style={styles.bottomFade}
-        pointerEvents="none"
-      />
       <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
       <TabBar active={activeTab} onChange={handleTabChange} />
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
@@ -112,7 +106,6 @@ function AuthGate() {
 
   return (
     <View style={styles.appRoot}>
-      <AmbientBackground style={styles.ambientLayer} />
       {isLoading || onboardingSeen === null ? (
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
           <StatusBar style="light" />
@@ -161,41 +154,24 @@ const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#0A0512',
-  },
-  ambientLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: 'hidden',
+    backgroundColor: '#0B0C0E',
   },
   safeArea: {
     flex: 1,
     width: '100%',
-    backgroundColor: 'transparent',
+    backgroundColor: '#0B0C0E',
   },
   onboardingRoot: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: '#0B0C0E',
   },
   container: {
     flex: 1,
     width: '100%',
-    backgroundColor: 'transparent',
+    backgroundColor: '#0B0C0E',
   },
   screenContent: {
     flex: 1,
     width: '100%',
-  },
-  bottomFade: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 150,
-    paddingTop: 18,
-    pointerEvents: 'none',
   },
 });

@@ -4,7 +4,6 @@ import {
   Image,
   SafeAreaView,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -21,85 +20,12 @@ import type { Track } from "../services/musicApi";
 import { Border, Color } from "../theme/GlobalStyles";
 import { Screen3 } from "./Screen3";
 
-const CATEGORY_KEYS = ["Recent", "Top 50", "Chill", "R&B", "Festival"];
-
-const CATEGORY_QUERIES: Record<string, string> = {
-  Recent: "recent hits",
-  "Top 50": "top hits",
-  Chill: "chill",
-  "R&B": "rnb",
-  Festival: "festival music",
-};
-
-interface PlaylistDef {
-  id: string;
-  title: string;
-  subtitle: string;
-  gradient?: [string, string];
-  color?: string;
-  targetCategory?: string;
-}
-
 interface PlaylistView {
   title: string;
   subtitle: string;
   tracks: Track[];
   coverColor: string;
 }
-
-const CATEGORY_MIXES: Record<string, PlaylistDef[]> = {
-  Recent: [],
-  "Top 50": [
-    {
-      id: "top50-global",
-      title: "Top 50 Global",
-      subtitle: "The biggest hits right now",
-      color: "#E13300",
-    },
-    {
-      id: "top50-viral",
-      title: "Viral Hits",
-      subtitle: "Blowing up this week",
-      gradient: ["#8D67AB", "#503750"],
-    },
-  ],
-  Chill: [
-    {
-      id: "chill-lounge",
-      title: "Chill Lounge",
-      subtitle: "Easy listening",
-      gradient: ["#1A237E", "#311B92"],
-    },
-    {
-      id: "chill-lofi",
-      title: "Lofi Focus",
-      subtitle: "Beats to study to",
-      color: "#0E7C7B",
-    },
-  ],
-  "R&B": [
-    {
-      id: "rnb-soulful",
-      title: "Soulful Vibes",
-      subtitle: "Smooth & sultry",
-      color: "#503750",
-    },
-  ],
-  Festival: [
-    {
-      id: "festival-bangers",
-      title: "Festival Bangers",
-      subtitle: "Main stage energy",
-      gradient: ["#D84000", "#8D67AB"],
-    },
-    {
-      id: "festival-anthems",
-      title: "Dance Anthems",
-      subtitle: "Turn up the volume",
-      color: "#E13300",
-    },
-  ],
-};
 
 const SEARCH_DEBOUNCE_MS = 300;
 const TRACK_LIMIT = 25;
@@ -189,7 +115,7 @@ function TrackListRow({
       {track.artwork ? (
         <Image source={{ uri: track.artwork }} style={styles.trackArtwork} />
       ) : (
-        <View style={styles.trackArtwork} />
+        <View style={[styles.trackArtwork, styles.trackArtworkFallback]} />
       )}
       <View style={styles.trackInfo}>
         <Text
@@ -210,26 +136,12 @@ function TrackListRow({
         <Ionicons
           name={liked ? 'checkmark-circle' : 'add-circle-outline'}
           size={20}
-          color={liked ? Color.accent : Color.textSecondary}
+          color={liked ? Color.accent : Color.tabInactive}
         />
       </TouchableOpacity>
       <TouchableOpacity onPress={onMore} hitSlop={8} style={styles.rowQuickAdd}>
-        <Ionicons name="ellipsis-horizontal" size={20} color={Color.textSecondary} />
+        <Ionicons name="ellipsis-horizontal" size={20} color={Color.tabInactive} />
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
-}
-
-function FeaturedCard({ mix, onPress }: { mix: PlaylistDef; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.featuredCard} activeOpacity={0.8} onPress={onPress}>
-      {mix.gradient ? (
-        <LinearGradient colors={mix.gradient} style={styles.featuredCardFill} />
-      ) : (
-        <View style={[styles.featuredCardFill, { backgroundColor: mix.color }]} />
-      )}
-      <Text style={styles.cardTitle}>{mix.title}</Text>
-      <Text style={styles.cardSubtitle}>{mix.subtitle}</Text>
     </TouchableOpacity>
   );
 }
@@ -268,15 +180,16 @@ function PlaylistCard({
   );
 }
 
-export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreatePlaylist }) => {
+export const Screen2: React.FC<{
+  onCreatePlaylist?: () => void;
+  onOpenAccount?: () => void;
+}> = ({ onCreatePlaylist, onOpenAccount }) => {
   const { playTrack, currentTrack } = usePlayer();
-  const { likedSongs, likedMeta, playlists, isLiked, toggleLike } = useLibrary();
+  const { likedSongs, playlists, isLiked, toggleLike } = useLibrary();
   const { openTrack } = useTrackActions();
 
-  const [selectedCategory, setSelectedCategory] = React.useState("Recent");
   const [playlistView, setPlaylistView] = React.useState<PlaylistView | null>(null);
   const [libraryView, setLibraryView] = React.useState<
-    | { kind: "liked" }
     | { kind: "playlist"; id: string }
     | null
   >(null);
@@ -286,35 +199,8 @@ export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreateP
   const [searchError, setSearchError] = React.useState("");
 
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const categoryTracksRef = React.useRef<Record<string, Track[]>>({});
-  const fetchingRef = React.useRef<Set<string>>(new Set());
-
-  const loadCategory = React.useCallback(async (category: string): Promise<Track[]> => {
-    const cached = categoryTracksRef.current[category];
-    if (cached) {
-      return cached;
-    }
-    if (fetchingRef.current.has(category)) {
-      return [];
-    }
-    const query = CATEGORY_QUERIES[category] ?? category;
-    fetchingRef.current.add(category);
-    try {
-      const tracks = await searchITunes(query, TRACK_LIMIT);
-      categoryTracksRef.current = { ...categoryTracksRef.current, [category]: tracks };
-      return tracks;
-    } catch (error) {
-      return [];
-    } finally {
-      fetchingRef.current.delete(category);
-    }
-  }, []);
 
   const isSearchingNow = searchQuery.trim().length > 0;
-
-  React.useEffect(() => {
-    loadCategory(selectedCategory).catch(() => {});
-  }, [selectedCategory, loadCategory]);
 
   React.useEffect(() => {
     return () => {
@@ -357,28 +243,12 @@ export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreateP
     playTrack(track, queue.length > 0 ? queue : [track]);
   };
 
-  const handlePlayMix = async (mix: PlaylistDef) => {
-    const target = mix.targetCategory ?? selectedCategory;
-    const tracks = await loadCategory(target);
-    if (tracks.length === 0) {
-      return;
-    }
-    setPlaylistView({
-      title: mix.title,
-      subtitle: mix.subtitle,
-      tracks,
-      coverColor: mix.color ?? mix.gradient?.[0] ?? Color.accent,
-    });
-  };
-
   const favouritesList = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
 
   const countLabel = (count: number) => `${count} ${count === 1 ? "song" : "songs"}`;
 
   const sortedHomePlaylists = [
-    ...playlists.filter((p) => p.id === "liked"),
-    ...playlists
-      .filter((p) => p.id !== "liked" && !p.isImported)
+    ...playlists.filter((p) => p.id !== "liked" && !p.isImported)
       .slice()
       .reverse(),
     ...playlists.filter((p) => p.isImported),
@@ -392,25 +262,14 @@ export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreateP
     colors: [string, string];
     icon?: React.ReactNode;
     onPress: () => void;
-  }> = [
-    {
-      key: "liked",
-      title: likedMeta.name || "Liked Songs",
-      subtitle: countLabel(likedSongs.length),
-      coverUrl: likedMeta.coverUrl,
-      colors: ["#450AF5", "#6A1B9A"],
-      icon: <Ionicons name="heart" size={26} color="#FFFFFF" />,
-      onPress: () => setLibraryView({ kind: "liked" }),
-    },
-    ...sortedHomePlaylists.map((playlist, index) => ({
-      key: playlist.id,
-      title: playlist.name,
-      subtitle: countLabel(playlist.tracks?.length ?? 0),
-      coverUrl: playlist.coverUrl,
-      colors: FALLBACK_PLAYLIST_GRADIENTS[index % FALLBACK_PLAYLIST_GRADIENTS.length],
-      onPress: () => setLibraryView({ kind: "playlist", id: playlist.id }),
-    })),
-  ];
+  }> = sortedHomePlaylists.map((playlist, index) => ({
+    key: playlist.id,
+    title: playlist.name,
+    subtitle: countLabel(playlist.tracks?.length ?? 0),
+    coverUrl: playlist.coverUrl,
+    colors: FALLBACK_PLAYLIST_GRADIENTS[index % FALLBACK_PLAYLIST_GRADIENTS.length],
+    onPress: () => setLibraryView({ kind: "playlist", id: playlist.id }),
+  }));
 
   const renderTracks = (tracks: Track[], onPlay: (track: Track) => void) =>
     tracks.map((track) => (
@@ -438,15 +297,12 @@ export const Screen2: React.FC<{ onCreatePlaylist?: () => void }> = ({ onCreateP
   }
 
   if (libraryView) {
-    if (libraryView.kind === "liked") {
-      return <Screen3 isLikedPlaylist onBack={() => setLibraryView(null)} />;
-    }
     return <Screen3 playlistId={libraryView.id} onBack={() => setLibraryView(null)} />;
   }
 
-return (
+  return (
     <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -454,14 +310,22 @@ return (
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <Text style={styles.greetingTitle}>Welcome back!</Text>
+            <View style={styles.headerRow}>
+              <Text style={styles.greetingTitle}>Welcome back!</Text>
+              {onOpenAccount ? (
+                <TouchableOpacity onPress={onOpenAccount} hitSlop={12} style={styles.settingsBtn}>
+                  <Ionicons name="settings-outline" size={22} color={Color.textSecondary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <Text style={styles.greetingSubtitle}>What do you feel like today?</Text>
 
             <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color={Color.placeholder} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search song, playlist, artist..."
-                placeholderTextColor={Color.textSecondary}
+                placeholder="Search music..."
+                placeholderTextColor={Color.placeholder}
                 value={searchQuery}
                 onChangeText={handleSearchChange}
                 autoCorrect={false}
@@ -492,30 +356,20 @@ return (
             </View>
           ) : (
             <>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoryRow}
-              >
-                {CATEGORY_KEYS.map((category) => {
-                  const isActive = selectedCategory === category;
-                  return (
-                    <TouchableOpacity
-                      key={category}
-                      onPress={() => setSelectedCategory(category)}
-                      style={styles.categoryTab}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
-                        {category}
-                      </Text>
-                      {isActive && <View style={styles.activeIndicator} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
               <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Your favourites</Text>
+                {likedSongs.length === 0 && (
+                  <Text style={styles.favouritesHint}>
+                    You haven't liked any songs yet — here are some picks to get you
+                    started.
+                  </Text>
+                )}
+                <View style={styles.trackList}>
+                  {renderTracks(favouritesList, handlePlayTrack)}
+                </View>
+              </View>
+
+              <View style={[styles.section, styles.playlistsSection]}>
                 <Text style={styles.sectionTitle}>Your playlists</Text>
                 <ScrollView
                   horizontal
@@ -533,39 +387,16 @@ return (
                       onPress={card.onPress}
                     />
                   ))}
-                  {playlists.length === 0 ? (
+                  {playlistCards.length === 0 ? (
                     <PlaylistCard
                       title="Create Playlist"
                       subtitle="Start your own mix"
-                      colors={["#1DB954", "#0E7C7B"]}
+                      colors={["#9066FE", "#5C39E8"]}
                       icon={<Ionicons name="add" size={28} color="#FFFFFF" />}
                       onPress={() => onCreatePlaylist?.()}
                     />
                   ) : null}
                 </ScrollView>
-              </View>
-
-              <View style={styles.featuredGrid}>
-                {(CATEGORY_MIXES[selectedCategory] ?? []).map((mix) => (
-                  <FeaturedCard
-                    key={mix.id}
-                    mix={mix}
-                    onPress={() => handlePlayMix(mix)}
-                  />
-                ))}
-              </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Your favourites</Text>
-                {likedSongs.length === 0 && (
-                  <Text style={styles.favouritesHint}>
-                    You haven't liked any songs yet — here are some picks to get you
-                    started.
-                  </Text>
-                )}
-                <View style={styles.trackList}>
-                  {renderTracks(favouritesList, handlePlayTrack)}
-                </View>
               </View>
             </>
           )}
@@ -582,17 +413,19 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
     alignSelf: "stretch",
     overflow: "hidden",
-    backgroundColor: "transparent",
+    backgroundColor: Color.background,
   },
   safeArea: {
     flex: 1,
     width: "100%",
     alignSelf: "stretch",
+    backgroundColor: Color.background,
   },
   scrollView: {
     flex: 1,
     width: "100%",
     alignSelf: "stretch",
+    backgroundColor: Color.background,
   },
   scrollContent: {
     width: "100%",
@@ -600,62 +433,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 90,
-    gap: 24,
   },
   header: {
     gap: 6,
     width: "100%",
     alignSelf: "stretch",
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
   greetingTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "700",
     color: Color.textPrimary,
+    flexShrink: 1,
   },
   greetingSubtitle: {
     fontSize: 13,
     color: Color.textSecondary,
     fontWeight: "500",
   },
+  settingsBtn: {
+    padding: 4,
+  },
   searchContainer: {
     marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    height: 48,
+    backgroundColor: Color.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Color.inputBorder,
+    paddingHorizontal: 14,
+    marginBottom: 16,
   },
   searchInput: {
-    height: 42,
-    backgroundColor: Color.surface,
-    borderRadius: Border.sm,
-    paddingHorizontal: 14,
+    flex: 1,
     color: Color.textPrimary,
-    fontSize: 13,
-  },
-  categoryRow: {
-    flexDirection: "row",
-    gap: 20,
-    paddingVertical: 4,
-    width: "100%",
-    alignSelf: "stretch",
-  },
-  categoryTab: {
-    alignItems: "center",
-  },
-  categoryText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Color.textSecondary,
-  },
-  categoryTextActive: {
-    color: Color.accent,
-  },
-  activeIndicator: {
-    marginTop: 4,
-    height: 2,
-    width: "100%",
-    backgroundColor: Color.accent,
-    borderRadius: 1,
-  },
-  featuredGrid: {
-    flexDirection: "row",
-    gap: 12,
+    fontSize: 15,
+    marginLeft: 8,
+    paddingVertical: 0,
   },
   playlistRail: {
     gap: 12,
@@ -683,36 +504,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Color.textSecondary,
   },
-  featuredCard: {
-    flex: 1,
-    height: 120,
-    borderRadius: Border.md,
-    padding: 14,
-    justifyContent: "flex-end",
-    overflow: "hidden",
-    backgroundColor: Color.card,
-  },
-  featuredCardFill: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: Color.textPrimary,
-  },
-  cardSubtitle: {
-    fontSize: 11,
-    color: "rgba(255, 255, 255, 0.75)",
-    marginTop: 2,
-  },
   section: {
     gap: 14,
     width: "100%",
     alignSelf: "stretch",
+  },
+  playlistsSection: {
+    marginTop: 20,
   },
   sectionTitle: {
     fontSize: 17,
@@ -739,20 +537,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   trackList: {
-    gap: 10,
+    gap: 0,
   },
   trackRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    backgroundColor: Color.surface,
+    borderRadius: 12,
+    marginBottom: 8,
     padding: 10,
-    borderRadius: Border.md,
+    paddingHorizontal: 12,
     gap: 12,
   },
   trackArtwork: {
-    width: 42,
-    height: 42,
-    borderRadius: Border.sm,
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: Color.card,
+  },
+  trackArtworkFallback: {
     backgroundColor: Color.card,
   },
   trackInfo: {
@@ -760,7 +563,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   trackTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600",
     color: Color.textPrimary,
   },
@@ -768,7 +571,7 @@ const styles = StyleSheet.create({
     color: Color.accent,
   },
   trackArtist: {
-    fontSize: 11,
+    fontSize: 13,
     color: Color.textSecondary,
   },
   trackArtistActive: {

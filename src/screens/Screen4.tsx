@@ -513,6 +513,7 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
     overflow: "hidden",
     alignItems: "center",
+    backgroundColor: Color.background,
   },
   container: {
     flex: 1,
@@ -553,7 +554,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   artworkFallback: {
-    backgroundColor: "#1F162B",
+    backgroundColor: "#16171B",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -595,7 +596,7 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#A855F7",
+    backgroundColor: Color.accent,
     borderRadius: 3,
   },
   timeRow: {
@@ -677,7 +678,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   optionsSheet: {
-    backgroundColor: "#1F162B",
+    backgroundColor: "#16171B",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     paddingHorizontal: 24,
@@ -701,7 +702,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 8,
-    backgroundColor: "#2A2040",
+    backgroundColor: "#23252B",
   },
   optionsTrackMeta: {
     flex: 1,
@@ -778,7 +779,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   queueSheet: {
-    backgroundColor: "#1F162B",
+    backgroundColor: "#16171B",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     paddingHorizontal: 24,
@@ -788,7 +789,7 @@ const styles = StyleSheet.create({
   queueNowPlayingRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "#23252B",
     borderRadius: 12,
     padding: 10,
     marginBottom: 18,
@@ -797,7 +798,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 8,
-    backgroundColor: "#2A2040",
+    backgroundColor: "#1D1F24",
   },
   queueRowMeta: {
     flex: 1,
@@ -822,7 +823,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(120,30,207,0.18)",
+    backgroundColor: "rgba(144,102,254,0.18)",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -861,7 +862,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   queueArtFallback: {
-    backgroundColor: "#2A2040",
+    backgroundColor: "#23252B",
     alignItems: "center",
     justifyContent: "center",
   },

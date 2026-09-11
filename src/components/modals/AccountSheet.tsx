@@ -39,7 +39,7 @@ export function AccountSheet({ visible, onClose }: AccountSheetProps) {
             </View>
           </View>
           <Pressable style={styles.acctLogoutBtn} onPress={handleLogout}>
-            <Feather name="log-out" size={20} color="#B3B3B3" />
+            <Feather name="log-out" size={20} color="#8A8F9D" />
             <Text style={styles.acctLogoutLabel}>Log out</Text>
           </Pressable>
         </Pressable>
@@ -55,9 +55,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   acctSheet: {
-    backgroundColor: '#282828',
+    backgroundColor: '#16171B',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#23252B',
     padding: 16,
     paddingBottom: 32,
     maxHeight: '85%',
@@ -76,10 +78,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   acctAvatarFallback: {
-    backgroundColor: '#1ED760',
+    backgroundColor: '#9066FE',
   },
   acctAvatarLetter: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: '700',
   },
@@ -93,7 +95,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   acctUsername: {
-    color: '#B3B3B3',
+    color: '#8A8F9D',
     fontSize: 13,
     marginTop: 2,
   },
@@ -102,7 +104,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: '#23252B',
   },
   acctLogoutLabel: {
     color: '#FFFFFF',
