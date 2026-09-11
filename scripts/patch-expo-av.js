@@ -48,3 +48,39 @@ patchFile(path.join('Video', 'EXVideoView.h'), (src) => {
 
   return src;
 });
+
+// 3. Stub Swift sources that fail to compile against modern ExpoModulesCore
+function writeStub(rel, content) {
+  const file = path.join(base, rel);
+  if (!fs.existsSync(file)) {
+    console.warn(`[patch-expo-av] ${rel} not found, skipping.`);
+    return;
+  }
+  const original = fs.readFileSync(file, 'utf8');
+  if (original === content) {
+    console.log(`[patch-expo-av] ${rel} already patched.`);
+  } else {
+    fs.writeFileSync(file, content, 'utf8');
+    console.log(`[patch-expo-av] Patched ${rel}.`);
+  }
+}
+
+writeStub(
+  path.join('Video', 'VideoViewModule.swift'),
+  `// Copyright 2022-present 650 Industries. All rights reserved.
+
+import ExpoModulesCore
+
+public final class VideoViewModule: Module {
+  public func definition() -> ModuleDefinition {
+    Name("ExpoVideoView")
+  }
+}
+`
+);
+
+writeStub(
+  'ExpoVideoView.swift',
+  `// Copyright 2015-present 650 Industries. All rights reserved.
+`
+);
