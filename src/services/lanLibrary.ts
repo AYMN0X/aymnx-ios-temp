@@ -1,5 +1,6 @@
 import type { Track } from './musicApi';
-import { lanStreamBaseUrl } from '../utils/streamCache';
+import { lanStreamBaseUrl, canonicalizeHttpUrl } from '../utils/streamCache';
+import { Directory, File, Paths } from 'expo-file-system';
 
 const REQUEST_TIMEOUT_MS = 4000;
 
@@ -51,7 +52,7 @@ function decodedTitle(url: string): string {
 }
 
 function basenameKey(url: string): string {
-  return decodedTitle(url).toLowerCase().trim();
+  return decodedTitle(url).toLowerCase().replace(/[-_\s]+/g, ' ').trim();
 }
 
 function mimeForUrl(url: string): string {
@@ -79,15 +80,7 @@ function finalizeUrl(baseUrl: string, href: string): string | null {
   if (!resolved) {
     return null;
   }
-  if (/[\s]/i.test(resolved)) {
-    const [head, ...rest] = resolved.split('?');
-    const encodedPath = head
-      .split('/')
-      .map((segment) => encodeURIComponent(safeDecode(segment)))
-      .join('/');
-    return rest.length > 0 ? `${encodedPath}?${rest.join('?')}` : encodedPath;
-  }
-  return resolved;
+  return canonicalizeHttpUrl(resolved);
 }
 
 function extractLinks(html: string): string[] {
@@ -165,7 +158,7 @@ function normalizeJsonTracks(payload: LanTracksPayload, baseUrl: string): Track[
   const tracks: Track[] = [];
   for (const entry of raw) {
     const file = entry.file || entry.url || entry.streamUrl || entry.path || '';
-    const audioUrl = resolveHref(baseUrl, file);
+    const audioUrl = finalizeUrl(baseUrl, file);
     if (!audioUrl || !AUDIO_EXTENSIONS.test(audioUrl)) {
       continue;
     }
@@ -288,4 +281,100 @@ export async function fetchLanTracks(base?: string): Promise<Track[]> {
     return trackFromAudio(audio, cover);
   });
   return tracks.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+const LAN_LIBRARY_DIR_NAME = 'lan-library';
+const MIN_AUDIO_FILE_BYTES = 2048;
+
+const LAN_MIME_EXTENSIONS: Record<string, string> = {
+  'audio/mpeg': '.mp3',
+  'audio/mp3': '.mp3',
+  'audio/mp4': '.m4a',
+  'audio/x-m4a': '.m4a',
+  'audio/aac': '.aac',
+  'audio/ogg': '.ogg',
+  'audio/wav': '.wav',
+  'audio/webm': '.webm',
+  'audio/x-flac': '.flac',
+  'audio/flac': '.flac',
+};
+
+function lanLibraryDirectory(): Directory {
+  return new Directory(Paths.document, LAN_LIBRARY_DIR_NAME);
+}
+
+function lanExtensionFor(track: Track): string {
+  if (track.streamMimeType) {
+    const mapped = LAN_MIME_EXTENSIONS[track.streamMimeType.split(';')[0].trim().toLowerCase()];
+    if (mapped) {
+      return mapped;
+    }
+  }
+  for (const candidate of [track.streamUrl, track.previewUrl]) {
+    if (candidate) {
+      const match = candidate.split(/[?#]/)[0].match(/\.([a-z0-9]{1,5})$/i);
+      if (match) {
+        return `.${match[1].toLowerCase()}`;
+      }
+    }
+  }
+  return '.mp3';
+}
+
+export async function downloadLanTrackAudio(track: Track): Promise<Track> {
+  const source = track.streamUrl || track.previewUrl;
+  if (!source) {
+    throw new Error(`No stream URL for "${track.title}".`);
+  }
+  const httpUrl = canonicalizeHttpUrl(source);
+  const directory = lanLibraryDirectory();
+  try {
+    directory.create({ idempotent: true, intermediates: true });
+  } catch (error) {
+    console.warn('[lan] Could not create LAN library directory.', error);
+  }
+  const destination = new File(directory, `${hashString(httpUrl)}${lanExtensionFor(track)}`);
+  if (!destination.exists) {
+    const downloaded = await File.downloadFileAsync(httpUrl, destination);
+    const file = downloaded && downloaded.exists ? downloaded : destination;
+    try {
+      if (file.exists && (file.size ?? 0) < MIN_AUDIO_FILE_BYTES) {
+        file.delete();
+        throw new Error(
+          `Downloaded file too small to be audio (${file.size ?? 0} bytes): ${track.title}`
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('too small')) {
+        throw error;
+      }
+      console.warn('[lan] Could not validate downloaded audio.', error);
+    }
+  }
+  return {
+    ...track,
+    streamUrl: destination.uri,
+    previewUrl: destination.uri,
+  };
+}
+
+export async function downloadLanTracks(
+  tracks: Track[],
+  onProgress?: (done: number, total: number) => void
+): Promise<Track[]> {
+  const updated: Track[] = [];
+  const total = tracks.length;
+  for (let index = 0; index < total; index += 1) {
+    const track = tracks[index];
+    try {
+      updated.push(await downloadLanTrackAudio(track));
+    } catch (error) {
+      console.warn('[lan] Failed to download audio for:', track.title, error);
+      updated.push(track);
+    }
+    if (onProgress) {
+      onProgress(index + 1, total);
+    }
+  }
+  return updated;
 }

@@ -14,7 +14,7 @@ import { Activity } from 'lucide-react-native';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlayer } from '../context/PlayerContext';
 import { useTrackActions } from '../context/TrackActionsContext';
-import { checkLanServer, fetchLanTracks } from '../services/lanLibrary';
+import { checkLanServer, fetchLanTracks, downloadLanTracks } from '../services/lanLibrary';
 import { importSpotifyPlaylist } from '../services/spotifyImportService';
 import { LAN_STREAM_DEFAULT_HOST } from '../utils/streamCache';
 import { COLORS } from '../theme/appTheme';
@@ -47,6 +47,8 @@ export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
   const [lanScanning, setLanScanning] = useState(false);
   const [lanImported, setLanImported] = useState(false);
   const [lanError, setLanError] = useState('');
+  const [lanSaving, setLanSaving] = useState(false);
+  const [lanSaveProgress, setLanSaveProgress] = useState('');
 
   const handleImport = async () => {
     if (!link.trim() || importing) {
@@ -118,17 +120,31 @@ export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveLanTracks = async () => {
-    if (lanImported || lanTracks.length === 0) {
+    if (lanImported || lanTracks.length === 0 || lanSaving) {
       return;
     }
-    const created = await createImportedPlaylist(
-      'Music on My PC',
-      lanTracks.find((t) => !!t.artwork)?.artwork ?? '',
-      lanTracks
-    );
-    if (created) {
-      setLanImported(true);
-      onOpenImportedPlaylist(created.id);
+    setLanSaving(true);
+    setLanError('');
+    try {
+      const downloaded = await downloadLanTracks(lanTracks, (done, total) => {
+        setLanSaveProgress(`Downloading ${done} of ${total}...`);
+      });
+      const created = await createImportedPlaylist(
+        'Music on My PC',
+        lanTracks.find((t) => !!t.artwork)?.artwork ?? '',
+        downloaded
+      );
+      if (created) {
+        setLanImported(true);
+        onOpenImportedPlaylist(created.id);
+      } else {
+        setLanError('Could not save your local files.');
+      }
+    } catch (e) {
+      setLanError((e as Error).message || 'Could not save your local files.');
+    } finally {
+      setLanSaving(false);
+      setLanSaveProgress('');
     }
   };
 
@@ -215,12 +231,19 @@ export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
               </ScrollView>
 
               <Pressable
-                style={[styles.lanSaveBtn, lanImported && styles.lanSaveBtnDone]}
+                style={[
+                  styles.lanSaveBtn,
+                  (lanImported || lanSaving) && styles.lanSaveBtnDone,
+                ]}
                 onPress={saveLanTracks}
-                disabled={lanImported || lanScanning}
+                disabled={lanImported || lanSaving || lanScanning}
               >
                 <Text style={styles.lanSaveBtnLabel}>
-                  {lanImported ? 'Saved to Your Library' : `Save all ${lanTracks.length} tracks`}
+                  {lanImported
+                    ? 'Saved to Your Library'
+                    : lanSaving
+                    ? lanSaveProgress || 'Downloading...'
+                    : `Save all ${lanTracks.length} tracks`}
                 </Text>
               </Pressable>
             </>

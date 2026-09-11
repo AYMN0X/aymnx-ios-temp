@@ -15,7 +15,7 @@ import { resolveStream, Track } from '../services/musicApi';
 import { getRecommendedNextTracks } from '../services/autoplayService';
 import { setPlaybackServiceBridge } from '../services/playbackService';
 import * as storage from '../services/storage';
-import { resolveStreamForPlayback, StreamResolveResult } from '../utils/streamCache';
+import { resolveStreamForPlayback, isLanStreamUrl, StreamResolveResult } from '../utils/streamCache';
 import { useAuth } from './AuthContext';
 import { useDownloads } from './DownloadContext';
 
@@ -78,6 +78,10 @@ interface ResolvedPlayable {
   contentType?: string;
   userAgent?: string;
 }
+
+const isLanSourced = (track: Track) =>
+  (track.id ? track.id.indexOf('lan_') === 0 : false) ||
+  (track.streamUrl ? isLanStreamUrl(track.streamUrl) : false);
 
 const delayMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -296,6 +300,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)'
             : undefined,
       };
+    }
+    if (isLanSourced(track)) {
+      console.warn(
+        '[audio] LAN-sourced track has no playable source; not falling back to online search:',
+        track.title,
+        track.artist
+      );
+      return null;
     }
     try {
       const result = await resolveStream(track.title, track.artist);
@@ -715,10 +727,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           resolvedMimeType = track.streamMimeType || 'audio/mp4';
         }
       } else {
-        const result = await resolveStream(track.title, track.artist);
-        resolvedUrl = result.url;
-        resolvedProvider = result.provider;
-        resolvedMimeType = result.mimeType;
+        if (isLanSourced(track)) {
+          console.error(
+            '[audio] LAN-sourced track has no resolvable source; refusing online fallback:',
+            track.title,
+            track.artist
+          );
+        } else {
+          const result = await resolveStream(track.title, track.artist);
+          resolvedUrl = result.url;
+          resolvedProvider = result.provider;
+          resolvedMimeType = result.mimeType;
+        }
       }
     } catch (error) {
       console.error('[audio] No playable stream found for:', track.title, track.artist, error);
@@ -735,8 +755,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (!resolvedUrl) {
+      const message = isLanSourced(track)
+        ? 'Could not reach your music server. Make sure your PC is connected and streaming.'
+        : 'Could not find a playable source for this track.';
       console.error('[audio] No playable URL available for track:', track.title, track.artist);
-      setPlaybackError('Could not find a playable source for this track.');
+      setPlaybackError(message);
       setIsLoadingAudio(false);
       resolvingRef.current = false;
       notifyStreamFailure(track);

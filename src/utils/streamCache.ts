@@ -28,19 +28,22 @@ export function isLanHost(host: string): boolean {
   return false;
 }
 
+function hostOf(input: string): string | null {
+  const match = input.match(/^https?:\/\/([^/?#]+)/i);
+  return match ? match[1].split(':')[0].toLowerCase() : null;
+}
+
 export function isLanStreamUrl(input: string): boolean {
   const url = toHttpUrl(input);
   if (!url) {
     return false;
   }
-  try {
-    return isLanHost(new URL(url).hostname);
-  } catch {
-    return false;
-  }
+  return isLanHost(hostOf(url) ?? '');
 }
 
 const CACHE_DIR_NAME = 'stream-cache';
+
+const MIN_AUDIO_FILE_BYTES = 2048;
 
 const MIME_EXTENSIONS: Record<string, string> = {
   'audio/mpeg': '.mp3',
@@ -94,6 +97,34 @@ function toHttpUrl(input: string): string | null {
 function withLanPort(host: string, path: string): string {
   const cleanHost = host.includes(':') ? host.split(':')[0] : host;
   return `http://${cleanHost}:${LAN_STREAM_HTTP_PORT}${path || '/'}`;
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function canonicalizeHttpUrl(input: string): string {
+  const url = toHttpUrl(input);
+  if (!url) {
+    return input;
+  }
+  const [beforeQuery, ...queryParts] = url.split('?');
+  const originMatch = beforeQuery.match(/^(https?:\/\/[^/?#]+)/i);
+  if (!originMatch) {
+    return input;
+  }
+  const origin = originMatch[1];
+  const rawPath = beforeQuery.slice(origin.length);
+  const encodedPath = rawPath
+    .split('/')
+    .map((segment) => (segment ? encodeURIComponent(safeDecode(segment)) : segment))
+    .join('/');
+  const query = queryParts.length > 0 ? `?${queryParts.join('?')}` : '';
+  return `${origin}${encodedPath}${query}`;
 }
 
 function hashString(value: string): string {
@@ -160,13 +191,21 @@ export async function cacheStream(httpUrl: string, mimeType?: string): Promise<s
     return destination.uri;
   }
   const downloaded = await File.downloadFileAsync(httpUrl, destination);
-  if (downloaded) {
-    return downloaded.uri;
+  const file = downloaded && downloaded.exists ? downloaded : destination;
+  try {
+    if (file.exists && (file.size ?? 0) < MIN_AUDIO_FILE_BYTES) {
+      file.delete();
+      throw new Error(
+        `[stream-cache] Downloaded file too small to be audio (${file.size ?? 0} bytes): ${httpUrl}`
+      );
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('too small')) {
+      throw error;
+    }
+    console.warn('[stream-cache] Could not validate downloaded file.', error);
   }
-  if (destination.exists) {
-    return destination.uri;
-  }
-  throw new Error(`[stream-cache] Download returned no file: ${httpUrl}`);
+  return file.exists ? file.uri : destination.uri;
 }
 
 export async function resolveStreamForPlayback(
@@ -186,7 +225,7 @@ export async function resolveStreamForPlayback(
   }
   if (/^https?:\/\//i.test(trimmed)) {
     if (isLanStreamUrl(trimmed)) {
-      return resolveLanStreamForCache(trimmed, mimeType);
+      return resolveLanStreamForCache(canonicalizeHttpUrl(trimmed), mimeType);
     }
     return { uri: trimmed, kind: 'network' };
   }
@@ -195,7 +234,7 @@ export async function resolveStreamForPlayback(
     console.warn('[stream-cache] Unrecognized stream reference:', trimmed);
     return null;
   }
-  return resolveLanStreamForCache(httpUrl, mimeType);
+  return resolveLanStreamForCache(canonicalizeHttpUrl(httpUrl), mimeType);
 }
 
 async function resolveLanStreamForCache(
