@@ -18,9 +18,11 @@
       "icon": "./assets/icon.png",
       "infoPlist": {
         "UIBackgroundModes": [
+          "audio",
           "audio"
         ],
-        "CFBundleDisplayName": "AYMNX"
+        "CFBundleDisplayName": "AYMNX",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -41,7 +43,13 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.440854060458-3mhav004vt2eb359j9671c6pb25aurcv"
         }
-      ]
-    ]
+      ],
+      "./plugins/withYogaHeaderSearchPaths"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8afee2b7-ed92-40fc-83f6-9cdc00d9d60c"
+      }
+    }
   }
 }
