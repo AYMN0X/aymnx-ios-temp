@@ -30,6 +30,7 @@ import { resolveStream, Track } from '../services/musicApi';
 import { getRecommendedNextTracks } from '../services/autoplayService';
 import { setPlaybackServiceBridge } from '../services/playbackService';
 import * as storage from '../services/storage';
+import { resolveStreamForPlayback, StreamResolveResult } from '../utils/streamCache';
 import { useAuth } from './AuthContext';
 import { useDownloads } from './DownloadContext';
 
@@ -285,16 +286,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       };
     }
     if (track.streamUrl) {
+      let resolved: StreamResolveResult;
+      try {
+        resolved = await resolveStreamForPlayback(track.streamUrl, track.streamMimeType);
+      } catch (error) {
+        console.warn('[audio] Failed to resolve stream source for:', track.streamUrl, error);
+        resolved = { uri: track.streamUrl, kind: 'network' };
+      }
       return {
         id: track.id,
-        url: track.streamUrl,
+        url: resolved.uri,
         title: track.title,
         artist: track.artist,
         album: track.album,
         artwork: track.artwork || undefined,
         contentType: track.streamMimeType || 'audio/mp4',
         userAgent:
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)',
+          resolved.kind === 'network'
+            ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)'
+            : undefined,
       };
     }
     try {
@@ -708,8 +718,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         resolvedProvider = 'local';
         artworkUri = local.localArtworkUri || track.artwork;
       } else if (track.streamUrl) {
-        resolvedUrl = track.streamUrl;
-        resolvedProvider = 'youtube';
+        const resolved = await resolveStreamForPlayback(track.streamUrl, track.streamMimeType);
+        resolvedUrl = resolved.uri;
+        resolvedProvider = resolved.kind === 'network' ? 'youtube' : 'local';
         resolvedMimeType = track.streamMimeType || 'audio/mp4';
       } else {
         const result = await resolveStream(track.title, track.artist);
