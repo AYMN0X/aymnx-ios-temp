@@ -8,7 +8,6 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
     "expo": "~57.0.20",
-    "expo-av": "^16.0.8",
     "expo-file-system": "~57.0.6",
     "expo-image": "~57.0.4",
     "expo-image-picker": "~57.0.16",
@@ -24,7 +23,6 @@
     "shaka-player": "^4.16.48"
   },
   "scripts": {
-    "postinstall": "node scripts/patch-expo-av.js",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
