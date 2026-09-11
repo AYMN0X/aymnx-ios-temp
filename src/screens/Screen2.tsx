@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLibrary } from "../context/LibraryContext";
 import { usePlayer } from "../context/PlayerContext";
 import { useTrackActions } from "../context/TrackActionsContext";
+import { useAuth } from "../context/AuthContext";
 import { searchITunes } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 import { Border, Color } from "../theme/GlobalStyles";
@@ -187,6 +188,8 @@ export const Screen2: React.FC<{
   const { playTrack, currentTrack } = usePlayer();
   const { likedSongs, playlists, isLiked, toggleLike } = useLibrary();
   const { openTrack } = useTrackActions();
+  const { user } = useAuth();
+  const userInitial = (user?.name || user?.username || "?").charAt(0).toUpperCase();
 
   const [playlistView, setPlaylistView] = React.useState<PlaylistView | null>(null);
   const [libraryView, setLibraryView] = React.useState<
@@ -310,14 +313,18 @@ export const Screen2: React.FC<{
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <View style={styles.headerRow}>
-              <Text style={styles.greetingTitle}>Welcome back!</Text>
-              {onOpenAccount ? (
-                <TouchableOpacity onPress={onOpenAccount} hitSlop={12} style={styles.settingsBtn}>
-                  <Ionicons name="settings-outline" size={22} color={Color.textSecondary} />
+            {onOpenAccount ? (
+              <View style={styles.headerTop}>
+                <TouchableOpacity
+                  onPress={onOpenAccount}
+                  hitSlop={12}
+                  style={styles.profileAvatar}
+                >
+                  <Text style={styles.profileAvatarLetter}>{userInitial}</Text>
                 </TouchableOpacity>
-              ) : null}
-            </View>
+              </View>
+            ) : null}
+            <Text style={styles.greetingTitle}>Welcome back!</Text>
             <Text style={styles.greetingSubtitle}>What do you feel like today?</Text>
 
             <View style={styles.searchContainer}>
@@ -435,29 +442,41 @@ const styles = StyleSheet.create({
     paddingBottom: 90,
   },
   header: {
-    gap: 6,
+    gap: 4,
     width: "100%",
     alignSelf: "stretch",
   },
-  headerRow: {
+  headerTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
+    marginBottom: 4,
+  },
+  profileAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Color.surface,
+    borderWidth: 1,
+    borderColor: Color.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileAvatarLetter: {
+    color: Color.textPrimary,
+    fontSize: 13,
+    fontWeight: "700",
   },
   greetingTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "700",
     color: Color.textPrimary,
     flexShrink: 1,
   },
   greetingSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: Color.textSecondary,
     fontWeight: "500",
-  },
-  settingsBtn: {
-    padding: 4,
   },
   searchContainer: {
     marginTop: 12,

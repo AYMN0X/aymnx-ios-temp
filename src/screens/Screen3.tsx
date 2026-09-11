@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -69,6 +70,7 @@ export const Screen3: React.FC<Screen3Props> = ({
     isLiked,
     toggleLike,
     playlists,
+    removePlaylist,
     updatePlaylistDetails,
     removeTrackFromPlaylist,
     reorderPlaylistTracks,
@@ -200,6 +202,29 @@ export const Screen3: React.FC<Screen3Props> = ({
       return;
     }
     removeTrackFromPlaylist(playlistId, track.id);
+  };
+
+  const handleDeletePlaylist = () => {
+    if (!playlistId) {
+      return;
+    }
+    setSheetOpen(false);
+    setSheetView("options");
+    Alert.alert(
+      "Delete playlist?",
+      `"${displayTitle}" will be permanently removed from your library.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            removePlaylist(playlistId);
+            onBack();
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -444,6 +469,13 @@ export const Screen3: React.FC<Screen3Props> = ({
                   <Text style={styles.sheetActionLabel}>Name & details</Text>
                 </TouchableOpacity>
               </>
+            ) : null}
+
+            {!!livePlaylist ? (
+              <TouchableOpacity style={styles.sheetAction} onPress={handleDeletePlaylist} activeOpacity={0.7}>
+                <Ionicons name="trash-outline" size={22} color="#E05A47" />
+                <Text style={[styles.sheetActionLabel, styles.sheetActionLabelDelete]}>Delete playlist</Text>
+              </TouchableOpacity>
             ) : null}
               </>
             ) : (
@@ -788,6 +820,9 @@ const styles = StyleSheet.create({
   sheetActionLabel: {
     fontSize: 15,
     color: Color.textPrimary,
+  },
+  sheetActionLabelDelete: {
+    color: "#E05A47",
   },
   progressTrack: {
     height: 4,

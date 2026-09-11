@@ -45,18 +45,9 @@ function safeDecode(value: string): string {
   }
 }
 
-function titleCase(value: string): string {
-  return value
-    .split(' ')
-    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
-    .join(' ');
-}
-
 function decodedTitle(url: string): string {
-  const name = safeDecode(rawFileName(url));
-  const withoutExt = name.replace(/\.[a-z0-9]+$/i, '');
-  const cleaned = withoutExt.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return cleaned ? titleCase(cleaned) : '';
+  const name = safeDecode(rawFileName(url)).trim();
+  return name.replace(/\.[a-z0-9]+$/i, '').trim();
 }
 
 function basenameKey(url: string): string {
