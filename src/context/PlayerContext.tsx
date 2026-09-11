@@ -1,31 +1,16 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
-// --- Mocked TrackPlayer for Expo Go ---
-const TrackPlayer: any = {
-  setupPlayer: async () => {},
-  updateOptions: async () => {},
-  add: async () => {},
-  reset: async () => {},
-  play: async () => {},
-  pause: async () => {},
-  seekTo: async () => {},
-  skipToNext: async () => {},
-  skipToPrevious: async () => {},
-  setVolume: async () => {},
-  setRepeatMode: async () => {},
-  getActiveTrack: async () => null,
-  getQueue: async () => [],
-};
-const AppKilledPlaybackBehavior: any = {};
-const Capability: any = {};
-const Event: any = { PlaybackActiveTrackChanged: 'PlaybackActiveTrackChanged', PlaybackState: 'PlaybackState' };
-const IOSCategory: any = {};
-const RepeatMode: any = { Off: 0, Track: 1, Queue: 2 };
-const State: any = { None: 'none', Ready: 'ready', Playing: 'playing', Paused: 'paused', Stopped: 'stopped', Loading: 'loading', Buffering: 'buffering' };
-const usePlaybackState: any = () => ({ state: 'paused' });
-const useProgress: any = () => ({ position: 0, duration: 0, buffered: 0 });
-const useTrackPlayerEvents: any = () => {};
-// -------------------------------------
+import TrackPlayer, {
+  AppKilledPlaybackBehavior,
+  Capability,
+  Event,
+  IOSCategory,
+  RepeatMode,
+  State,
+  usePlaybackState,
+  useProgress,
+  useTrackPlayerEvents,
+} from 'react-native-track-player';
 import { resolveStream, Track } from '../services/musicApi';
 import { getRecommendedNextTracks } from '../services/autoplayService';
 import { setPlaybackServiceBridge } from '../services/playbackService';
@@ -237,6 +222,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const lastMirrorIndexRef = useRef(-1);
   const fillInFlightRef = useRef(false);
   const fillPendingRequestRef = useRef<{ full: boolean } | null>(null);
+  const setupPromiseRef = useRef<Promise<void> | null>(null);
 
   const { state } = usePlaybackState();
   const nativeProgress = useProgress(250);
@@ -757,6 +743,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
+      await ensureTrackPlayerReady();
       await TrackPlayer.reset();
       mirrorIdsRef.current = new Set();
       lastMirrorIndexRef.current = -1;
@@ -883,44 +870,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    (async () => {
-      try {
-        await TrackPlayer.setupPlayer({
-          iosCategory: IOSCategory.Playback,
-          autoHandleInterruptions: true,
-          minBuffer: 60,
-          maxBuffer: 60,
-          playBuffer: 5,
-        });
-        await TrackPlayer.updateOptions({
-          capabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
-            Capability.SeekTo,
-          ],
-          compactCapabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
-            Capability.SeekTo,
-          ],
-          progressUpdateEventInterval: 1,
-          android: {
-            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
-          },
-        });
-        await TrackPlayer.setVolume(DEFAULT_VOLUME);
-        await applyRepeatMode('off');
-      } catch (error) {
-        console.warn('[player] Failed to initialize TrackPlayer.', error);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
     if (user) {
       return;
     }
@@ -986,6 +935,56 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       console.warn('[player] Could not apply repeat mode.', error)
     );
   }, []);
+
+  const ensureTrackPlayerReady = useCallback(async (): Promise<void> => {
+    if (!setupPromiseRef.current) {
+      setupPromiseRef.current = TrackPlayer.setupPlayer({
+        iosCategory: IOSCategory.Playback,
+        autoHandleInterruptions: true,
+        minBuffer: 60,
+        maxBuffer: 60,
+        playBuffer: 5,
+      })
+        .then(() =>
+          TrackPlayer.updateOptions({
+            capabilities: [
+              Capability.Play,
+              Capability.Pause,
+              Capability.SkipToNext,
+              Capability.SkipToPrevious,
+              Capability.SeekTo,
+            ],
+            compactCapabilities: [
+              Capability.Play,
+              Capability.Pause,
+              Capability.SkipToNext,
+              Capability.SkipToPrevious,
+              Capability.SeekTo,
+            ],
+            progressUpdateEventInterval: 1,
+            android: {
+              appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+            },
+          })
+        )
+        .then(() => TrackPlayer.setVolume(DEFAULT_VOLUME))
+        .then(async () => {
+          await applyRepeatMode('off');
+        });
+    }
+    try {
+      await setupPromiseRef.current;
+    } catch (error) {
+      setupPromiseRef.current = null;
+      throw error;
+    }
+  }, [applyRepeatMode]);
+
+  useEffect(() => {
+    ensureTrackPlayerReady().catch((error) =>
+      console.warn('[player] Failed to initialize TrackPlayer.', error)
+    );
+  }, [ensureTrackPlayerReady]);
 
   const toggleRepeatMode = () => {
     setRepeatMode((prev) => {
