@@ -286,12 +286,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       };
     }
     if (track.streamUrl) {
-      let resolved: StreamResolveResult;
+      let resolved: StreamResolveResult | null;
       try {
         resolved = await resolveStreamForPlayback(track.streamUrl, track.streamMimeType);
       } catch (error) {
         console.warn('[audio] Failed to resolve stream source for:', track.streamUrl, error);
-        resolved = { uri: track.streamUrl, kind: 'network' };
+        return null;
+      }
+      if (!resolved) {
+        console.warn('[audio] No playable stream source for:', track.streamUrl);
+        return null;
       }
       return {
         id: track.id,
@@ -719,9 +723,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         artworkUri = local.localArtworkUri || track.artwork;
       } else if (track.streamUrl) {
         const resolved = await resolveStreamForPlayback(track.streamUrl, track.streamMimeType);
-        resolvedUrl = resolved.uri;
-        resolvedProvider = resolved.kind === 'network' ? 'youtube' : 'local';
-        resolvedMimeType = track.streamMimeType || 'audio/mp4';
+        if (resolved) {
+          resolvedUrl = resolved.uri;
+          resolvedProvider = resolved.kind === 'network' ? 'youtube' : 'local';
+          resolvedMimeType = track.streamMimeType || 'audio/mp4';
+        }
       } else {
         const result = await resolveStream(track.title, track.artist);
         resolvedUrl = result.url;

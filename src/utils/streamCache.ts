@@ -27,6 +27,10 @@ export function isLocalUri(input: string): boolean {
   return /^(file|content|photoroom|android\.resource):/i.test(input.trim());
 }
 
+export function isWindowsLocalPath(input: string): boolean {
+  return /^[a-z]:[\\/]/i.test(input.trim());
+}
+
 function toHttpUrl(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -130,20 +134,25 @@ export async function cacheStream(httpUrl: string, mimeType?: string): Promise<s
 export async function resolveStreamForPlayback(
   input: string,
   mimeType?: string
-): Promise<StreamResolveResult> {
+): Promise<StreamResolveResult | null> {
   const trimmed = (input || '').trim();
   if (!trimmed) {
-    return { uri: input, kind: 'local' };
+    return null;
   }
   if (isLocalUri(trimmed)) {
     return { uri: trimmed, kind: 'local' };
+  }
+  if (isWindowsLocalPath(trimmed)) {
+    console.warn('[stream-cache] Windows local path is not playable on device:', trimmed);
+    return null;
   }
   if (/^https?:\/\//i.test(trimmed)) {
     return { uri: trimmed, kind: 'network' };
   }
   const httpUrl = toHttpUrl(trimmed);
   if (!httpUrl) {
-    return { uri: trimmed, kind: 'network' };
+    console.warn('[stream-cache] Unrecognized stream reference:', trimmed);
+    return null;
   }
   try {
     const cached = await getCachedStream(httpUrl);
@@ -157,8 +166,8 @@ export async function resolveStreamForPlayback(
     const uri = await cacheStream(httpUrl, mimeType);
     return { uri, kind: 'cached' };
   } catch (error) {
-    console.warn('[stream-cache] Download failed, streaming directly.', error);
-    return { uri: httpUrl, kind: 'network' };
+    console.warn('[stream-cache] Mirror download failed; no playable fallback for:', httpUrl, error);
+    return null;
   }
 }
 
