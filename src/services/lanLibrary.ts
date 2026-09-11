@@ -31,11 +31,36 @@ function hashString(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function basenameFromUrl(url: string): string {
+function rawFileName(url: string): string {
   const withoutQuery = url.split(/[?#]/)[0];
   const parts = withoutQuery.split('/');
-  const file = parts[parts.length - 1] || '';
-  return file.replace(/\.[a-z0-9]+$/i, '').toLowerCase();
+  return parts[parts.length - 1] || '';
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(' ')
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(' ');
+}
+
+function decodedTitle(url: string): string {
+  const name = safeDecode(rawFileName(url));
+  const withoutExt = name.replace(/\.[a-z0-9]+$/i, '');
+  const cleaned = withoutExt.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned ? titleCase(cleaned) : '';
+}
+
+function basenameKey(url: string): string {
+  return decodedTitle(url).toLowerCase().trim();
 }
 
 function mimeForUrl(url: string): string {
@@ -56,6 +81,22 @@ function resolveHref(baseUrl: string, href: string): string | null {
     return `${cleanBase}${trimmed}`;
   }
   return `${cleanBase}/${trimmed}`;
+}
+
+function finalizeUrl(baseUrl: string, href: string): string | null {
+  const resolved = resolveHref(baseUrl, href);
+  if (!resolved) {
+    return null;
+  }
+  if (/[\s]/i.test(resolved)) {
+    const [head, ...rest] = resolved.split('?');
+    const encodedPath = head
+      .split('/')
+      .map((segment) => encodeURIComponent(safeDecode(segment)))
+      .join('/');
+    return rest.length > 0 ? `${encodedPath}?${rest.join('?')}` : encodedPath;
+  }
+  return resolved;
 }
 
 function extractLinks(html: string): string[] {
@@ -138,13 +179,15 @@ function normalizeJsonTracks(payload: LanTracksPayload, baseUrl: string): Track[
       continue;
     }
     const id = entry.id != null ? `lan_${entry.id}` : `lan_${hashString(audioUrl)}`;
+    const provided = (entry.title || entry.name || '').trim();
     const title =
-      (entry.title || entry.name || basenameFromUrl(audioUrl).replace(/[-_]+/g, ' ')).trim() ||
+      (provided ? safeDecode(provided).replace(/\s+/g, ' ').trim() : '') ||
+      decodedTitle(audioUrl) ||
       'Untitled';
-    const artist = (entry.artist || 'Local Files').trim();
+    const artist = safeDecode((entry.artist || 'Local Files').trim());
     const album = (entry.album || '').trim();
     const coverRaw = entry.cover || entry.artwork || entry.coverUrl;
-    const artwork = coverRaw ? resolveHref(baseUrl, coverRaw) ?? '' : '';
+    const artwork = coverRaw ? finalizeUrl(baseUrl, coverRaw) ?? '' : '';
     tracks.push({
       id,
       title,
@@ -161,18 +204,16 @@ function normalizeJsonTracks(payload: LanTracksPayload, baseUrl: string): Track[
 }
 
 function trackFromAudio(audioUrl: string, coverUrl?: string, parentTitle?: string): Track {
-  const rawTitle = basenameFromUrl(audioUrl)
-    .replace(/[-_]+/g, ' ')
-    .trim();
+  const audioUri = finalizeUrl(audioUrl, audioUrl) ?? audioUrl;
   return {
-    id: `lan_${hashString(audioUrl)}`,
-    title: rawTitle || 'Untitled',
+    id: `lan_${hashString(audioUri)}`,
+    title: decodedTitle(audioUri) || 'Untitled',
     artist: parentTitle ?? 'Local Files',
     album: '',
     artwork: coverUrl ?? '',
-    previewUrl: audioUrl,
-    streamUrl: audioUrl,
-    streamMimeType: mimeForUrl(audioUrl),
+    previewUrl: audioUri,
+    streamUrl: audioUri,
+    streamMimeType: mimeForUrl(audioUri),
   };
 }
 
@@ -220,14 +261,39 @@ export async function fetchLanTracks(base?: string): Promise<Track[]> {
       }
     }
   }
-  const audioLinks = Array.from(new Set(allLinks.filter((link) => AUDIO_EXTENSIONS.test(link))));
-  const coverLinks = Array.from(new Set(allLinks.filter((link) => COVER_EXTENSIONS.test(link))));
+  const seenAudio = new Set<string>();
+  const audioLinks: string[] = [];
+  for (const link of allLinks) {
+    if (!AUDIO_EXTENSIONS.test(link)) {
+      continue;
+    }
+    const resolved = finalizeUrl(baseUrl, link);
+    if (!resolved) {
+      continue;
+    }
+    const key = basenameKey(resolved);
+    if (seenAudio.has(key)) {
+      continue;
+    }
+    seenAudio.add(key);
+    audioLinks.push(resolved);
+  }
   const coverByBase = new Map<string, string>();
-  for (const cover of coverLinks) {
-    coverByBase.set(basenameFromUrl(cover), cover);
+  for (const link of allLinks) {
+    if (!COVER_EXTENSIONS.test(link)) {
+      continue;
+    }
+    const resolved = finalizeUrl(baseUrl, link);
+    if (!resolved) {
+      continue;
+    }
+    const key = basenameKey(resolved);
+    if (!coverByBase.has(key)) {
+      coverByBase.set(key, resolved);
+    }
   }
   const tracks = audioLinks.map((audio) => {
-    const cover = coverByBase.get(basenameFromUrl(audio));
+    const cover = coverByBase.get(basenameKey(audio));
     return trackFromAudio(audio, cover);
   });
   return tracks.sort((a, b) => a.title.localeCompare(b.title));
