@@ -122,3 +122,60 @@ patchFile('EXAudioRecordingPermissionRequester.m', (src) => {
   }
   return src.replace(marker, `${marker}\n${macros}`);
 });
+
+// 6. Inject logging/error macros into every .m file under EXAV/ (recursive)
+const LOG_MACROS = [
+  ['EXLogInfo', '#define EXLogInfo(fmt, ...) NSLog(@"[Info] " fmt, ##__VA_ARGS__)'],
+  ['EXLogWarn', '#define EXLogWarn(fmt, ...) NSLog(@"[Warn] " fmt, ##__VA_ARGS__)'],
+  ['EXLogError', '#define EXLogError(fmt, ...) NSLog(@"[Error] " fmt, ##__VA_ARGS__)'],
+  [
+    'EXErrorWithMessage',
+    '#define EXErrorWithMessage(msg) [NSError errorWithDomain:@"EXAV" code:0 userInfo:@{NSLocalizedDescriptionKey: msg}]',
+  ],
+];
+
+function walk(dir) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let files = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(walk(full));
+    } else if (entry.name.endsWith('.m')) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
+function lastImportIndex(src) {
+  const lines = src.split('\n');
+  let idx = -1;
+  lines.forEach((line, i) => {
+    if (line.trim().startsWith('#import ')) {
+      idx = i;
+    }
+  });
+  return idx;
+}
+
+for (const file of walk(base)) {
+  const rel = path.relative(base, file);
+  const src = fs.readFileSync(file, 'utf8');
+  let missing = '';
+  for (const [name, define] of LOG_MACROS) {
+    if (!src.includes(`#define ${name}`)) {
+      missing += `#ifndef ${name}\n${define}\n#endif\n`;
+    }
+  }
+  if (!missing) {
+    console.log(`[patch-expo-av] ${rel} already patched.`);
+    continue;
+  }
+  const idx = lastImportIndex(src);
+  const insertionPoint = idx >= 0 ? idx : 0;
+  const lines = src.split('\n');
+  lines.splice(insertionPoint + 1, 0, '', missing.replace(/\n$/, ''));
+  fs.writeFileSync(file, lines.join('\n'), 'utf8');
+  console.log(`[patch-expo-av] Patched ${rel}.`);
+}
