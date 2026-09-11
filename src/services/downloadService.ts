@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { resolveStream, Track } from './musicApi';
 import { canonicalizeHttpUrl } from '../utils/streamCache';
+import { extractId3Picture, base64ToBytes, bytesToBase64 } from '../utils/id3Artwork';
 
 export interface DownloadedTrack extends Track {
   localAudioUri: string;
@@ -44,7 +45,37 @@ function extensionFor(track: Track): string {
 }
 
 const audioFileUri = (trackId: string, ext = '.m4a') => `${TRACKS_DIR}${sanitizeId(trackId)}${ext}`;
-const artworkFileUri = (trackId: string) => `${TRACKS_DIR}${sanitizeId(trackId)}_art.jpg`;
+const artworkFileUri = (trackId: string, ext = '.jpg') =>
+  `${TRACKS_DIR}${sanitizeId(trackId)}_art${ext}`;
+
+function isLocalSource(uri: string): boolean {
+  return uri.startsWith('file://') || uri.startsWith('/');
+}
+
+async function extractEmbeddedArtwork(audioUri: string, trackId: string): Promise<string> {
+  try {
+    const info = await FileSystem.getInfoAsync(audioUri);
+    if (!info.exists || (info.size ?? 0) > 64 * 1024 * 1024) {
+      return '';
+    }
+    const base64 = await FileSystem.readAsStringAsync(audioUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const picture = extractId3Picture(base64ToBytes(base64));
+    if (!picture || picture.data.length < 128) {
+      return '';
+    }
+    const uri = artworkFileUri(trackId, picture.ext);
+    await FileSystem.writeAsStringAsync(uri, bytesToBase64(picture.data), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const written = await FileSystem.getInfoAsync(uri);
+    return written.exists && (written.size ?? 0) > 0 ? uri : '';
+  } catch (error) {
+    console.warn('[downloads] Could not extract embedded artwork from:', audioUri, error);
+    return '';
+  }
+}
 
 async function ensureTracksDirectory(): Promise<void> {
   try {
@@ -67,7 +98,13 @@ export async function downloadTrack(
   const audioUri = audioFileUri(track.id, extensionFor(track));
 
   const ownSource = track.streamUrl && track.streamUrl.trim();
-  if (ownSource) {
+  if (ownSource && isLocalSource(ownSource)) {
+    await FileSystem.copyAsync({ from: ownSource, to: audioUri });
+    const exists = await FileSystem.getInfoAsync(audioUri);
+    if (!exists.exists) {
+      throw new Error('Could not persist local audio file.');
+    }
+  } else if (ownSource) {
     const source = canonicalizeHttpUrl(ownSource);
     const result = await FileSystem.downloadAsync(source, audioUri);
     if (!result || result.status < 200 || result.status >= 300) {
@@ -91,14 +128,22 @@ export async function downloadTrack(
 
   let localArtworkUri = '';
   if (track.artwork) {
-    try {
-      const artResult = await FileSystem.downloadAsync(track.artwork, artworkFileUri(track.id));
-      if (artResult && artResult.status === 200) {
-        localArtworkUri = artworkFileUri(track.id);
+    if (isLocalSource(track.artwork)) {
+      localArtworkUri = track.artwork;
+    } else {
+      try {
+        const artSource = canonicalizeHttpUrl(track.artwork);
+        const artResult = await FileSystem.downloadAsync(artSource, artworkFileUri(track.id));
+        if (artResult && artResult.status === 200) {
+          localArtworkUri = artworkFileUri(track.id);
+        }
+      } catch (error) {
+        console.warn('[downloads] Artwork download failed; continuing without it.', error);
       }
-    } catch (error) {
-      console.warn('[downloads] Artwork download failed; continuing without it.', error);
     }
+  }
+  if (!localArtworkUri) {
+    localArtworkUri = await extractEmbeddedArtwork(audioUri, track.id);
   }
 
   return {

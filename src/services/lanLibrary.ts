@@ -1,6 +1,7 @@
 import type { Track } from './musicApi';
 import { lanStreamBaseUrl, canonicalizeHttpUrl } from '../utils/streamCache';
-import { Directory, File, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { extractId3Picture, base64ToBytes, bytesToBase64 } from '../utils/id3Artwork';
 
 const REQUEST_TIMEOUT_MS = 4000;
 
@@ -263,6 +264,7 @@ export async function fetchLanTracks(base?: string): Promise<Track[]> {
     audioLinks.push(resolved);
   }
   const coverByBase = new Map<string, string>();
+  const coverKeys: string[] = [];
   for (const link of allLinks) {
     if (!COVER_EXTENSIONS.test(link)) {
       continue;
@@ -274,16 +276,43 @@ export async function fetchLanTracks(base?: string): Promise<Track[]> {
     const key = basenameKey(resolved);
     if (!coverByBase.has(key)) {
       coverByBase.set(key, resolved);
+      coverKeys.push(key);
     }
   }
   const tracks = audioLinks.map((audio) => {
-    const cover = coverByBase.get(basenameKey(audio));
+    const cover = findCoverArtwork(basenameKey(audio), coverByBase, coverKeys);
     return trackFromAudio(audio, cover);
   });
   return tracks.sort((a, b) => a.title.localeCompare(b.title));
 }
 
-const LAN_LIBRARY_DIR_NAME = 'lan-library';
+const GENERIC_COVER_KEYS = ['cover', 'folder', 'albumart', 'album', 'artwork', 'front', 'frontcover'];
+
+function findCoverArtwork(
+  audioKey: string,
+  coverByBase: Map<string, string>,
+  coverKeys: string[]
+): string | undefined {
+  const exact = coverByBase.get(audioKey);
+  if (exact) {
+    return exact;
+  }
+  for (const key of coverKeys) {
+    if (key.includes(audioKey) || audioKey.includes(key)) {
+      return coverByBase.get(key);
+    }
+  }
+  for (const generic of GENERIC_COVER_KEYS) {
+    const hit = coverByBase.get(generic);
+    if (hit) {
+      return hit;
+    }
+  }
+  return coverKeys.length > 0 ? coverByBase.get(coverKeys[0]) : undefined;
+}
+
+const LAN_TRACKS_DIR_NAME = 'lan_tracks';
+const LAN_COVERS_DIR_NAME = 'covers';
 const MIN_AUDIO_FILE_BYTES = 2048;
 
 const LAN_MIME_EXTENSIONS: Record<string, string> = {
@@ -298,10 +327,6 @@ const LAN_MIME_EXTENSIONS: Record<string, string> = {
   'audio/x-flac': '.flac',
   'audio/flac': '.flac',
 };
-
-function lanLibraryDirectory(): Directory {
-  return new Directory(Paths.document, LAN_LIBRARY_DIR_NAME);
-}
 
 function lanExtensionFor(track: Track): string {
   if (track.streamMimeType) {
@@ -321,40 +346,100 @@ function lanExtensionFor(track: Track): string {
   return '.mp3';
 }
 
+function lanTracksRoot(): string {
+  return `${FileSystem.documentDirectory ?? ''}${LAN_TRACKS_DIR_NAME}/`;
+}
+
+function lanCoversRoot(): string {
+  return `${lanTracksRoot()}${LAN_COVERS_DIR_NAME}/`;
+}
+
+async function ensureDirectory(directory: string): Promise<void> {
+  const info = await FileSystem.getInfoAsync(directory);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+  }
+}
+
+async function ensureLanDirectories(): Promise<void> {
+  await ensureDirectory(lanTracksRoot());
+  await ensureDirectory(lanCoversRoot());
+}
+
+async function extractArtworkToFile(audioUri: string, basePath: string): Promise<string> {
+  try {
+    const info = await FileSystem.getInfoAsync(audioUri);
+    if (!info.exists || (info.size ?? 0) > 64 * 1024 * 1024) {
+      return '';
+    }
+    const base64 = await FileSystem.readAsStringAsync(audioUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const bytes = base64ToBytes(base64);
+    const picture = extractId3Picture(bytes);
+    if (!picture || picture.data.length < 128) {
+      return '';
+    }
+    const uri = `${basePath}${picture.ext}`;
+    await FileSystem.writeAsStringAsync(uri, bytesToBase64(picture.data), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const written = await FileSystem.getInfoAsync(uri);
+    return written.exists && (written.size ?? 0) > 0 ? uri : '';
+  } catch (error) {
+    console.warn('[lan] Could not extract embedded artwork from:', audioUri, error);
+    return '';
+  }
+}
+
 export async function downloadLanTrackAudio(track: Track): Promise<Track> {
   const source = track.streamUrl || track.previewUrl;
   if (!source) {
     throw new Error(`No stream URL for "${track.title}".`);
   }
   const httpUrl = canonicalizeHttpUrl(source);
-  const directory = lanLibraryDirectory();
-  try {
-    directory.create({ idempotent: true, intermediates: true });
-  } catch (error) {
-    console.warn('[lan] Could not create LAN library directory.', error);
-  }
-  const destination = new File(directory, `${hashString(httpUrl)}${lanExtensionFor(track)}`);
-  if (!destination.exists) {
-    const downloaded = await File.downloadFileAsync(httpUrl, destination);
-    const file = downloaded && downloaded.exists ? downloaded : destination;
-    try {
-      if (file.exists && (file.size ?? 0) < MIN_AUDIO_FILE_BYTES) {
-        file.delete();
-        throw new Error(
-          `Downloaded file too small to be audio (${file.size ?? 0} bytes): ${track.title}`
-        );
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('too small')) {
-        throw error;
-      }
-      console.warn('[lan] Could not validate downloaded audio.', error);
+  await ensureLanDirectories();
+  const audioUri = `${lanTracksRoot()}${hashString(httpUrl)}${lanExtensionFor(track)}`;
+
+  const existingAudio = await FileSystem.getInfoAsync(audioUri);
+  if (!existingAudio.exists) {
+    const result = await FileSystem.downloadAsync(httpUrl, audioUri);
+    if (!result || result.status < 200 || result.status >= 300) {
+      throw new Error(`LAN audio download failed (HTTP ${result?.status}): ${track.title}`);
+    }
+    const audioInfo = await FileSystem.getInfoAsync(audioUri);
+    if (!audioInfo.exists || (audioInfo.size ?? 0) < MIN_AUDIO_FILE_BYTES) {
+      await FileSystem.deleteAsync(audioUri, { idempotent: true });
+      throw new Error(`Downloaded LAN audio too small to be valid: ${track.title}`);
     }
   }
+
+  let artworkUri = '';
+  if (track.artwork && /^https?:\/\//i.test(track.artwork)) {
+    const coverUri = `${lanCoversRoot()}${hashString(httpUrl)}.jpg`;
+    const existingCover = await FileSystem.getInfoAsync(coverUri);
+    if (existingCover.exists) {
+      artworkUri = coverUri;
+    } else {
+      try {
+        const coverResult = await FileSystem.downloadAsync(canonicalizeHttpUrl(track.artwork), coverUri);
+        if (coverResult && coverResult.status >= 200 && coverResult.status < 300) {
+          artworkUri = coverUri;
+        }
+      } catch (error) {
+        console.warn('[lan] Standalone cover download failed for:', track.title, error);
+      }
+    }
+  }
+  if (!artworkUri) {
+    artworkUri = await extractArtworkToFile(audioUri, `${lanCoversRoot()}${hashString(httpUrl)}_id3`);
+  }
+
   return {
     ...track,
-    streamUrl: destination.uri,
-    previewUrl: destination.uri,
+    artwork: artworkUri || track.artwork || '',
+    streamUrl: audioUri,
+    previewUrl: audioUri,
   };
 }
 
@@ -364,17 +449,24 @@ export async function downloadLanTracks(
 ): Promise<Track[]> {
   const updated: Track[] = [];
   const total = tracks.length;
+  let failed = 0;
   for (let index = 0; index < total; index += 1) {
     const track = tracks[index];
     try {
       updated.push(await downloadLanTrackAudio(track));
     } catch (error) {
+      failed += 1;
       console.warn('[lan] Failed to download audio for:', track.title, error);
       updated.push(track);
     }
     if (onProgress) {
       onProgress(index + 1, total);
     }
+  }
+  if (total > 0 && failed === total) {
+    throw new Error(
+      'None of the local tracks could be downloaded. Check that your PC server is reachable.'
+    );
   }
   return updated;
 }
