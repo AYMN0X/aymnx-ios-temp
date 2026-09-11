@@ -1,0 +1,231 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeApp } from 'firebase/app';
+import {
+  createUserWithEmailAndPassword,
+  getReactNativePersistence,
+  GoogleAuthProvider,
+  initializeAuth,
+  signInWithEmailAndPassword,
+  signInWithCredential,
+  signOut,
+  updateProfile,
+} from 'firebase/auth';
+import type { User as FirebaseUser } from 'firebase/auth';
+import type { Persistence, ReactNativeAsyncStorage } from 'firebase/auth';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  getFirestore,
+  setDoc,
+} from 'firebase/firestore';
+import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import type { Track } from './musicApi';
+
+declare module 'firebase/auth' {
+  export function getReactNativePersistence(storage: ReactNativeAsyncStorage): Persistence;
+}
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyDxh6mcTNs1zyctiS2eN_X2MHGHvU2EvHI',
+  authDomain: 'aymnx-7a808.firebaseapp.com',
+  projectId: 'aymnx-7a808',
+};
+
+const app = initializeApp(firebaseConfig);
+
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage),
+});
+
+export const db = getFirestore(app);
+
+export async function firebaseSignIn(email: string, password: string): Promise<FirebaseUser> {
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  return credential.user;
+}
+
+export async function firebaseSignUp(
+  email: string,
+  password: string,
+  displayName: string
+): Promise<FirebaseUser> {
+  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  if (displayName.trim()) {
+    await updateProfile(credential.user, { displayName: displayName.trim() });
+  }
+  return credential.user;
+}
+
+export async function firebaseSignOut(): Promise<void> {
+  await signOut(auth);
+}
+
+GoogleSignin.configure({
+  webClientId: '440854060458-kf8536m7gd7dru9111sg82notra3vrqs.apps.googleusercontent.com',
+  iosClientId: '440854060458-3mhav004vt2eb359j9671c6pb25aurcv.apps.googleusercontent.com',
+});
+
+export async function signInWithGoogle(): Promise<FirebaseUser> {
+  await GoogleSignin.hasPlayServices();
+  const response = await GoogleSignin.signIn();
+  const idToken = response.data?.idToken ?? undefined;
+  if (!idToken) {
+    throw new Error('Google sign-in was cancelled.');
+  }
+  const credential = GoogleAuthProvider.credential(idToken);
+  const result = await signInWithCredential(auth, credential);
+  return result.user;
+}
+
+interface LikedTrackDoc {
+  id?: string;
+  title?: string;
+  name?: string;
+  trackName?: string;
+  artist?: string;
+  artists?: string;
+  album?: string;
+  artwork?: string;
+  artworkUrl?: string;
+  coverUrl?: string;
+  image?: string;
+  previewUrl?: string;
+  streamUrl?: string;
+  streamMimeType?: string;
+  duration?: number;
+}
+
+function likedTrackFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Track {
+  const data = doc.data() as LikedTrackDoc;
+  return {
+    id: data.id ?? doc.id,
+    title: data.title ?? data.name ?? data.trackName ?? doc.id,
+    artist: data.artist ?? data.artists ?? '',
+    album: data.album ?? '',
+    artwork: data.artwork ?? data.artworkUrl ?? data.coverUrl ?? data.image ?? '',
+    previewUrl: data.previewUrl ?? '',
+    streamUrl: data.streamUrl,
+    streamMimeType: data.streamMimeType,
+    duration: typeof data.duration === 'number' ? data.duration : undefined,
+  };
+}
+
+export async function fetchLikedTracks(userId: string): Promise<Track[]> {
+  const snapshot = await getDocs(collection(db, 'users', userId, 'liked'));
+  return snapshot.docs.map(likedTrackFromDoc);
+}
+
+function likedDocRef(userId: string, trackId: string) {
+  return doc(db, 'users', userId, 'liked', trackId);
+}
+
+export async function setLikedTrack(userId: string, track: Track): Promise<void> {
+  await setDoc(likedDocRef(userId, track.id), {
+    id: track.id,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    artwork: track.artwork,
+    previewUrl: track.previewUrl,
+    streamUrl: track.streamUrl ?? null,
+    streamMimeType: track.streamMimeType ?? null,
+    duration: track.duration ?? null,
+  });
+}
+
+export async function removeLikedTrack(userId: string, trackId: string): Promise<void> {
+  await deleteDoc(likedDocRef(userId, trackId));
+}
+
+export interface StoredPlaylistTrack {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  durationSeconds: number;
+  coverUrl: string;
+}
+
+export interface PlaylistDoc {
+  id: string;
+  name: string;
+  description?: string;
+  coverUrl?: string;
+  isImported?: boolean;
+  tracks: Track[];
+}
+
+function trackToStored(track: Track): StoredPlaylistTrack {
+  return {
+    id: track.id,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    durationSeconds: track.duration ?? 0,
+    coverUrl: track.artwork ?? '',
+  };
+}
+
+function storedTrackToTrack(data: Record<string, unknown>): Track {
+  return {
+    id: typeof data.id === 'number' ? String(data.id) : typeof data.id === 'string' ? data.id : '',
+    title: typeof data.title === 'string' ? data.title : '',
+    artist: typeof data.artist === 'string' ? data.artist : '',
+    album: typeof data.album === 'string' ? data.album : '',
+    artwork:
+      typeof data.coverUrl === 'string' && data.coverUrl
+        ? data.coverUrl
+        : typeof data.artwork === 'string'
+        ? data.artwork
+        : '',
+    previewUrl: typeof data.previewUrl === 'string' ? data.previewUrl : '',
+    duration:
+      typeof data.durationSeconds === 'number'
+        ? data.durationSeconds
+        : typeof data.duration === 'number'
+        ? data.duration
+        : undefined,
+  };
+}
+
+export async function createOrUpdatePlaylist(
+  userId: string,
+  playlist: { id: string; name: string; description?: string; tracks: Track[]; coverUrl?: string; isImported?: boolean }
+): Promise<void> {
+  await setDoc(doc(db, 'users', userId, 'playlists', playlist.id), {
+    id: playlist.id,
+    name: playlist.name,
+    description: playlist.description ?? '',
+    coverUrl: playlist.coverUrl ?? '',
+    isImported: playlist.isImported ?? false,
+    tracks: playlist.tracks.map(trackToStored),
+  });
+}
+
+export async function fetchPlaylists(userId: string): Promise<PlaylistDoc[]> {
+  const snapshot = await getDocs(collection(db, 'users', userId, 'playlists'));
+  return snapshot.docs.map((item) => {
+    const data = item.data();
+    return {
+      id: isset(data.id) ? data.id : item.id,
+      name: isset(data.name) ? data.name : '',
+      description: isset(data.description) && data.description ? data.description : undefined,
+      coverUrl: isset(data.coverUrl) && data.coverUrl ? data.coverUrl : undefined,
+      isImported: data.isImported === true,
+      tracks: Array.isArray(data.tracks)
+        ? data.tracks.map((entry) => storedTrackToTrack(entry as Record<string, unknown>))
+        : [],
+    };
+  });
+}
+
+function isset(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+export async function deletePlaylist(userId: string, playlistId: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', userId, 'playlists', playlistId));
+}

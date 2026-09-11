@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../theme/appTheme';
 
 export function LoginScreen() {
-  const { login, signUp, loginGuest } = useAuth();
+  const { login, signUp, loginGuest, signInWithGoogle } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [identifier, setIdentifier] = useState('');
@@ -14,6 +14,7 @@ export function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
   const toggleMode = () => {
     setIsSignUp((v) => !v);
@@ -48,6 +49,22 @@ export function LoginScreen() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    if (googleSubmitting || submitting) {
+      return;
+    }
+    setErrorMsg('');
+    setGoogleSubmitting(true);
+    try {
+      const result = await signInWithGoogle();
+      if (!result.ok) {
+        setErrorMsg(result.error ?? 'Something went wrong.');
+      }
+    } finally {
+      setGoogleSubmitting(false);
+    }
+  };
+
   const fieldDisabled = !identifier.trim() || submitting || password.length === 0;
   const submitLabel = isSignUp ? 'Create Account' : 'Log In';
 
@@ -61,13 +78,30 @@ export function LoginScreen() {
       >
         <Text style={styles.loginTitle}>{"Millions of songs.\nFree on AYMNX."}</Text>
 
+        <Pressable
+          style={[styles.googleButton, (googleSubmitting || submitting) && styles.disabled]}
+          onPress={handleGoogleSignIn}
+          disabled={googleSubmitting || submitting}
+        >
+          <Ionicons name="logo-google" size={18} color="#FFFFFF" />
+          <Text style={styles.googleButtonLabel}>
+            {googleSubmitting ? 'Signing in\u2026' : 'Continue with Google'}
+          </Text>
+        </Pressable>
+
+        <View style={styles.orContainer}>
+          <View style={styles.orLine} />
+          <Text style={styles.orText}>or</Text>
+          <View style={styles.orLine} />
+        </View>
+
         {isSignUp && (
           <TextInput
             style={[styles.loginInput, styles.loginField]}
             value={displayName}
             onChangeText={setDisplayName}
             placeholder="Display Name"
-            placeholderTextColor="#777777"
+            placeholderTextColor={COLORS.placeholder}
             autoCapitalize="words"
             autoCorrect={false}
           />
@@ -77,8 +111,8 @@ export function LoginScreen() {
           style={[styles.loginInput, styles.loginField]}
           value={identifier}
           onChangeText={setIdentifier}
-          placeholder="Username or Email"
-          placeholderTextColor="#777777"
+          placeholder="Email"
+          placeholderTextColor={COLORS.placeholder}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="next"
@@ -90,7 +124,7 @@ export function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             placeholder="Password"
-            placeholderTextColor="#777777"
+            placeholderTextColor={COLORS.placeholder}
             secureTextEntry={!showPassword}
             autoCapitalize="none"
             autoCorrect={false}
@@ -103,7 +137,7 @@ export function LoginScreen() {
             <Ionicons
               name={showPassword ? 'eye-off-outline' : 'eye-outline'}
               size={20}
-              color="#B3B3B3"
+              color={COLORS.textSecondary}
             />
           </Pressable>
         </View>
@@ -114,7 +148,7 @@ export function LoginScreen() {
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Confirm Password"
-            placeholderTextColor="#777777"
+            placeholderTextColor={COLORS.placeholder}
             secureTextEntry={!showPassword}
             autoCapitalize="none"
             autoCorrect={false}
@@ -153,7 +187,7 @@ export function LoginScreen() {
 const styles = StyleSheet.create({
   loginRoot: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: COLORS.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
@@ -161,6 +195,7 @@ const styles = StyleSheet.create({
   loginScroll: {
     flex: 1,
     width: '100%',
+    backgroundColor: COLORS.background,
   },
   loginContent: {
     flexGrow: 1,
@@ -182,8 +217,10 @@ const styles = StyleSheet.create({
   loginInput: {
     width: '100%',
     height: 50,
-    backgroundColor: '#282828',
-    borderRadius: 8,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 12,
     paddingHorizontal: 16,
     color: '#FFFFFF',
     fontSize: 16,
@@ -195,8 +232,10 @@ const styles = StyleSheet.create({
   loginPasswordInput: {
     width: '100%',
     height: 50,
-    backgroundColor: '#282828',
-    borderRadius: 8,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingRight: 44,
     color: '#FFFFFF',
@@ -236,7 +275,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   loginGuestLabel: {
-    color: '#B3B3B3',
+    color: '#8A8F9D',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -247,7 +286,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   loginToggleText: {
-    color: '#B3B3B3',
+    color: '#8A8F9D',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -258,5 +297,38 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.5,
+  },
+  googleButton: {
+    width: '100%',
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 25,
+    gap: 10,
+  },
+  googleButtonLabel: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  orContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.inputBorder,
+  },
+  orText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    marginHorizontal: 10,
   },
 });
