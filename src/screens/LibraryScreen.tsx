@@ -11,7 +11,7 @@ import { usePlayer } from '../context/PlayerContext';
 import { useTrackActions } from '../context/TrackActionsContext';
 import type { Track } from '../services/musicApi';
 import { COLORS, TYPE } from '../theme/appTheme';
-import { Screen3 } from './Screen3';
+import { PlaylistDetailScreen } from './PlaylistDetailScreen';
 
 const LIKED_GRADIENT: readonly [string, string] = ['#450AF5', '#8E8EE5'];
 
@@ -92,11 +92,11 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
 
   if (detail) {
     if (detail.type === 'liked') {
-      return <Screen3 isLikedPlaylist onBack={backToRoot} />;
+      return <PlaylistDetailScreen isLikedPlaylist onBack={backToRoot} />;
     }
     const tracks = selectedPlaylist ? selectedPlaylist.tracks : [];
     return (
-      <Screen3
+      <PlaylistDetailScreen
         title={selectedPlaylist ? selectedPlaylist.name : 'Playlist'}
         subtitle={tracks.length === 1 ? '1 song' : `${tracks.length} songs`}
         tracks={tracks}

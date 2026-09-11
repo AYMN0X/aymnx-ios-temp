@@ -23,7 +23,7 @@ import { useLibrary } from "../context/LibraryContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-interface Screen4Props {
+interface NowPlayingScreenProps {
   onClose: () => void;
 }
 
@@ -40,7 +40,7 @@ const formatTime = (millis: number): string => {
   return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 };
 
-export const Screen4: React.FC<Screen4Props> = ({ onClose }) => {
+export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) => {
   const {
     currentTrack,
     isPlaying,
@@ -903,4 +903,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Screen4;
+export default NowPlayingScreen;

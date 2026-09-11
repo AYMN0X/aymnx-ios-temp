@@ -19,8 +19,8 @@ import { TrackActionsProvider } from './src/context/TrackActionsContext';
 import { ImportScreen } from './src/screens/ImportScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
-import { Screen1 } from './src/screens/Screen1';
-import { Screen2 } from './src/screens/Screen2';
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { HomeScreen } from './src/screens/HomeScreen';
 import { SearchScreen } from './src/screens/SearchScreen';
 import { getHasSeenOnboarding, setHasSeenOnboarding } from './src/services/storage';
 
@@ -56,7 +56,7 @@ function AppShell() {
         ]}
       >
         {activeTab === 'home' ? (
-          <Screen2
+          <HomeScreen
             key={tabKeys.home}
             onCreatePlaylist={() => setCreatePlaylistOpen(true)}
             onOpenAccount={() => setAccountOpen(true)}
@@ -113,7 +113,7 @@ function AuthGate() {
       ) : !onboardingSeen ? (
         <View style={styles.onboardingRoot}>
           <StatusBar style="light" />
-          <Screen1
+          <OnboardingScreen
             onContinue={() => {
               setOnboardingSeen(true);
               setHasSeenOnboarding(true).catch((error) =>

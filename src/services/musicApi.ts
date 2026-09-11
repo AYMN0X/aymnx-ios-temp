@@ -1,20 +1,6 @@
-export interface Track {
-  id: string;
-  title: string;
-  artist: string;
-  album: string;
-  artwork: string;
-  previewUrl: string;
-  streamUrl?: string;
-  streamMimeType?: string;
-  duration?: number;
-}
+import type { Track, StreamResult } from '../types/music';
 
-export interface StreamResult {
-  url: string;
-  mimeType: string;
-  provider?: 'jiosaavn' | 'soundcloud';
-}
+export type { Track, StreamResult };
 
 interface ITunesResult {
   results?: Array<{

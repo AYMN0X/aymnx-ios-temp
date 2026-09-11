@@ -19,7 +19,7 @@ import { useAuth } from "../context/AuthContext";
 import { searchITunes } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 import { Border, Color } from "../theme/GlobalStyles";
-import { Screen3 } from "./Screen3";
+import { PlaylistDetailScreen } from "./PlaylistDetailScreen";
 
 interface PlaylistView {
   title: string;
@@ -181,7 +181,7 @@ function PlaylistCard({
   );
 }
 
-export const Screen2: React.FC<{
+export const HomeScreen: React.FC<{
   onCreatePlaylist?: () => void;
   onOpenAccount?: () => void;
 }> = ({ onCreatePlaylist, onOpenAccount }) => {
@@ -289,7 +289,7 @@ export const Screen2: React.FC<{
 
   if (playlistView) {
     return (
-      <Screen3
+      <PlaylistDetailScreen
         title={playlistView.title}
         subtitle={playlistView.subtitle}
         tracks={playlistView.tracks}
@@ -300,7 +300,7 @@ export const Screen2: React.FC<{
   }
 
   if (libraryView) {
-    return <Screen3 playlistId={libraryView.id} onBack={() => setLibraryView(null)} />;
+    return <PlaylistDetailScreen playlistId={libraryView.id} onBack={() => setLibraryView(null)} />;
   }
 
   return (
@@ -605,4 +605,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Screen2;
+export default HomeScreen;

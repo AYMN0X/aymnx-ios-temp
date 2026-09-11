@@ -3,11 +3,11 @@ import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Color } from '../theme/GlobalStyles';
 
-interface Screen1Props {
+interface OnboardingScreenProps {
   onContinue?: () => void;
 }
 
-export const Screen1: React.FC<Screen1Props> = ({ onContinue }) => {
+export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onContinue }) => {
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.content} edges={['bottom']}>

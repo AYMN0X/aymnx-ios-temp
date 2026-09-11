@@ -1,5 +1,5 @@
 import { Modal, StyleSheet, View } from 'react-native';
-import { Screen4 } from '../../screens/Screen4';
+import { NowPlayingScreen } from '../../screens/NowPlayingScreen';
 
 interface NowPlayingModalProps {
   visible: boolean;
@@ -15,7 +15,7 @@ export function NowPlayingModal({ visible, onClose }: NowPlayingModalProps) {
       onRequestClose={onClose}
     >
       <View style={styles.background} />
-      <Screen4 onClose={onClose} />
+      <NowPlayingScreen onClose={onClose} />
     </Modal>
   );
 }

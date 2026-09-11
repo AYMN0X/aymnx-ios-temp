@@ -13,7 +13,6 @@ import {
 import { Activity } from 'lucide-react-native';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlayer } from '../context/PlayerContext';
-import { useTrackActions } from '../context/TrackActionsContext';
 import { checkLanServer, fetchLanTracks, downloadLanTracks } from '../services/lanLibrary';
 import { importSpotifyPlaylist } from '../services/spotifyImportService';
 import { LAN_STREAM_DEFAULT_HOST } from '../utils/streamCache';
@@ -34,7 +33,6 @@ interface ImportResult {
 export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
   const { createImportedPlaylist } = useLibrary();
   const { playTrack } = usePlayer();
-  const { showToast } = useTrackActions();
 
   const [link, setLink] = useState('');
   const [importing, setImporting] = useState(false);

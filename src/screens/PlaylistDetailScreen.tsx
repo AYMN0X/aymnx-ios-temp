@@ -22,7 +22,7 @@ import { useDownloads } from "../context/DownloadContext";
 import { useTrackActions } from "../context/TrackActionsContext";
 import type { Track } from "../services/musicApi";
 
-interface Screen3Props {
+interface PlaylistDetailScreenProps {
   title?: string;
   subtitle?: string;
   tracks?: Track[];
@@ -52,7 +52,7 @@ const PRESET_COVERS = [
   "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=400&q=80",
 ];
 
-export const Screen3: React.FC<Screen3Props> = ({
+export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   title,
   subtitle,
   tracks,
@@ -935,4 +935,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Screen3;
+export default PlaylistDetailScreen;
