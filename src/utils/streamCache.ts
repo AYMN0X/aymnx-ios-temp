@@ -27,7 +27,7 @@ export function isLocalUri(input: string): boolean {
   return /^(file|content|photoroom|android\.resource):/i.test(input.trim());
 }
 
-export function toHttpUrl(input: string): string | null {
+function toHttpUrl(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) {
     return null;
@@ -90,12 +90,11 @@ function cacheFilePath(url: string, mimeType?: string): string {
   ).uri;
 }
 
-export async function getCachedStream(input: string): Promise<string | null> {
-  const url = toHttpUrl(input);
-  if (!url) {
+export async function getCachedStream(httpUrl: string): Promise<string | null> {
+  if (!httpUrl || !/^https?:\/\//i.test(httpUrl)) {
     return null;
   }
-  const file = new File(cacheFilePath(url));
+  const file = new File(cacheFilePath(httpUrl));
   try {
     return file.exists ? file.uri : null;
   } catch (error) {
@@ -104,10 +103,9 @@ export async function getCachedStream(input: string): Promise<string | null> {
   }
 }
 
-export async function cacheStream(input: string, mimeType?: string): Promise<string> {
-  const url = toHttpUrl(input);
-  if (!url) {
-    throw new Error(`[stream-cache] Not a fetchable network stream: ${input}`);
+export async function cacheStream(httpUrl: string, mimeType?: string): Promise<string> {
+  if (!httpUrl || !/^https?:\/\//i.test(httpUrl)) {
+    throw new Error(`[stream-cache] Not a fetchable URL: ${httpUrl}`);
   }
   const directory = cacheDirectory();
   try {
@@ -115,12 +113,18 @@ export async function cacheStream(input: string, mimeType?: string): Promise<str
   } catch (error) {
     console.warn('[stream-cache] Could not create cache directory.', error);
   }
-  const destination = new File(directory, `${hashString(url)}${extensionFor(url, mimeType)}`);
+  const destination = new File(directory, `${hashString(httpUrl)}${extensionFor(httpUrl, mimeType)}`);
   if (destination.exists) {
     return destination.uri;
   }
-  const downloaded = await File.downloadFileAsync(url, destination);
-  return downloaded.uri;
+  const downloaded = await File.downloadFileAsync(httpUrl, destination);
+  if (downloaded) {
+    return downloaded.uri;
+  }
+  if (destination.exists) {
+    return destination.uri;
+  }
+  throw new Error(`[stream-cache] Download returned no file: ${httpUrl}`);
 }
 
 export async function resolveStreamForPlayback(
@@ -134,12 +138,15 @@ export async function resolveStreamForPlayback(
   if (isLocalUri(trimmed)) {
     return { uri: trimmed, kind: 'local' };
   }
-  const url = toHttpUrl(trimmed);
-  if (!url) {
+  if (/^https?:\/\//i.test(trimmed)) {
+    return { uri: trimmed, kind: 'network' };
+  }
+  const httpUrl = toHttpUrl(trimmed);
+  if (!httpUrl) {
     return { uri: trimmed, kind: 'network' };
   }
   try {
-    const cached = await getCachedStream(url);
+    const cached = await getCachedStream(httpUrl);
     if (cached) {
       return { uri: cached, kind: 'cached' };
     }
@@ -147,11 +154,11 @@ export async function resolveStreamForPlayback(
     console.warn('[stream-cache] Cache lookup failed.', error);
   }
   try {
-    const uri = await cacheStream(url, mimeType);
+    const uri = await cacheStream(httpUrl, mimeType);
     return { uri, kind: 'cached' };
   } catch (error) {
     console.warn('[stream-cache] Download failed, streaming directly.', error);
-    return { uri: url, kind: 'network' };
+    return { uri: httpUrl, kind: 'network' };
   }
 }
 
