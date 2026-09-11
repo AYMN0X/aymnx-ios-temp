@@ -34,6 +34,24 @@ patchFile('EXAV.h', (src) => {
   return src;
 });
 
+// 4. EXAV.m / EXAVTV.m – replace EXEventEmitterService.h with umbrella header
+const legacyServiceHeaders = [
+  'EXEventEmitterService.h',
+  'EXAppLifecycleService.h',
+  'EXPermissionsInterface.h',
+];
+['EXAV.m', 'EXAVTV.m'].forEach((file) => {
+  patchFile(file, (src) => {
+    legacyServiceHeaders.forEach((hdr) => {
+      src = src.replace(
+        `#import <ExpoModulesCore/${hdr}>`,
+        '#import <ExpoModulesCore/ExpoModulesCore.h>'
+      );
+    });
+    return src;
+  });
+});
+
 // 2. Video/EXVideoView.h – replace import and add protocol definition
 patchFile(path.join('Video', 'EXVideoView.h'), (src) => {
   src = src.replace(
@@ -84,3 +102,23 @@ writeStub(
   `// Copyright 2015-present 650 Industries. All rights reserved.
 `
 );
+
+// 5. EXAudioRecordingPermissionRequester.m – add compat macros for EXErrorWithMessage/EXFatal
+patchFile('EXAudioRecordingPermissionRequester.m', (src) => {
+  const macros = `
+#ifndef EXErrorWithMessage
+#define EXErrorWithMessage(msg) [NSError errorWithDomain:@"EXAV" code:0 userInfo:@{NSLocalizedDescriptionKey: msg}]
+#endif
+#ifndef EXFatal
+#define EXFatal(error) NSLog(@"Fatal: %@", error)
+#endif
+`;
+  if (src.includes('#ifndef EXErrorWithMessage')) {
+    return src;
+  }
+  const marker = '#import <objc/message.h>';
+  if (!src.includes(marker)) {
+    throw new Error('[patch-expo-av] Could not find marker in EXAudioRecordingPermissionRequester.m.');
+  }
+  return src.replace(marker, `${marker}\n${macros}`);
+});
