@@ -9,6 +9,7 @@ import {
   Dimensions,
   Easing,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   PanResponder,
@@ -30,7 +31,6 @@ import { COLORS } from '../../theme/appTheme';
 
 const SPOTIFY_GREEN = '#1ED760';
 const SCREEN_HEIGHT = Dimensions.get('window').height;
-const KEYBOARD_VERTICAL_OFFSET = 0;
 const DRAG_CLOSE_THRESHOLD = SCREEN_HEIGHT * 0.22;
 
 type SettingsTab = 'profile' | 'apps';
@@ -244,6 +244,7 @@ export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
   };
 
   const handleImport = async () => {
+    Keyboard.dismiss();
     const url = playlistLink.trim();
     if (!url || importing) {
       return;
@@ -343,7 +344,7 @@ export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
 
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={KEYBOARD_VERTICAL_OFFSET}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
           style={styles.keyboardWrap}
         >
           <Animated.View
@@ -403,7 +404,7 @@ export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
 
           <ScrollView
             style={styles.content}
-            contentContainerStyle={[styles.contentInner, { paddingBottom: 40 }]}
+            contentContainerStyle={[styles.contentInner, { paddingBottom: 48 }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
@@ -478,8 +479,8 @@ export function SettingsSheet({ visible, onClose }: SettingsSheetProps) {
                       placeholderTextColor={COLORS.textSecondary}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      returnKeyType="go"
-                      onSubmitEditing={handleImport}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
                       editable={!importing}
                       selectionColor={COLORS.accent}
                     />
