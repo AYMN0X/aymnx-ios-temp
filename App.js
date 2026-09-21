@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
+import { requireOptionalNativeModule } from 'expo';
 import { bootLog } from './src/services/bootLog';
 import {
   SafeAreaProvider,
@@ -149,6 +150,12 @@ export default function App() {
   useEffect(() => {
     bootLog('App mounted');
     Image.clearMemoryCache().catch(() => undefined);
+    const devMenuPrefs = requireOptionalNativeModule('DevMenuPreferences');
+    if (devMenuPrefs?.setPreferencesAsync) {
+      devMenuPrefs
+        .setPreferencesAsync({ showFloatingActionButton: false })
+        .catch(() => {});
+    }
   }, []);
 
   return (

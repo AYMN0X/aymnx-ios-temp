@@ -4,6 +4,7 @@ import { Pause, Play } from 'lucide-react-native';
 import { memo, useCallback, useEffect } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM_GAP } from './layout/TabBar';
 import { usePlayer, useProgress } from '../context/PlayerContext';
@@ -18,6 +19,10 @@ const DOCK_HORIZONTAL_MARGIN = 12;
 const DOCK_BOTTOM_GAP = 8;
 const ARTWORK_SIZE = 40;
 const BUTTON_SIZE = 40;
+const RING_STROKE = 3;
+const RING_RADIUS = (BUTTON_SIZE - RING_STROKE) / 2;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const RING_CENTER = BUTTON_SIZE / 2;
 
 const DockProgressBar: React.FC = memo(function DockProgressBar() {
   const { positionMs, durationMs } = useProgress();
@@ -32,6 +37,8 @@ const DockProgressBar: React.FC = memo(function DockProgressBar() {
 export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
   const insets = useSafeAreaInsets();
   const { currentTrack, isPlaying, togglePlayPause } = usePlayer();
+  const { positionMs, durationMs } = useProgress();
+  const progress = durationMs > 0 ? Math.min(Math.max(positionMs / durationMs, 0), 1) : 0;
 
   const hasTrack = Boolean(currentTrack);
 
@@ -117,19 +124,43 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
           </Pressable>
 
           <View style={styles.controls}>
-            <Pressable
-              onPress={handlePlayPause}
-              hitSlop={12}
-              style={({ pressed }) => [styles.playButton, pressed && styles.playPressed]}
-              accessibilityRole="button"
-              accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? (
-                <Pause size={20} color={COLORS.white} fill={COLORS.white} />
-              ) : (
-                <Play size={20} color={COLORS.white} fill={COLORS.white} style={styles.playIcon} />
-              )}
-            </Pressable>
+            <View style={styles.playWrap}>
+              <Svg width={BUTTON_SIZE} height={BUTTON_SIZE} style={styles.playRing}>
+                <Circle
+                  cx={RING_CENTER}
+                  cy={RING_CENTER}
+                  r={RING_RADIUS}
+                  stroke="rgba(255, 255, 255, 0.12)"
+                  strokeWidth={RING_STROKE}
+                  fill="none"
+                />
+                <Circle
+                  cx={RING_CENTER}
+                  cy={RING_CENTER}
+                  r={RING_RADIUS}
+                  stroke={COLORS.green}
+                  strokeWidth={RING_STROKE}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_CIRCUMFERENCE}
+                  strokeDashoffset={RING_CIRCUMFERENCE * (1 - progress)}
+                  transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
+                />
+              </Svg>
+              <Pressable
+                onPress={handlePlayPause}
+                hitSlop={12}
+                style={({ pressed }) => [styles.playButton, pressed && styles.playPressed]}
+                accessibilityRole="button"
+                accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? (
+                  <Pause size={20} color={COLORS.white} fill={COLORS.white} />
+                ) : (
+                  <Play size={20} color={COLORS.white} fill={COLORS.white} style={styles.playIcon} />
+                )}
+              </Pressable>
+            </View>
           </View>
         </View>
         <DockProgressBar />
@@ -202,6 +233,15 @@ const styles = StyleSheet.create({
   },
   controls: {
     paddingLeft: 6,
+  },
+  playWrap: {
+    width: BUTTON_SIZE,
+    height: BUTTON_SIZE,
+  },
+  playRing: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   playButton: {
     width: BUTTON_SIZE,

@@ -8,6 +8,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -15,8 +16,9 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 import { Color, Border } from "../theme/GlobalStyles";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../context/AuthContext";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
 import { useDownloads } from "../context/DownloadContext";
@@ -34,17 +36,6 @@ interface PlaylistDetailScreenProps {
   onBack: () => void;
 }
 
-const FALLBACK_COLORS = [
-  "#6A1B9A",
-  "#311B92",
-  "#E13300",
-  "#2B4B7A",
-  "#0E7C7B",
-  "#8D67AB",
-  "#503750",
-  "#D84000",
-];
-
 const PRESET_COVERS = [
   "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&q=80",
   "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80",
@@ -55,7 +46,6 @@ const PRESET_COVERS = [
 
 export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   title,
-  subtitle,
   tracks,
   coverColor,
   coverImage,
@@ -63,13 +53,12 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   playlistId,
   onBack,
 }) => {
-  const insets = useSafeAreaInsets();
-  const { playTrack, currentTrack, isPlaying } = usePlayer();
+  const { user } = useAuth();
+  const { playTrack, currentTrack } = usePlayer();
   const { openTrack } = useTrackActions();
   const {
     likedSongs,
     likedMeta,
-    isLiked,
     toggleLike,
     playlists,
     removePlaylist,
@@ -79,7 +68,8 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
     reorderLikedSongs,
     updateLikedMeta,
   } = useLibrary();
-  const { downloadedIds, isDownloaded, isBatchDownloading, batchProgress, downloadAll } = useDownloads();
+  const { downloadedIds, isDownloaded, isBatchDownloading, batchProgress, downloadAll, deleteDownload } =
+    useDownloads();
 
   const livePlaylist = playlistId ? playlists.find((playlist) => playlist.id === playlistId) : undefined;
 
@@ -88,32 +78,26 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
     : livePlaylist
     ? livePlaylist.tracks
     : (tracks ?? []);
-  const displayTitle = isLikedPlaylist
-    ? likedMeta.name || "Liked Songs"
-    : livePlaylist?.name ?? title ?? "Playlist";
-  const displaySubtitle =
-    subtitle || `${displayTracks.length} ${displayTracks.length === 1 ? "song" : "songs"}`;
+  const rawTitle = isLikedPlaylist
+    ? likedMeta.name
+    : livePlaylist?.name ?? title;
+  const displayTitle =
+    rawTitle && rawTitle.trim().length > 0
+      ? rawTitle
+      : isLikedPlaylist
+      ? "Liked Songs"
+      : "Playlist";
+
+  const titleWords = displayTitle.trim().split(/\s+/).filter(Boolean);
+  const titleFirst = titleWords[0] ?? displayTitle;
+  const titleRest = titleWords.slice(1).join(" ");
+
   const coverBackground = isLikedPlaylist ? Color.accent : (coverColor ?? Color.accent);
   const effectiveCover = isLikedPlaylist
     ? likedMeta.coverUrl
     : livePlaylist?.coverUrl ?? coverImage;
 
-  const artworkFor = (track: Track) =>
-    (track as Track & { albumArt?: string }).albumArt || track.artwork;
-
-  const handlePlayAll = () => {
-    if (displayTracks.length > 0) {
-      playTrack(displayTracks[0], displayTracks);
-    }
-  };
-
-  const likedPlaylist = isLikedPlaylist || displayTracks.every((track) => isLiked(track.id));
-  const toggleLikeCurrent = async () => {
-    if (displayTracks.length === 0) {
-      return;
-    }
-    await toggleLike(displayTracks[0]);
-  };
+  const avatarLetter = (user?.name || user?.username || "U").charAt(0).toUpperCase();
 
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [sheetView, setSheetView] = React.useState<"options" | "details">("options");
@@ -133,6 +117,25 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
       return;
     }
     downloadAll(pendingForDownload);
+  };
+
+  const handleDownloadToggle = async (enabled: boolean) => {
+    if (isBatchDownloading) {
+      return;
+    }
+    if (enabled) {
+      if (pendingForDownload.length > 0) {
+        await downloadAll(pendingForDownload);
+      }
+      return;
+    }
+    const downloaded = displayTracks.filter((track) => isDownloaded(track.id));
+    await Promise.all(downloaded.map((track) => deleteDownload(track.id)));
+  };
+
+  const openOptionsSheet = () => {
+    setSheetView("options");
+    setSheetOpen(true);
   };
 
   const openDetails = () => {
@@ -230,12 +233,16 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={["#0d221c", "#0f1413", "#0e1111"]}
+      locations={[0, 0.35, 1]}
+      style={styles.container}
+    >
       <StatusBar barStyle="light-content" />
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 146 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 150 }]}
         showsVerticalScrollIndicator={false}
       >
         <SafeAreaView style={styles.safeTop}>
@@ -251,56 +258,49 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
               >
                 <Text style={styles.doneButtonText}>Done</Text>
               </TouchableOpacity>
-            ) : null}
+            ) : (
+              <View style={styles.topNavRight}>
+                {livePlaylist ? (
+                  <TouchableOpacity
+                    onPress={openOptionsSheet}
+                    style={styles.topNavButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
+                  </TouchableOpacity>
+                ) : null}
+                <View style={styles.avatar}>
+                  {user?.avatarUrl ? (
+                    <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} resizeMode="cover" />
+                  ) : (
+                    <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+                  )}
+                </View>
+              </View>
+            )}
           </View>
         </SafeAreaView>
 
-        {effectiveCover && effectiveCover.length > 0 ? (
-          <Image source={{ uri: effectiveCover }} style={styles.artworkCard} />
-        ) : (
-          <View style={[styles.artworkCard, { backgroundColor: coverBackground }]} />
-        )}
-
-        <View style={styles.metaBlock}>
-          <Text style={styles.playlistTitle}>{displayTitle}</Text>
-          <Text style={styles.playlistSubtitle}>{displaySubtitle}</Text>
-
-          <View style={styles.actionRow}>
-            <View style={styles.actionLeft}>
-              <TouchableOpacity onPress={toggleLikeCurrent} hitSlop={8} style={styles.iconButton}>
-                <Ionicons
-                  name={likedPlaylist ? "heart" : "heart-outline"}
-                  size={24}
-                  color={likedPlaylist ? Color.accent : Color.textPrimary}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleDownload} hitSlop={8} style={styles.iconButton} disabled={isDownloading || allDownloaded}>
-                <Ionicons
-                  name={allDownloaded ? "checkmark-circle" : "download-outline"}
-                  size={22}
-                  color={isDownloading || allDownloaded ? Color.accent : Color.textPrimary}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  setSheetView("options");
-                  setSheetOpen(true);
-                }}
-                hitSlop={8}
-                style={styles.iconButton}
-              >
-                <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.actionRight}>
-              <TouchableOpacity onPress={handlePlayAll} hitSlop={8} style={styles.iconButton}>
-                <Ionicons name="shuffle" size={24} color={Color.textPrimary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handlePlayAll} style={styles.playButton} activeOpacity={0.8}>
-                <Ionicons name={isPlaying ? "pause" : "play"} size={28} color="#FFFFFF" style={{ marginLeft: isPlaying ? 0 : 2 }} />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.titleBlock}>
+          <Text style={styles.sectionLabel}>{`${displayTracks.length} SONGS`}</Text>
+          <View style={styles.titleRow}>
+            <Text style={[styles.playlistTitle, styles.playlistTitleWhite]}>
+              {titleFirst}
+              {titleRest ? " " : ""}
+            </Text>
+            {titleRest ? <Text style={[styles.playlistTitle, styles.playlistTitleAccent]}>{titleRest}</Text> : null}
           </View>
+        </View>
+
+        <View style={styles.downloadRow}>
+          <Text style={styles.downloadLabel}>DOWNLOAD</Text>
+          <Switch
+            value={allDownloaded}
+            disabled={isDownloading}
+            onValueChange={handleDownloadToggle}
+            thumbColor="#ffffff"
+            trackColor={{ false: "#262b2b", true: "#75aa78" }}
+          />
         </View>
 
         <View style={styles.trackList}>
@@ -308,7 +308,6 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
             <Text style={styles.emptyText}>No songs yet</Text>
           ) : (
             displayTracks.map((track, index) => {
-              const artwork = artworkFor(track);
               const isCurrent = !isEditing && currentTrack?.id === track.id;
               return (
                 <View key={track.id} style={[styles.trackRow, isCurrent && styles.trackRowActive]}>
@@ -318,11 +317,9 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                     disabled={isEditing}
                     activeOpacity={0.7}
                   >
-                    {artwork ? (
-                      <Image source={{ uri: artwork }} style={styles.trackArtwork} />
-                    ) : (
-                      <View style={[styles.trackArtwork, { backgroundColor: FALLBACK_COLORS[index % FALLBACK_COLORS.length] }]} />
-                    )}
+                    {isCurrent ? (
+                      <Ionicons name="volume-high" size={18} color="#FFFFFF" style={styles.speakerIcon} />
+                    ) : null}
                     <View style={styles.trackDetails}>
                       <Text
                         style={[styles.trackTitle, isCurrent && styles.trackTitleCurrent]}
@@ -330,31 +327,15 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                       >
                         {track.title}
                       </Text>
-                      <View style={styles.trackMetaRow}>
-                      <View
-                        style={[
-                          styles.downloadBadge,
-                          isDownloaded(track.id)
-                            ? styles.downloadBadgeActive
-                            : styles.downloadBadgeMuted,
-                        ]}
-                      >
-                        <Ionicons
-                          name="arrow-down"
-                          size={9}
-                          color={isDownloaded(track.id) ? "#FFFFFF" : "#888888"}
-                        />
-                      </View>
                       <Text
-                        style={[styles.trackArtist, styles.trackArtistMeta, isCurrent && styles.trackArtistCurrent]}
+                        style={[styles.trackArtist, isCurrent && styles.trackArtistCurrent]}
                         numberOfLines={1}
                       >
                         {track.artist}
                         {track.album ? ` • ${track.album}` : ""}
                       </Text>
                     </View>
-                  </View>
-                </TouchableOpacity>
+                  </TouchableOpacity>
                   {isEditing ? (
                     <View style={styles.editControls}>
                       <TouchableOpacity
@@ -380,12 +361,16 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                         />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => removeTrack(track)} hitSlop={6}>
-                          <Ionicons name="trash-outline" size={20} color="#E05A47" />
-                        </TouchableOpacity>
+                        <Ionicons name="trash-outline" size={20} color="#E05A47" />
+                      </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity onPress={() => openTrack(track, playlistId)} hitSlop={10} style={styles.likeButton}>
-                      <Ionicons name="ellipsis-horizontal" size={20} color={Color.textSecondary} />
+                    <TouchableOpacity onPress={() => openTrack(track, playlistId)} hitSlop={10} style={styles.moreButton}>
+                      <Ionicons
+                        name="ellipsis-horizontal"
+                        size={20}
+                        color={isCurrent ? "#a0aba4" : "#6c7770"}
+                      />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -409,76 +394,76 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
             {sheetView === "options" ? (
               <>
                 <View style={styles.sheetHeader}>
-              {effectiveCover && effectiveCover.length > 0 ? (
-                <Image source={{ uri: effectiveCover }} style={styles.sheetArtwork} />
-              ) : (
-                <View style={[styles.sheetArtwork, { backgroundColor: coverBackground }]} />
-              )}
-              <View style={styles.sheetHeaderText}>
-                <Text style={styles.sheetTitle} numberOfLines={1}>
-                  {displayTitle}
-                </Text>
-                <Text style={styles.sheetSubtitle}>{isLikedPlaylist ? displayTitle : "Public playlist"}</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.sheetAction, (isDownloading || allDownloaded) && styles.sheetActionDisabled]}
-              onPress={handleDownload}
-              disabled={isDownloading || allDownloaded}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={allDownloaded ? "checkmark-circle" : isDownloading ? "refresh" : "download-outline"}
-                size={22}
-                color={allDownloaded ? Color.accent : Color.textPrimary}
-              />
-              <View style={styles.sheetActionBody}>
-                <Text style={styles.sheetActionLabel}>
-                  {isDownloading
-                    ? `Downloading ${batchProgress.downloaded}/${batchProgress.total}...`
-                    : allDownloaded
-                    ? "Downloaded"
-                    : pendingForDownload.length === displayTracks.length
-                    ? "Download"
-                    : `Download ${pendingForDownload.length} remaining`}
-                </Text>
-                {isDownloading ? (
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { flex: batchProgress.downloaded }]} />
-                    <View style={{ flex: Math.max(batchProgress.total - batchProgress.downloaded, 0) }} />
+                  {effectiveCover && effectiveCover.length > 0 ? (
+                    <Image source={{ uri: effectiveCover }} style={styles.sheetArtwork} />
+                  ) : (
+                    <View style={[styles.sheetArtwork, { backgroundColor: coverBackground }]} />
+                  )}
+                  <View style={styles.sheetHeaderText}>
+                    <Text style={styles.sheetTitle} numberOfLines={1}>
+                      {displayTitle}
+                    </Text>
+                    <Text style={styles.sheetSubtitle}>{isLikedPlaylist ? displayTitle : "Public playlist"}</Text>
                   </View>
-                ) : null}
-              </View>
-            </TouchableOpacity>
+                </View>
 
-            {canEdit ? (
-              <>
                 <TouchableOpacity
-                  style={styles.sheetAction}
-                  onPress={() => {
-                    setSheetOpen(false);
-                    setSheetView("options");
-                    setIsEditing(true);
-                  }}
+                  style={[styles.sheetAction, (isDownloading || allDownloaded) && styles.sheetActionDisabled]}
+                  onPress={handleDownload}
+                  disabled={isDownloading || allDownloaded}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="list-outline" size={22} color={Color.textPrimary} />
-                  <Text style={styles.sheetActionLabel}>Edit playlist</Text>
+                  <Ionicons
+                    name={allDownloaded ? "checkmark-circle" : isDownloading ? "refresh" : "download-outline"}
+                    size={22}
+                    color={allDownloaded ? Color.accent : Color.textPrimary}
+                  />
+                  <View style={styles.sheetActionBody}>
+                    <Text style={styles.sheetActionLabel}>
+                      {isDownloading
+                        ? `Downloading ${batchProgress.downloaded}/${batchProgress.total}...`
+                        : allDownloaded
+                        ? "Downloaded"
+                        : pendingForDownload.length === displayTracks.length
+                        ? "Download"
+                        : `Download ${pendingForDownload.length} remaining`}
+                    </Text>
+                    {isDownloading ? (
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { flex: batchProgress.downloaded }]} />
+                        <View style={{ flex: Math.max(batchProgress.total - batchProgress.downloaded, 0) }} />
+                      </View>
+                    ) : null}
+                  </View>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.sheetAction} onPress={openDetails} activeOpacity={0.7}>
-                  <Ionicons name="information-circle-outline" size={22} color={Color.textPrimary} />
-                  <Text style={styles.sheetActionLabel}>Name & details</Text>
-                </TouchableOpacity>
-              </>
-            ) : null}
 
-            {!!livePlaylist ? (
-              <TouchableOpacity style={styles.sheetAction} onPress={handleDeletePlaylist} activeOpacity={0.7}>
-                <Ionicons name="trash-outline" size={22} color="#E05A47" />
-                <Text style={[styles.sheetActionLabel, styles.sheetActionLabelDelete]}>Delete playlist</Text>
-              </TouchableOpacity>
-            ) : null}
+                {canEdit ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.sheetAction}
+                      onPress={() => {
+                        setSheetOpen(false);
+                        setSheetView("options");
+                        setIsEditing(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="list-outline" size={22} color={Color.textPrimary} />
+                      <Text style={styles.sheetActionLabel}>Edit playlist</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.sheetAction} onPress={openDetails} activeOpacity={0.7}>
+                      <Ionicons name="information-circle-outline" size={22} color={Color.textPrimary} />
+                      <Text style={styles.sheetActionLabel}>Name & details</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+
+                {!!livePlaylist ? (
+                  <TouchableOpacity style={styles.sheetAction} onPress={handleDeletePlaylist} activeOpacity={0.7}>
+                    <Ionicons name="trash-outline" size={22} color="#E05A47" />
+                    <Text style={[styles.sheetActionLabel, styles.sheetActionLabelDelete]}>Delete playlist</Text>
+                  </TouchableOpacity>
+                ) : null}
               </>
             ) : (
               <>
@@ -567,7 +552,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
           </View>
         </View>
       </Modal>
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -583,15 +568,47 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 8,
+  },
+  topNavRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  topNavButton: {
+    width: 32,
+    height: 32,
+    justifyContent: "center",
+    alignItems: "center",
   },
   iconButton: {
     width: 36,
     height: 36,
     justifyContent: "center",
     alignItems: "center",
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Color.surface,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  avatarLetter: {
+    color: Color.textPrimary,
+    fontSize: 13,
+    fontWeight: "700",
   },
   doneButtonText: {
     fontSize: 16,
@@ -604,20 +621,44 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 14,
   },
-  artworkCard: {
-    width: 220,
-    height: 220,
-    alignSelf: "center",
-    marginTop: 24,
-    borderRadius: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 10,
+  titleBlock: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
-  metaBlock: {
-    marginTop: 20,
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.5,
+    color: "#828B84",
+    textTransform: "uppercase",
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    marginTop: 6,
+  },
+  playlistTitle: {
+    fontSize: 30,
+    fontWeight: "700",
+  },
+  playlistTitleWhite: {
+    color: "#FFFFFF",
+  },
+  playlistTitleAccent: {
+    color: "#75AA78",
+  },
+  downloadRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginVertical: 16,
+  },
+  downloadLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+    color: "#828B84",
   },
   scrollView: {
     flex: 1,
@@ -625,50 +666,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     backgroundColor: Color.background,
-    paddingHorizontal: 16,
     paddingTop: 12,
-    gap: 20,
     minHeight: "100%",
   },
-  playlistTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: Color.textPrimary,
-    marginTop: 20,
-    paddingHorizontal: 0,
-  },
-  playlistSubtitle: {
-    fontSize: 13,
-    color: Color.textSecondary,
-    fontWeight: "500",
-    marginTop: 6,
-  },
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 16,
-  },
-  actionLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  actionRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  playButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Color.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   trackList: {
-    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+    gap: 4,
   },
   emptyText: {
     fontSize: 14,
@@ -679,74 +683,47 @@ const styles = StyleSheet.create({
   trackRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Color.surface,
-    borderRadius: 12,
-    marginBottom: 8,
-    padding: 10,
-    paddingHorizontal: 12,
-    gap: 12,
+    paddingVertical: 10,
   },
   trackRowMain: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+  },
+  trackRowActive: {
+    backgroundColor: "rgba(28, 32, 32, 0.9)",
+    borderRadius: 14,
+    padding: 12,
+  },
+  speakerIcon: {
+    marginRight: 12,
   },
   editControls: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  trackRowActive: {
-    opacity: 0.9,
-  },
-  trackArtwork: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-  },
   trackDetails: {
     flex: 1,
-    gap: 3,
   },
   trackTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
-    color: Color.textPrimary,
+    color: "#F0F3F1",
   },
   trackTitleCurrent: {
-    color: Color.accent,
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
   trackArtist: {
-    fontSize: 13,
-    color: Color.textSecondary,
-  },
-  trackArtistMeta: {
-    flexShrink: 1,
-  },
-  trackMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  downloadBadge: {
-    width: 13,
-    height: 13,
-    borderRadius: 6.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  downloadBadgeActive: {
-    backgroundColor: Color.accent,
-  },
-  downloadBadgeMuted: {
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    fontSize: 12,
+    color: "#828B84",
+    marginTop: 3,
   },
   trackArtistCurrent: {
-    color: Color.accent,
+    color: "#828B84",
   },
-  likeButton: {
+  moreButton: {
     padding: 6,
   },
   sheetOverlay: {

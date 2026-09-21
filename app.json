@@ -41,7 +41,12 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-dev-client",
+      [
+        "expo-dev-client",
+        {
+          "toolsButton": false
+        }
+      ],
       "expo-image",
       "expo-image-picker",
       [

@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Color } from '../../theme/GlobalStyles';
 import { usePlayer, useProgress } from '../../context/PlayerContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -28,6 +27,46 @@ export const formatTime = (millis: number): string => {
   return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 };
 
+const BAR_WIDTH = 3;
+const BAR_GAP = 2;
+const MIN_BARS = 32;
+const MAX_BARS = 60;
+const DEFAULT_BARS = 48;
+const BAR_MIN_HEIGHT = 8;
+const BAR_MAX_HEIGHT = 28;
+
+const buildBarHeights = (seedKey: string, count: number): number[] => {
+  let seed = 2166136261;
+  for (let i = 0; i < seedKey.length; i += 1) {
+    seed ^= seedKey.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  const rand = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  const sample = () =>
+    BAR_MIN_HEIGHT + Math.round(rand() * (BAR_MAX_HEIGHT - BAR_MIN_HEIGHT));
+
+  const half = Math.floor(count / 2);
+  const left: number[] = [];
+  for (let i = 0; i < half; i += 1) {
+    left.push(sample());
+  }
+
+  const heights: number[] = [];
+  for (let i = 0; i < half; i += 1) {
+    heights.push(left[i]);
+  }
+  if (count % 2 === 1) {
+    heights.push(sample());
+  }
+  for (let i = half - 1; i >= 0; i -= 1) {
+    heights.push(left[i]);
+  }
+  return heights;
+};
+
 const scrubHaptic = () => {
   if (Platform.OS !== 'web') {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -36,11 +75,18 @@ const scrubHaptic = () => {
 
 const NowPlayingScrubber: React.FC = () => {
   const { positionMs, durationMs } = useProgress();
-  const { seekTo } = usePlayer();
+  const { seekTo, currentTrack } = usePlayer();
+
+  const [barCount, setBarCount] = React.useState(DEFAULT_BARS);
+
+  const barHeights = React.useMemo(
+    () => buildBarHeights(currentTrack?.id ?? 'default', barCount),
+    [currentTrack?.id, barCount]
+  );
 
   const [isScrubbing, setIsScrubbing] = React.useState(false);
   const [scrubRatio, setScrubRatio] = React.useState(0);
-  const barWidthRef = React.useRef(0);
+  const waveWidthRef = React.useRef(0);
   const scrubRatioRef = React.useRef(0);
   const scrubbingRef = React.useRef(false);
   const durationRef = React.useRef(durationMs);
@@ -53,11 +99,8 @@ const NowPlayingScrubber: React.FC = () => {
     : progressRatio;
   const shownPositionMs = isScrubbing ? scrubRatio * (durationMs || 0) : positionMs;
 
-  const remainingMs =
-    durationMs > 0 ? Math.max(0, durationMs - shownPositionMs) : Number.POSITIVE_INFINITY;
-
   const ratioFromTouch = (e: GestureResponderEvent): number => {
-    const width = barWidthRef.current > 0 ? barWidthRef.current : SCREEN_WIDTH * 0.86;
+    const width = waveWidthRef.current > 0 ? waveWidthRef.current : SCREEN_WIDTH * 0.6;
     return Math.max(0, Math.min(1, e.nativeEvent.locationX / width));
   };
 
@@ -98,26 +141,44 @@ const NowPlayingScrubber: React.FC = () => {
     })
   ).current;
 
+  const handleWaveLayout = (e: LayoutChangeEvent) => {
+    const { width } = e.nativeEvent.layout;
+    waveWidthRef.current = width;
+    const count = Math.max(
+      MIN_BARS,
+      Math.min(MAX_BARS, Math.floor((width + BAR_GAP) / (BAR_WIDTH + BAR_GAP)))
+    );
+    setBarCount((prev) => (prev === count ? prev : count));
+  };
+
   return (
     <View style={styles.progressContainer}>
+      <Text style={styles.timeText}>{formatTime(shownPositionMs)}</Text>
+
       <View
-        style={styles.progressTouchArea}
-        hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+        style={styles.waveform}
+        hitSlop={{ top: 12, bottom: 12 }}
+        onLayout={handleWaveLayout}
         {...scrubPanResponder.panHandlers}
-        onLayout={(e: LayoutChangeEvent) => {
-          barWidthRef.current = e.nativeEvent.layout.width;
-        }}
       >
-        <View style={styles.progressBarTrack}>
-          <View style={[styles.progressBarFill, { width: `${showProgressRatio * 100}%` }]} />
+        <View style={styles.barsRow}>
+          {barHeights.map((height, index) => {
+            const active = index / barHeights.length <= showProgressRatio;
+            return (
+              <View
+                key={index}
+                style={[
+                  styles.bar,
+                  { height },
+                  active ? styles.barActive : styles.barInactive,
+                ]}
+              />
+            );
+          })}
         </View>
       </View>
-      <View style={styles.timeRow}>
-        <Text style={styles.timeText}>{formatTime(shownPositionMs)}</Text>
-        <Text style={styles.timeText}>
-          {Number.isFinite(remainingMs) ? `-${formatTime(remainingMs)}` : formatTime(durationMs)}
-        </Text>
-      </View>
+
+      <Text style={[styles.timeText, styles.timeTextRight]}>{formatTime(durationMs)}</Text>
     </View>
   );
 };
@@ -127,35 +188,42 @@ export default React.memo(NowPlayingScrubber);
 const styles = StyleSheet.create({
   progressContainer: {
     width: '100%',
-    alignSelf: 'center',
-    paddingHorizontal: 28,
-    marginVertical: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginTop: 16,
   },
-  progressTouchArea: {
-    width: '100%',
+  waveform: {
+    flex: 1,
+    marginHorizontal: 12,
     height: 44,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  progressBarTrack: {
-    width: '100%',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: Color.accent,
-    borderRadius: 3,
-  },
-  timeRow: {
+  barsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 7,
+    alignSelf: 'stretch',
+  },
+  bar: {
+    width: BAR_WIDTH,
+    borderRadius: BAR_WIDTH / 2,
+  },
+  barActive: {
+    backgroundColor: '#75AA78',
+  },
+  barInactive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   timeText: {
-    fontSize: 12,
-    color: Color.textSecondary,
+    fontSize: 11,
+    color: '#6C7770',
+    minWidth: 34,
     fontVariant: ['tabular-nums'],
+  },
+  timeTextRight: {
+    textAlign: 'right',
   },
 });
