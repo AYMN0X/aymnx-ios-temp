@@ -4,11 +4,12 @@
     "slug": "aymnx",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "aymnx",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0B0C0E",
+    "backgroundColor": "#111216",
     "splash": {
-      "backgroundColor": "#0B0C0E",
+      "backgroundColor": "#111216",
       "image": "./assets/icon.png"
     },
     "ios": {
@@ -18,7 +19,6 @@
       "icon": "./assets/icon.png",
       "infoPlist": {
         "UIBackgroundModes": [
-          "audio",
           "audio"
         ],
         "CFBundleDisplayName": "AYMNX",
@@ -31,7 +31,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0B0C0E",
+        "backgroundColor": "#111216",
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -41,14 +41,17 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-dev-client",
       "expo-image",
+      "expo-image-picker",
       [
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.440854060458-3mhav004vt2eb359j9671c6pb25aurcv"
         }
       ],
-      "./plugins/withYogaHeaderSearchPaths"
+      "./plugins/withYogaHeaderSearchPaths",
+      "expo-audio"
     ],
     "extra": {
       "eas": {

@@ -16,6 +16,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Color, Border } from "../theme/GlobalStyles";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
 import { useDownloads } from "../context/DownloadContext";
@@ -62,6 +63,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   playlistId,
   onBack,
 }) => {
+  const insets = useSafeAreaInsets();
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const { openTrack } = useTrackActions();
   const {
@@ -233,7 +235,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 146 }]}
         showsVerticalScrollIndicator={false}
       >
         <SafeAreaView style={styles.safeTop}>
@@ -382,7 +384,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                         </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity onPress={() => openTrack(track)} hitSlop={10} style={styles.likeButton}>
+                    <TouchableOpacity onPress={() => openTrack(track, playlistId)} hitSlop={10} style={styles.likeButton}>
                       <Ionicons name="ellipsis-horizontal" size={20} color={Color.textSecondary} />
                     </TouchableOpacity>
                   )}
@@ -494,7 +496,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                         <View style={[styles.detailsArtwork, { backgroundColor: coverBackground }]} />
                       )}
                       <View style={styles.detailsPencilBadge}>
-                        <Ionicons name="pencil" size={13} color="#0B0C0E" />
+                        <Ionicons name="pencil" size={13} color="#111216" />
                       </View>
                     </Pressable>
                     <View style={styles.detailsFields}>
@@ -625,7 +627,6 @@ const styles = StyleSheet.create({
     backgroundColor: Color.background,
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 90,
     gap: 20,
     minHeight: "100%",
   },
@@ -764,7 +765,7 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     alignSelf: "stretch",
-    backgroundColor: "#16171B",
+    backgroundColor: "#191A20",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
@@ -904,7 +905,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   detailsInput: {
-    backgroundColor: "#1D1F24",
+    backgroundColor: "#1E1F22",
     borderRadius: Border.sm,
     paddingHorizontal: 12,
     paddingVertical: 10,

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
+import type { FirebaseApp } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
   getReactNativePersistence,
@@ -10,7 +11,7 @@ import {
   signOut,
   updateProfile,
 } from 'firebase/auth';
-import type { User as FirebaseUser } from 'firebase/auth';
+import type { Auth, User as FirebaseUser } from 'firebase/auth';
 import type { Persistence, ReactNativeAsyncStorage } from 'firebase/auth';
 import {
   collection,
@@ -20,8 +21,8 @@ import {
   getFirestore,
   setDoc,
 } from 'firebase/firestore';
-import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import type { DocumentData, Firestore, QueryDocumentSnapshot } from 'firebase/firestore';
+import { getGoogleAuth } from './GoogleAuth';
 import type { Track } from './musicApi';
 
 declare module 'firebase/auth' {
@@ -34,16 +35,35 @@ const firebaseConfig = {
   projectId: 'aymnx-7a808',
 };
 
-const app = initializeApp(firebaseConfig);
+let cachedApp: FirebaseApp | undefined;
+let cachedAuth: Auth | undefined;
+let cachedDb: Firestore | undefined;
 
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
+function getApp(): FirebaseApp {
+  if (!cachedApp) {
+    cachedApp = initializeApp(firebaseConfig);
+  }
+  return cachedApp;
+}
 
-export const db = getFirestore(app);
+export function getAuth(): Auth {
+  if (!cachedAuth) {
+    cachedAuth = initializeAuth(getApp(), {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  }
+  return cachedAuth;
+}
+
+export function getDb(): Firestore {
+  if (!cachedDb) {
+    cachedDb = getFirestore(getApp());
+  }
+  return cachedDb;
+}
 
 export async function firebaseSignIn(email: string, password: string): Promise<FirebaseUser> {
-  const credential = await signInWithEmailAndPassword(auth, email, password);
+  const credential = await signInWithEmailAndPassword(getAuth(), email, password);
   return credential.user;
 }
 
@@ -52,7 +72,7 @@ export async function firebaseSignUp(
   password: string,
   displayName: string
 ): Promise<FirebaseUser> {
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  const credential = await createUserWithEmailAndPassword(getAuth(), email, password);
   if (displayName.trim()) {
     await updateProfile(credential.user, { displayName: displayName.trim() });
   }
@@ -60,23 +80,19 @@ export async function firebaseSignUp(
 }
 
 export async function firebaseSignOut(): Promise<void> {
-  await signOut(auth);
+  await signOut(getAuth());
 }
 
-GoogleSignin.configure({
-  webClientId: '440854060458-kf8536m7gd7dru9111sg82notra3vrqs.apps.googleusercontent.com',
-  iosClientId: '440854060458-3mhav004vt2eb359j9671c6pb25aurcv.apps.googleusercontent.com',
-});
-
 export async function signInWithGoogle(): Promise<FirebaseUser> {
-  await GoogleSignin.hasPlayServices();
-  const response = await GoogleSignin.signIn();
+  const googleAuth = getGoogleAuth();
+  await googleAuth.hasPlayServices();
+  const response = await googleAuth.signIn();
   const idToken = response.data?.idToken ?? undefined;
   if (!idToken) {
     throw new Error('Google sign-in was cancelled.');
   }
   const credential = GoogleAuthProvider.credential(idToken);
-  const result = await signInWithCredential(auth, credential);
+  const result = await signInWithCredential(getAuth(), credential);
   return result.user;
 }
 
@@ -114,12 +130,12 @@ function likedTrackFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Track {
 }
 
 export async function fetchLikedTracks(userId: string): Promise<Track[]> {
-  const snapshot = await getDocs(collection(db, 'users', userId, 'liked'));
+  const snapshot = await getDocs(collection(getDb(), 'users', userId, 'liked'));
   return snapshot.docs.map(likedTrackFromDoc);
 }
 
 function likedDocRef(userId: string, trackId: string) {
-  return doc(db, 'users', userId, 'liked', trackId);
+  return doc(getDb(), 'users', userId, 'liked', trackId);
 }
 
 export async function setLikedTrack(userId: string, track: Track): Promise<void> {
@@ -195,7 +211,7 @@ export async function createOrUpdatePlaylist(
   userId: string,
   playlist: { id: string; name: string; description?: string; tracks: Track[]; coverUrl?: string; isImported?: boolean }
 ): Promise<void> {
-  await setDoc(doc(db, 'users', userId, 'playlists', playlist.id), {
+  await setDoc(doc(getDb(), 'users', userId, 'playlists', playlist.id), {
     id: playlist.id,
     name: playlist.name,
     description: playlist.description ?? '',
@@ -206,7 +222,7 @@ export async function createOrUpdatePlaylist(
 }
 
 export async function fetchPlaylists(userId: string): Promise<PlaylistDoc[]> {
-  const snapshot = await getDocs(collection(db, 'users', userId, 'playlists'));
+  const snapshot = await getDocs(collection(getDb(), 'users', userId, 'playlists'));
   return snapshot.docs.map((item) => {
     const data = item.data();
     return {
@@ -227,5 +243,5 @@ function isset(value: unknown): value is string {
 }
 
 export async function deletePlaylist(userId: string, playlistId: string): Promise<void> {
-  await deleteDoc(doc(db, 'users', userId, 'playlists', playlistId));
+  await deleteDoc(doc(getDb(), 'users', userId, 'playlists', playlistId));
 }

@@ -7,38 +7,39 @@ import {
   SafeAreaView,
   StatusBar,
   Dimensions,
-  GestureResponderEvent,
   LayoutChangeEvent,
   Modal,
   PanResponder,
   Pressable,
   ScrollView,
+  Animated,
+  Easing,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
+import type { ImpactFeedbackStyle } from "expo-haptics";
 import { Color } from "../theme/GlobalStyles";
+import { getHighResArtworkUrl, getThumbnailArtworkUrl } from "../services/musicApi";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
+import { useTrackActions } from "../context/TrackActionsContext";
+import NowPlayingScrubber, { formatTime } from "../components/player/NowPlayingScrubber";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+
+const ARTWORK_SIZE = SCREEN_WIDTH - 64;
+const AMBIENT_DECODE = 144;
+const SCRUB_DISMISS_DISTANCE = 140;
+const SCRUB_DISMISS_VELOCITY = 1.2;
 
 interface NowPlayingScreenProps {
   onClose: () => void;
 }
-
-const formatTime = (millis: number): string => {
-  if (typeof millis !== "number" || !Number.isFinite(millis) || millis < 0) return "-:--";
-  const totalSeconds = Math.floor(millis / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes >= 60) {
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    return `${hours}:${remainingMinutes < 10 ? "0" : ""}${remainingMinutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-  }
-  return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-};
 
 export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) => {
   const {
@@ -47,9 +48,6 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
     togglePlayPause,
     playNext,
     playPrevious,
-    playbackPosition,
-    duration,
-    seekTo,
     volume,
     setVolume,
     queue,
@@ -62,27 +60,110 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
   } = usePlayer();
 
   const { likedSongs, toggleLike } = useLibrary();
+  const { openTrack } = useTrackActions();
 
   const isLiked = Boolean(
     currentTrack && likedSongs.some((t: any) => t.id === currentTrack.id)
   );
 
-  const artworkUri = currentTrack?.artwork || (currentTrack as any)?.coverUrl;
+  const artworkUri = getHighResArtworkUrl(
+    currentTrack?.artwork || (currentTrack as any)?.coverUrl
+  );
+
+  const ambientArtworkUri = getThumbnailArtworkUrl(
+    currentTrack?.artwork || (currentTrack as any)?.coverUrl
+  );
 
   const [isShuffle, setIsShuffle] = React.useState(false);
-  const [isScrubbing, setIsScrubbing] = React.useState(false);
-  const [scrubRatio, setScrubRatio] = React.useState(0);
-  const barWidthRef = React.useRef(0);
-  const scrubRatioRef = React.useRef(0);
-  const scrubbingRef = React.useRef(false);
-  const durationRef = React.useRef(duration);
-  durationRef.current = duration;
 
-  const progressRatio = duration > 0 ? Math.max(0, Math.min(1, playbackPosition / duration)) : 0;
-  const showProgressRatio = isScrubbing ? Math.max(0, Math.min(1, scrubRatio)) : progressRatio;
-  const shownPositionMs = isScrubbing ? scrubRatio * (duration || 0) : playbackPosition;
+  const translateY = React.useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const sheetOpacity = React.useRef(new Animated.Value(1)).current;
+  const playScale = React.useRef(new Animated.Value(1)).current;
+  const dismissingRef = React.useRef(false);
 
-  const [optionsOpen, setOptionsOpen] = React.useState(false);
+  React.useEffect(() => {
+    translateY.setValue(SCREEN_HEIGHT);
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    return () => {
+      dismissingRef.current = false;
+    };
+  }, [translateY, sheetOpacity]);
+
+  const haptic = React.useCallback((style: ImpactFeedbackStyle) => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(style).catch(() => {});
+    }
+  }, []);
+
+  const animateDismiss = React.useCallback(() => {
+    if (dismissingRef.current) {
+      return;
+    }
+    dismissingRef.current = true;
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: SCREEN_HEIGHT,
+        duration: 280,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start(() => onClose());
+  }, [translateY, sheetOpacity, onClose]);
+
+  const swipePanResponder = React.useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx) * 1.3,
+      onPanResponderMove: (_, g) => {
+        if (!dismissingRef.current) {
+          translateY.setValue(Math.max(0, g.dy));
+        }
+      },
+      onPanResponderRelease: (_, g) => {
+        if (dismissingRef.current) {
+          return;
+        }
+        if (g.dy > SCRUB_DISMISS_DISTANCE || g.vy > SCRUB_DISMISS_VELOCITY) {
+          animateDismiss();
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+            speed: 14,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        if (!dismissingRef.current) {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+            speed: 14,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
   const [queueOpen, setQueueOpen] = React.useState(false);
   const insets = useSafeAreaInsets();
   const [muted, setMuted] = React.useState(false);
@@ -96,7 +177,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
   };
 
   const applyVolumeFromTouch = (locationX: number) => {
-    const width = volumeBarWidthRef.current > 0 ? volumeBarWidthRef.current : SCREEN_WIDTH * 0.8;
+    const width = volumeBarWidthRef.current > 0 ? volumeBarWidthRef.current : SCREEN_WIDTH * 0.3;
     const next = Math.max(0, Math.min(1, locationX / width));
     setVolume(next);
     if (next > 0 && mutedRef.current) {
@@ -136,217 +217,208 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
   const volumePct = Math.round(volume * 100);
   const effectivelyMuted = muted || volume === 0;
 
-  const ratioFromTouch = (e: GestureResponderEvent): number => {
-    const width = barWidthRef.current > 0 ? barWidthRef.current : SCREEN_WIDTH * 0.86;
-    return Math.max(0, Math.min(1, e.nativeEvent.locationX / width));
+  const handlePlayPause = () => {
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    togglePlayPause();
   };
 
-  const commitScrub = (apply: boolean) => {
-    if (!scrubbingRef.current) {
-      return;
-    }
-    scrubbingRef.current = false;
-    setIsScrubbing(false);
-    const ratio = scrubRatioRef.current;
-    if (apply && seekTo && durationRef.current > 0) {
-      seekTo(ratio * durationRef.current).catch(() => undefined);
-    }
+  const handleNext = () => {
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    playNext();
   };
 
-  const scrubPanResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => {
-        const ratio = ratioFromTouch(e);
-        scrubRatioRef.current = ratio;
-        scrubbingRef.current = true;
-        setIsScrubbing(true);
-        setScrubRatio(ratio);
-      },
-      onPanResponderMove: (e) => {
-        const ratio = ratioFromTouch(e);
-        scrubRatioRef.current = ratio;
-        setScrubRatio(ratio);
-      },
-      onPanResponderRelease: () => commitScrub(true),
-      onPanResponderTerminate: () => commitScrub(false),
-    })
-  ).current;
+  const handlePrevious = () => {
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    playPrevious();
+  };
 
   return (
     <View style={styles.screenRoot}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" />
+      {ambientArtworkUri ? (
+        <Image
+          source={{ uri: ambientArtworkUri }}
+          style={styles.ambientImage}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={`ambient-${ambientArtworkUri}`}
+          transition={0}
+          pointerEvents="none"
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, styles.baseBackground]} pointerEvents="none" />
+      )}
+      <BlurView intensity={85} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <LinearGradient
+        colors={["rgba(17,18,22,0.85)", "rgba(17,18,22,0.95)"]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
 
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={onClose}
-            style={styles.iconButton}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="chevron-down" size={28} color={Color.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => setOptionsOpen(true)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => setQueueOpen(true)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="list" size={24} color={Color.textPrimary} />
-          </TouchableOpacity>
-        </View>
+      <Animated.View
+        style={[
+          styles.sheet,
+          {
+            opacity: sheetOpacity,
+            transform: [{ translateY }],
+          },
+        ]}
+        {...swipePanResponder.panHandlers}
+      >
+        <SafeAreaView style={styles.container}>
+          <StatusBar barStyle="light-content" />
 
-        <View style={styles.artworkWrapper}>
-          {artworkUri ? (
-            <Image
-              source={{ uri: artworkUri }}
-              style={styles.artwork}
-              contentFit="cover"
-              transition={300}
-            />
-          ) : (
-            <View style={[styles.artwork, styles.artworkFallback]}>
-              <Ionicons name="musical-notes" size={72} color="rgba(255,255,255,0.3)" />
-            </View>
-          )}
-        </View>
-
-        <View style={styles.trackInfoSection}>
-          <View style={styles.titleColumn}>
-            <Text style={styles.trackTitle} numberOfLines={1}>
-              {currentTrack?.title || "No track playing"}
-            </Text>
-            <Text style={styles.trackArtist} numberOfLines={1}>
-              {currentTrack?.artist || "Unknown Artist"}
-            </Text>
-          </View>
-          {currentTrack && (
+          <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => toggleLike(currentTrack)}
+              onPress={animateDismiss}
+              style={styles.iconButton}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="chevron-down" size={26} color={Color.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Now Playing</Text>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => setQueueOpen(true)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="list" size={22} color={Color.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.artworkWrapper}>
+            {artworkUri ? (
+              <Image
+                source={{ uri: artworkUri }}
+                style={styles.artwork}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                recyclingKey={artworkUri}
+                transition={300}
+              />
+            ) : (
+              <View style={[styles.artwork, styles.artworkFallback]}>
+                <Ionicons name="musical-notes" size={84} color="rgba(255,255,255,0.3)" />
+              </View>
+            )}
+          </View>
+
+          <View style={styles.trackInfoSection}>
+            <View style={styles.titleColumn}>
+              <Text style={styles.trackTitle} numberOfLines={1}>
+                {currentTrack?.title || "No track playing"}
+              </Text>
+              <Text style={styles.trackArtist} numberOfLines={1}>
+                {currentTrack?.artist || "Unknown Artist"}
+              </Text>
+            </View>
+            {currentTrack && (
+              <TouchableOpacity
+                onPress={() => toggleLike(currentTrack)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons
+                  name={isLiked ? "heart" : "heart-outline"}
+                  size={26}
+                  color={isLiked ? Color.accent : "#FFFFFF"}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <NowPlayingScrubber />
+
+          <View style={styles.controlsRow}>
+            <TouchableOpacity
+              onPress={() => setIsShuffle((v) => !v)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.sideControl}
             >
               <Ionicons
-                name={isLiked ? "heart" : "heart-outline"}
-                size={24}
-                color={isLiked ? Color.accent : "#FFFFFF"}
+                name="shuffle"
+                size={23}
+                color={isShuffle ? Color.accent : "#949BA4"}
               />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.progressContainer}>
-          <View
-            style={styles.progressBarBackground}
-            {...scrubPanResponder.panHandlers}
-            onLayout={(e) => {
-              barWidthRef.current = e.nativeEvent.layout.width;
-            }}
-          >
-            <View style={[styles.progressBarFill, { width: `${showProgressRatio * 100}%` }]} />
-          </View>
-          <View style={styles.timeRow}>
-            <Text style={styles.timeText}>{formatTime(shownPositionMs)}</Text>
-            <Text style={styles.timeText}>{formatTime(duration > 0 ? duration : Number.POSITIVE_INFINITY)}</Text>
-          </View>
-        </View>
-
-        <View style={styles.controlsRow}>
-          <TouchableOpacity
-            onPress={() => setIsShuffle((v) => !v)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons
-              name="shuffle"
-              size={22}
-              color={isShuffle ? Color.accent : "#D4D4D8"}
-            />
             </TouchableOpacity>
 
             <View style={styles.controlsCluster}>
               <TouchableOpacity
-                onPress={playPrevious}
+                onPress={handlePrevious}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="play-skip-back" size={30} color={Color.textPrimary} />
+                <Ionicons name="play-skip-back" size={32} color={Color.textPrimary} />
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.playButton}
-                onPress={togglePlayPause}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={isPlaying ? "pause" : "play"}
-                  size={30}
-                  color="#FFFFFF"
-                  style={{ marginLeft: isPlaying ? 0 : 3 }}
-                />
-              </TouchableOpacity>
+              <Animated.View style={{ transform: [{ scale: playScale }] }}>
+                <TouchableOpacity
+                  style={styles.playButton}
+                  onPress={handlePlayPause}
+                  activeOpacity={0.9}
+                  onPressIn={() => {
+                    Animated.spring(playScale, {
+                      toValue: 1.08,
+                      useNativeDriver: true,
+                      friction: 6,
+                    }).start();
+                  }}
+                  onPressOut={() => {
+                    Animated.spring(playScale, {
+                      toValue: 1,
+                      useNativeDriver: true,
+                      friction: 6,
+                    }).start();
+                  }}
+                >
+                  <Ionicons
+                    name={isPlaying ? "pause" : "play"}
+                    size={34}
+                    color="#FFFFFF"
+                    style={{ marginLeft: isPlaying ? 0 : 4 }}
+                  />
+                </TouchableOpacity>
+              </Animated.View>
 
               <TouchableOpacity
-                onPress={() => playNext()}
+                onPress={handleNext}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="play-skip-forward" size={30} color={Color.textPrimary} />
+                <Ionicons name="play-skip-forward" size={32} color={Color.textPrimary} />
               </TouchableOpacity>
             </View>
 
-          <TouchableOpacity
-            onPress={toggleRepeatMode}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <View style={styles.repeatWrap}>
-              <Ionicons
-                name="repeat"
-                size={22}
-                color={repeatMode === "off" ? "#8E8A9A" : Color.accent}
-              />
-              {repeatMode === "all" ? <View style={styles.repeatActiveDot} /> : null}
-              {repeatMode === "one" ? (
+            <TouchableOpacity
+              onPress={toggleRepeatMode}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.sideControl}
+            >
+              <View style={styles.repeatWrap}>
+                <Ionicons
+                  name="repeat"
+                  size={23}
+                  color={repeatMode === "off" ? "#8E8A9A" : Color.accent}
+                />
+                {repeatMode === "all" ? <View style={styles.repeatActiveDot} /> : null}
+                {repeatMode === "one" ? (
                   <View style={styles.repeatOneBadge}>
                     <Text style={styles.repeatOneText}>1</Text>
                   </View>
-              ) : null}
-            </View>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-
-      <Modal
-        transparent
-        visible={optionsOpen}
-        animationType="slide"
-        onRequestClose={() => setOptionsOpen(false)}
-      >
-        <View style={styles.optionsRoot}>
-          <Pressable style={styles.optionsBackdrop} onPress={() => setOptionsOpen(false)} />
-          <View style={styles.optionsSheet}>
-            <View style={styles.optionsGrab} />
-            {currentTrack ? (
-              <View style={styles.optionsTrackRow}>
-                <Image
-                  source={{ uri: artworkUri || undefined }}
-                  style={styles.optionsArt}
-                  contentFit="cover"
-                />
-                <View style={styles.optionsTrackMeta}>
-                  <Text style={styles.optionsTrackTitle} numberOfLines={1}>
-                    {currentTrack.title}
-                  </Text>
-                  <Text style={styles.optionsTrackArtist} numberOfLines={1}>
-                    {currentTrack.artist}
-                  </Text>
-                </View>
+                ) : null}
               </View>
-            ) : null}
-            <Text style={styles.optionsSectionLabel}>Volume</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.auxRow}>
+            <TouchableOpacity
+              onPress={() => {
+                if (currentTrack) {
+                  openTrack(currentTrack);
+                }
+              }}
+              style={styles.auxButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="ellipsis-horizontal" size={26} color={Color.textPrimary} />
+            </TouchableOpacity>
+
             <View style={styles.volumeRow}>
               <TouchableOpacity
                 onPress={handleMuteToggle}
@@ -355,13 +427,14 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
               >
                 <Ionicons
                   name={effectivelyMuted ? "volume-mute" : "volume-low"}
-                  size={24}
+                  size={20}
                   color={Color.textPrimary}
                 />
               </TouchableOpacity>
               <View
                 style={styles.volumeTouchArea}
                 onLayout={handleVolumeLayout}
+                hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
                 {...volumePanResponder.panHandlers}
               >
                 <View style={styles.volumeTrack} pointerEvents="none" />
@@ -375,20 +448,22 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                 hitSlop={10}
                 style={styles.volumeSideBtn}
               >
-                <Ionicons name="volume-high" size={24} color={Color.textPrimary} />
+                <Ionicons name="volume-high" size={20} color={Color.textPrimary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.volumePct}>{volumePct}%</Text>
+
             <TouchableOpacity
-              style={styles.optionsDoneBtn}
-              onPress={() => setOptionsOpen(false)}
-              activeOpacity={0.8}
+              onPress={() => setQueueOpen(true)}
+              style={styles.auxButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.optionsDoneLabel}>Done</Text>
+              <Text style={styles.upNextLabel} numberOfLines={1}>
+                Up Next
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+        </SafeAreaView>
+      </Animated.View>
 
       <Modal
         transparent
@@ -408,6 +483,8 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                   source={{ uri: artworkUri || undefined }}
                   style={styles.queueNowArt}
                   contentFit="cover"
+                  cachePolicy="memory-disk"
+                  recyclingKey={artworkUri ?? 'queue-now'}
                 />
                 <View style={styles.queueRowMeta}>
                   <Text style={styles.queueNowTitle} numberOfLines={1}>
@@ -444,7 +521,9 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
               >
                 {queue.slice(queueIndex + 1).map((item, offset) => {
                   const itemIndex = queueIndex + 1 + offset;
-                  const rowArt = item.artwork || (item as any)?.coverUrl;
+                  const rowArt = getHighResArtworkUrl(
+                    item.artwork || (item as any)?.coverUrl
+                  );
                   const rowDuration = (item as any)?.duration;
                   return (
                     <TouchableOpacity
@@ -457,7 +536,13 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                       }}
                     >
                       {rowArt ? (
-                        <Image source={{ uri: rowArt }} style={styles.queueRowArt} contentFit="cover" />
+                        <Image
+                          source={{ uri: rowArt }}
+                          style={styles.queueRowArt}
+                          contentFit="cover"
+                          cachePolicy="memory-disk"
+                          recyclingKey={item.id}
+                        />
                       ) : (
                         <View style={[styles.queueRowArt, styles.queueArtFallback]}>
                           <Ionicons name="musical-notes" size={18} color="rgba(255,255,255,0.35)" />
@@ -509,11 +594,27 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
 const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,
-    width: "100%",
-    maxWidth: "100%",
-    overflow: "hidden",
-    alignItems: "center",
     backgroundColor: Color.background,
+    overflow: "hidden",
+  },
+  baseBackground: {
+    backgroundColor: Color.background,
+  },
+  ambientImage: {
+    position: "absolute",
+    left: (SCREEN_WIDTH - AMBIENT_DECODE) / 2,
+    top: (SCREEN_HEIGHT - AMBIENT_DECODE) / 2,
+    width: AMBIENT_DECODE,
+    height: AMBIENT_DECODE,
+    borderRadius: AMBIENT_DECODE / 2,
+    transform: [
+      { scaleX: SCREEN_WIDTH / AMBIENT_DECODE },
+      { scaleY: SCREEN_HEIGHT / AMBIENT_DECODE },
+    ],
+  },
+  sheet: {
+    flex: 1,
+    width: "100%",
   },
   container: {
     flex: 1,
@@ -527,8 +628,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
     paddingHorizontal: 20,
-    paddingTop: 25,
-    paddingBottom: 0,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  headerTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#949BA4",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   iconButton: {
     width: 40,
@@ -537,24 +645,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   artworkWrapper: {
-    width: "88%",
-    aspectRatio: 1,
+    width: ARTWORK_SIZE,
+    height: ARTWORK_SIZE,
     alignSelf: "center",
-    marginTop: 60,
-    borderRadius: 12,
+    marginTop: 36,
+    borderRadius: 20,
     shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
   },
   artwork: {
     width: "100%",
     height: "100%",
-    borderRadius: 12,
+    borderRadius: 20,
+    overflow: "hidden",
   },
   artworkFallback: {
-    backgroundColor: "#16171B",
+    backgroundColor: "#191A20",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -564,50 +673,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    marginTop: 50,
+    paddingHorizontal: 28,
+    marginTop: 34,
   },
   titleColumn: {
     flex: 1,
     marginRight: 16,
   },
   trackTitle: {
-    fontSize: 22,
+    fontSize: 23,
     fontWeight: "bold",
     color: Color.textPrimary,
+    letterSpacing: -0.3,
   },
   trackArtist: {
     fontSize: 15,
-    color: "#A1A1AA",
+    color: "#949BA4",
     fontWeight: "500",
     marginTop: 4,
-  },
-  progressContainer: {
-    width: "100%",
-    alignSelf: "center",
-    paddingHorizontal: 24,
-    marginVertical: 30,
-  },
-  progressBarBackground: {
-    height: 7,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: Color.accent,
-    borderRadius: 3,
-  },
-  timeRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 6,
-  },
-  timeText: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    fontVariant: ["tabular-nums"],
   },
   controlsRow: {
     width: "100%",
@@ -615,26 +698,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    marginTop: -10,
-    marginBottom: 36,
+    paddingHorizontal: 28,
+  },
+  sideControl: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   controlsCluster: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 34,
+    gap: 30,
   },
   playButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: Color.accent,
     alignItems: "center",
     justifyContent: "center",
   },
   repeatWrap: {
-    width: 22,
-    height: 22,
+    width: 23,
+    height: 23,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -664,6 +751,58 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 10,
   },
+  auxRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 28,
+    marginTop: 26,
+    marginBottom: 10,
+  },
+  auxButton: {
+    minWidth: 44,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  upNextLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Color.textPrimary,
+  },
+  volumeRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 8,
+  },
+  volumeSideBtn: {
+    padding: 4,
+  },
+  volumeTouchArea: {
+    flex: 1,
+    height: 44,
+    justifyContent: "center",
+  },
+  volumeTrack: {
+    position: "absolute",
+    top: 19,
+    left: 0,
+    right: 0,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    overflow: "hidden",
+  },
+  volumeFill: {
+    position: "absolute",
+    top: 19,
+    left: 0,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Color.accent,
+  },
   optionsRoot: {
     flex: 1,
     justifyContent: "flex-end",
@@ -677,14 +816,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "transparent",
   },
-  optionsSheet: {
-    backgroundColor: "#16171B",
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    paddingHorizontal: 24,
-    paddingTop: 10,
-    paddingBottom: 34,
-  },
   optionsGrab: {
     width: 40,
     height: 4,
@@ -692,32 +823,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.25)",
     alignSelf: "center",
     marginBottom: 14,
-  },
-  optionsTrackRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  optionsArt: {
-    width: 52,
-    height: 52,
-    borderRadius: 8,
-    backgroundColor: "#23252B",
-  },
-  optionsTrackMeta: {
-    flex: 1,
-    marginLeft: 14,
-  },
-  optionsTrackTitle: {
-    fontSize: 17,
-    fontWeight: "bold",
-    color: Color.textPrimary,
-  },
-  optionsTrackArtist: {
-    fontSize: 13,
-    color: "#A1A1AA",
-    fontWeight: "500",
-    marginTop: 3,
   },
   optionsSectionLabel: {
     fontSize: 12,
@@ -727,59 +832,8 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
-  volumeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  volumeSideBtn: {
-    padding: 6,
-  },
-  volumeTouchArea: {
-    flex: 1,
-    height: 32,
-    justifyContent: "center",
-  },
-  volumeTrack: {
-    position: "absolute",
-    top: 13,
-    left: 0,
-    right: 0,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "rgba(255,255,255,0.15)",
-  },
-  volumeFill: {
-    position: "absolute",
-    top: 13,
-    left: 0,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Color.accent,
-  },
-  volumePct: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    fontWeight: "600",
-    alignSelf: "flex-end",
-    marginTop: 4,
-    fontVariant: ["tabular-nums"],
-  },
-  optionsDoneBtn: {
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: Color.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 18,
-  },
-  optionsDoneLabel: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
   queueSheet: {
-    backgroundColor: "#16171B",
+    backgroundColor: "#191A20",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     paddingHorizontal: 24,
@@ -798,7 +852,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 8,
-    backgroundColor: "#1D1F24",
+    backgroundColor: "#1E1F22",
   },
   queueRowMeta: {
     flex: 1,

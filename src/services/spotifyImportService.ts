@@ -236,8 +236,8 @@ interface SpotifyApiPlaylistResponse {
   };
 }
 
-async function fetchFromSpotifyApi(playlistId: string): Promise<ParsedPlaylist | null> {
-  const token = await fetchSpotifyAnonymousToken();
+async function fetchFromSpotifyApi(playlistId: string, authToken?: string): Promise<ParsedPlaylist | null> {
+  const token = authToken ?? (await fetchSpotifyAnonymousToken());
   const url = `https://api.spotify.com/v1/playlists/${playlistId}?fields=name,images,tracks.items(track(name,artists,album(images)))`;
   const json = await fetchJson<SpotifyApiPlaylistResponse>(url, {
     headers: {
@@ -262,7 +262,8 @@ async function fetchFromSpotifyApi(playlistId: string): Promise<ParsedPlaylist |
 
 export function importSpotifyPlaylist(
   playlistUrlOrId: string,
-  onProgress?: ImportProgressCallback
+  onProgress?: ImportProgressCallback,
+  authToken?: string
 ): { promise: Promise<ImportedPlaylist>; cancel: () => void } {
   let cancelled = false;
   const promise = (async () => {
@@ -271,7 +272,7 @@ export function importSpotifyPlaylist(
     const tiers: Array<{ name: string; run: () => Promise<ParsedPlaylist | null> }> = [
       { name: 'Spotify embed', run: () => fetchFromSpotifyEmbed(playlistId) },
       { name: 'Spotify playlist page', run: () => fetchFromSpotifyHtml(playlistId) },
-      { name: 'Spotify API', run: () => fetchFromSpotifyApi(playlistId) },
+      { name: 'Spotify API', run: () => fetchFromSpotifyApi(playlistId, authToken) },
     ];
 
     let parsed: ParsedPlaylist | null = null;

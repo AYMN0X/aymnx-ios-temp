@@ -2,8 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { auth, firebaseSignIn, firebaseSignOut, firebaseSignUp, signInWithGoogle as firebaseGoogleSignIn } from '../services/firebase';
-import { statusCodes } from '@react-native-google-signin/google-signin';
+import { getAuth, firebaseSignIn, firebaseSignOut, firebaseSignUp, signInWithGoogle as firebaseGoogleSignIn } from '../services/firebase';
+import { statusCodes } from '../services/GoogleAuth';
+import { updateProfile } from 'firebase/auth';
 
 export interface User {
   id: string;
@@ -25,6 +26,7 @@ interface AuthContextValue {
   login: (identifier: string, password: string) => Promise<AuthResult>;
   signInWithGoogle: () => Promise<AuthResult>;
   loginGuest: () => Promise<void>;
+  updateAvatar: (uri?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -94,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })();
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(getAuth(), (firebaseUser) => {
       if (!active) {
         return;
       }
@@ -181,6 +183,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await persistSession({ id: 'user_guest', name: 'Guest', username: 'Guest', isGuest: true });
   }, [persistSession]);
 
+  const updateAvatar = useCallback(
+    async (uri?: string) => {
+      if (!user) {
+        return;
+      }
+      const next = { ...user, avatarUrl: uri };
+      await persistSession(next);
+      try {
+        if (uri && /^https?:\/\//i.test(uri)) {
+          await updateProfile(getAuth().currentUser!, { photoURL: uri });
+        }
+      } catch (error) {
+        console.warn('[auth] Could not sync avatar to Firebase profile.', error);
+      }
+    },
+    [user, persistSession]
+  );
+
   const logout = useCallback(async () => {
     try {
       await firebaseSignOut();
@@ -200,9 +220,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       signInWithGoogle,
       loginGuest,
+      updateAvatar,
       logout,
     }),
-    [user, isLoading, signUp, login, signInWithGoogle, loginGuest, logout]
+    [user, isLoading, signUp, login, signInWithGoogle, loginGuest, updateAvatar, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

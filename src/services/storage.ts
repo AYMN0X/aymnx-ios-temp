@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DownloadedTrack } from './downloadService';
 import type { Track } from './musicApi';
+import { bootLog } from './bootLog';
 
 export interface SavedPlaylist {
   id: string;
@@ -133,13 +134,35 @@ export function getUserDataKey(userId: string): string {
 const playlistId = () =>
   `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
+// All readers of the user blob (`likedSongs`, `playlists`, `downloadedTracks`,
+// `lastPlayedTrack`) share one AsyncStorage JSON document. Parsing that document
+// eagerly for EVERY reader (e.g. library + downloads + player hydration on cold
+// boot) materializes the full track/playlist graph multiple times in the JS
+// heap. Cache the parsed document per user so a session parses it exactly once;
+// every write replaces the cached entry alongside the persisted copy.
+const userDataCache = new Map<string, StoredUserData>();
+
 async function readUserData(userId: string): Promise<StoredUserData> {
+  const cached = userDataCache.get(userId);
+  if (cached) {
+    return cached;
+  }
   try {
     const raw = await AsyncStorage.getItem(getUserDataKey(userId));
     if (!raw) {
-      return {};
+      const empty: StoredUserData = {};
+      userDataCache.set(userId, empty);
+      return empty;
     }
-    return JSON.parse(raw) as StoredUserData;
+    const parsed = JSON.parse(raw) as StoredUserData;
+    bootLog('user data blob parsed (once per session)', {
+      bytes: raw.length,
+      liked: parsed.likedSongs?.length ?? 0,
+      playlists: parsed.playlists?.length ?? 0,
+      downloaded: parsed.downloadedTracks?.length ?? 0,
+    });
+    userDataCache.set(userId, parsed);
+    return parsed;
   } catch (error) {
     console.warn('[storage] Failed to read user data.', error);
     return {};
@@ -147,6 +170,7 @@ async function readUserData(userId: string): Promise<StoredUserData> {
 }
 
 async function writeUserData(userId: string, data: StoredUserData): Promise<void> {
+  userDataCache.set(userId, data);
   await AsyncStorage.setItem(getUserDataKey(userId), JSON.stringify(data));
 }
 
@@ -234,9 +258,32 @@ export async function createImportedPlaylist(
   coverUrl: string,
   tracks: Track[]
 ): Promise<{ playlists: SavedPlaylist[]; created: SavedPlaylist }> {
+  const trimmedName = name.trim();
+  const normalized = trimmedName.toLowerCase();
+  const existing = (await readUserData(userId)).playlists ?? [];
+  const match = existing.find(
+    (playlist) =>
+      playlist.isImported && playlist.name.trim().toLowerCase() === normalized
+  );
+  if (match) {
+    const merged: SavedPlaylist = {
+      ...match,
+      name: trimmedName,
+      coverUrl: coverUrl || match.coverUrl,
+      tracks,
+      isImported: true,
+    };
+    const data = await updateUserData(userId, (d) => ({
+      ...d,
+      playlists: (d.playlists ?? []).map((playlist) =>
+        playlist.id === match.id ? merged : playlist
+      ),
+    }));
+    return { playlists: data.playlists ?? [], created: merged };
+  }
   const created: SavedPlaylist = {
     id: playlistId(),
-    name,
+    name: trimmedName,
     coverUrl,
     tracks,
     isImported: true,
@@ -343,6 +390,31 @@ export async function removeTrackFromPlaylist(
     return { ...d, playlists };
   });
   return data.playlists ?? [];
+}
+
+export async function replaceTrackEverywhere(
+  userId: string,
+  originalId: string,
+  replacement: Track
+): Promise<{ likedSongs: Track[]; playlists: SavedPlaylist[] }> {
+  const data = await updateUserData(userId, (d) => {
+    const likedSongs = (d.likedSongs ?? []).map((item) =>
+      item.id === originalId ? { ...replacement, id: originalId } : item
+    );
+    const playlists = (d.playlists ?? []).map((playlist) => {
+      let changed = false;
+      const tracks = playlist.tracks.map((item) => {
+        if (item.id !== originalId) {
+          return item;
+        }
+        changed = true;
+        return { ...replacement, id: originalId };
+      });
+      return changed ? { ...playlist, tracks } : playlist;
+    });
+    return { ...d, likedSongs, playlists };
+  });
+  return { likedSongs: data.likedSongs ?? [], playlists: data.playlists ?? [] };
 }
 
 export async function getDownloadedTracks(userId: string): Promise<DownloadedTrack[]> {

@@ -23,7 +23,7 @@ export function AccountSheet({ visible, onClose }: AccountSheetProps) {
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={styles.card}>
           <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={10}>
-            <Feather name="x" size={18} color="#8A8F9D" />
+            <Feather name="x" size={18} color="#949BA4" />
           </Pressable>
           <View style={styles.centerAvatar}>
             {user?.avatarUrl ? (
@@ -39,7 +39,7 @@ export function AccountSheet({ visible, onClose }: AccountSheetProps) {
             {emailLabel}
           </Text>
           <Pressable style={styles.logoutBtn} onPress={handleLogout}>
-            <Feather name="log-out" size={18} color="#8A8F9D" />
+            <Feather name="log-out" size={18} color="#949BA4" />
             <Text style={styles.logoutLabel}>Log out</Text>
           </Pressable>
         </View>
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 340,
-    backgroundColor: '#16171B',
+    backgroundColor: '#191A20',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#23252B',
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#9066FE',
+    backgroundColor: '#E94B35',
   },
   centerAvatarLetter: {
     color: '#FFFFFF',
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   cardEmail: {
-    color: '#8A8F9D',
+    color: '#949BA4',
     fontSize: 13,
     marginTop: 4,
   },

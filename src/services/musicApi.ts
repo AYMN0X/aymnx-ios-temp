@@ -231,7 +231,17 @@ export async function resolveJioSaavnStream(
   }
 }
 
+/**
+ * Rotating guest client_ids for api-v2.soundcloud.com. The first entry was
+ * re-verified against the live API on 2026-09-20 (the same value that the
+ * homepage `__sc_hydration` currently publishes); the later entries are older
+ * public IDs kept so the rotation logic has candidates to try while the
+ * dynamic extraction is still running or unavailable. The first verified ID is
+ * tried immediately so a fetch never hangs waiting on the homepage scrape.
+ */
 const SOUNDCLOUD_FALLBACK_CLIENT_IDS = [
+  'Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo',
+  'bOhNcaq9F32sB3eS8zWLywAyh4OdDXbC',
   'iZIs9mchVcX5lhVRyQGGAYlNPVldzAoX',
   'a3e059563d7fd3372b49b37f00a00bcf',
 ];
@@ -250,7 +260,10 @@ interface SoundCloudTrack {
   id: number;
   title?: string;
   duration?: number;
-  user?: { username?: string };
+  artwork_url?: string;
+  permalink?: string;
+  permalink_url?: string;
+  user?: { username?: string; avatar_url?: string };
   media?: {
     transcodings?: SoundCloudTranscoding[];
   };
@@ -267,7 +280,9 @@ interface SoundCloudTranscodingResponse {
 const SOUNDCLOUD_HEADERS = {
   Accept: 'application/json',
   'User-Agent':
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  'Accept-Language': 'en-US,en;q=0.9',
+  Origin: 'https://soundcloud.com',
   Referer: 'https://soundcloud.com/',
 };
 
@@ -280,6 +295,97 @@ const SOUNDCLOUD_PAGE_HEADERS = {
 let soundCloudClientIdCache: string | null = null;
 let soundCloudClientIdPromise: Promise<string | null> | null = null;
 
+function extractSoundCloudHydrationClientId(html: string): string | null {
+  const markerIndex = html.indexOf('window.__sc_hydration');
+  if (markerIndex < 0) {
+    return null;
+  }
+  const jsonStart = html.indexOf('[', markerIndex);
+  if (jsonStart < 0) {
+    return null;
+  }
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = jsonStart; i < html.length; i += 1) {
+    const char = html[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === '[' || char === '{') {
+      depth += 1;
+    } else if (char === ']' || char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          const payload = JSON.parse(html.slice(jsonStart, i + 1)) as Array<{
+            hydratable?: string;
+            data?: { id?: string };
+          }>;
+          const apiClient = payload.find((item) => item.hydratable === 'apiClient');
+          const id = apiClient?.data?.id;
+          if (typeof id === 'string' && /^[a-zA-Z0-9]{32}$/.test(id)) {
+            return id;
+          }
+        } catch (error) {
+          console.warn('[audio-soundcloud] Could not parse __sc_hydration payload.', error);
+        }
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchSoundCloudClientIdFromScript(url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: SOUNDCLOUD_HEADERS,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`script bundle responded with status ${response.status}`);
+    }
+    const scriptText = await response.text();
+    const idMatch = scriptText.match(/client_id:"([a-zA-Z0-9]{32})"/);
+    return idMatch ? idMatch[1] : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchSoundCloudClientIdFromBundles(html: string): Promise<string | null> {
+  const scriptUrls = Array.from(
+    new Set(
+      Array.from(
+        html.matchAll(/https:\/\/[a-z0-9.-]*sndcdn\.com\/assets\/[^"'>\s]+\.js/gi)
+      ).map((match) => match[0])
+    )
+  );
+  for (const url of scriptUrls) {
+    try {
+      const id = await fetchSoundCloudClientIdFromScript(url);
+      if (id) {
+        return id;
+      }
+    } catch (error) {
+      console.warn(`[audio-soundcloud] Could not scrape client_id from ${url}.`, error);
+    }
+  }
+  return null;
+}
+
 async function fetchSoundCloudClientId(): Promise<string | null> {
   if (soundCloudClientIdCache) {
     return soundCloudClientIdCache;
@@ -288,49 +394,34 @@ async function fetchSoundCloudClientId(): Promise<string | null> {
     return soundCloudClientIdPromise;
   }
   soundCloudClientIdPromise = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-      try {
-        const response = await fetch('https://soundcloud.com/', {
-          headers: SOUNDCLOUD_PAGE_HEADERS,
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`soundcloud.com responded with status ${response.status}`);
-        }
-        const html = await response.text();
-        const scriptMatches = Array.from(
-          html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"']+\.js/g)
-        );
-        const lastScript = scriptMatches[scriptMatches.length - 1]?.[0];
-        if (!lastScript) {
-          return null;
-        }
-        const scriptController = new AbortController();
-        const scriptTimer = setTimeout(() => scriptController.abort(), API_TIMEOUT_MS);
-        const scriptResponse = await fetch(lastScript, {
-          headers: SOUNDCLOUD_HEADERS,
-          signal: scriptController.signal,
-        });
-        clearTimeout(scriptTimer);
-        if (!scriptResponse.ok) {
-          throw new Error(`script bundle responded with status ${scriptResponse.status}`);
-        }
-        const scriptText = await scriptResponse.text();
-        const idMatch = scriptText.match(/client_id:"([a-zA-Z0-9]{32})"/);
-        if (idMatch) {
-          soundCloudClientIdCache = idMatch[1];
-          return idMatch[1];
-        }
-        return null;
-      } finally {
-        clearTimeout(timer);
+      const response = await fetch('https://soundcloud.com/', {
+        headers: SOUNDCLOUD_PAGE_HEADERS,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`soundcloud.com responded with status ${response.status}`);
       }
+      const html = await response.text();
+      const hydrationId = extractSoundCloudHydrationClientId(html);
+      if (hydrationId) {
+        soundCloudClientIdCache = hydrationId;
+        return hydrationId;
+      }
+      const bundleId = await fetchSoundCloudClientIdFromBundles(html);
+      if (bundleId) {
+        soundCloudClientIdCache = bundleId;
+        return bundleId;
+      }
+      console.warn('[audio-soundcloud] Could not extract a client_id from soundcloud.com.');
+      return null;
     } catch (error) {
-      console.warn('[audio] SoundCloud client_id extraction failed.', error);
+      console.warn('[audio-soundcloud] SoundCloud client_id extraction failed.', error);
       return null;
     } finally {
+      clearTimeout(timer);
       soundCloudClientIdPromise = null;
     }
   })();
@@ -384,29 +475,166 @@ function pickSoundCloudTranscoding(
 
 async function soundCloudSearch(
   query: string,
-  clientId: string
+  clientId: string,
+  limit = 3
 ): Promise<SoundCloudTrack[]> {
   const search = await soundCloudFetch<SoundCloudSearchResponse>(
-    `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&limit=3&client_id=${clientId}`
+    `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&limit=${limit}&client_id=${clientId}`
   );
   return search.collection ?? [];
+}
+
+async function performSoundCloudSearch(
+  term: string,
+  clientId: string,
+  limit: number
+): Promise<Track[]> {
+  const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(term)}&limit=${limit}&client_id=${clientId}`;
+  console.log(`[audio-soundcloud] search URL: ${url}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: SOUNDCLOUD_HEADERS,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      console.log(`[audio-soundcloud] search for "${term}" failed with status ${response.status}`);
+      throw Object.assign(new Error(`SoundCloud search responded with status ${response.status}`), {
+        status: response.status,
+      });
+    }
+    const json = (await response.json()) as SoundCloudSearchResponse;
+    console.log(`[audio-soundcloud] search status ${response.status}, body: ${JSON.stringify(json).slice(0, 300)}`);
+    const collection = json.collection ?? [];
+    console.log(`[audio-soundcloud] search for "${term}" returned ${collection.length} tracks`);
+    return collection.map(soundCloudTrackToTrack);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const SOUNDCLOUD_SEARCH_LIMIT = 25;
+
+function cleanSoundCloudPermalink(url: string): string {
+  const trimmed = url.trim();
+  const match = trimmed.match(/^https?:\/\/[^/]+\/([^?#]+)/i);
+  const path = match ? `/${match[1]}` : trimmed;
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+export function getHighResArtworkUrl(url?: string | null): string {
+  if (!url) {
+    return '';
+  }
+  if (url.includes('-large.')) {
+    return url.replace('-large.', '-t500x500.');
+  }
+  if (url.includes('-badge.')) {
+    return url.replace('-badge.', '-t500x500.');
+  }
+  if (url.includes('-small.')) {
+    return url.replace('-small.', '-t500x500.');
+  }
+  return url;
+}
+
+const ARTWORK_THUMBNAIL_SUFFIX = '-t120x120.';
+
+export function getThumbnailArtworkUrl(url?: string | null): string {
+  if (!url) {
+    return '';
+  }
+  if (/-t\d+x\d+\./i.test(url)) {
+    return url.replace(/-t\d+x\d+\./i, ARTWORK_THUMBNAIL_SUFFIX);
+  }
+  for (const variant of ['-large.', '-badge.', '-small.']) {
+    if (url.includes(variant)) {
+      return url.replace(variant, ARTWORK_THUMBNAIL_SUFFIX);
+    }
+  }
+  return url;
+}
+
+function soundCloudArtworkFor(track: SoundCloudTrack): string {
+  return getHighResArtworkUrl(toHttps(track.artwork_url ?? track.user?.avatar_url ?? ''));
+}
+
+function soundCloudTrackToTrack(source: SoundCloudTrack): Track {
+  const seconds =
+    typeof source.duration === 'number' && Number.isFinite(source.duration) && source.duration > 0
+      ? source.duration / 1000
+      : undefined;
+  return {
+    id: `sc-${source.id}`,
+    title: source.title ?? 'Unknown track',
+    artist: source.user?.username ?? 'Unknown artist',
+    album: '',
+    artwork: soundCloudArtworkFor(source),
+    previewUrl: '',
+    duration: seconds,
+    provider: 'soundcloud' as const,
+    permalink: source.permalink_url ? cleanSoundCloudPermalink(source.permalink_url) : (source.permalink ? cleanSoundCloudPermalink(source.permalink) : undefined),
+  };
+}
+
+export async function searchSoundCloudTracks(
+  query: string,
+  limit = SOUNDCLOUD_SEARCH_LIMIT
+): Promise<Track[]> {
+  const term = query.trim();
+  if (!term) {
+    return [];
+  }
+  try {
+    const tracks = await runSoundCloudClientIdAction(
+      (clientId) => performSoundCloudSearch(term, clientId, limit),
+      'search'
+    );
+    if (!tracks) {
+      throw new Error('No working SoundCloud client_id is available for search');
+    }
+    return tracks;
+  } catch (error) {
+    console.warn('[audio-soundcloud] searchSoundCloudTracks failed.', error);
+    throw error;
+  }
 }
 
 async function resolveSoundCloudWithClientId(
   title: string,
   artist: string,
-  clientId: string
+  clientId: string,
+  permalink?: string
 ): Promise<StreamResult | null> {
-  const tracks = await soundCloudSearch(`${title} ${artist}`, clientId);
-  if (tracks.length === 0) {
+  let best: SoundCloudTrack | null = null;
+  if (permalink) {
+    try {
+      const resolved = await soundCloudFetch<SoundCloudTrack>(
+        `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(`https://soundcloud.com${cleanSoundCloudPermalink(permalink)}`)}&client_id=${clientId}`
+      );
+      if (resolved && typeof resolved.id === 'number') {
+        best = resolved;
+      }
+    } catch (error) {
+      console.warn('[audio] SoundCloud resolve failed, falling back to search.', error);
+    }
+  }
+  if (!best) {
+    const tracks = await soundCloudSearch(`${title} ${artist}`, clientId);
+    if (tracks.length === 0) {
+      return null;
+    }
+    best = tracks.reduce((current, next) =>
+      scoreSoundCloudMatch(next, title, artist) > scoreSoundCloudMatch(current, title, artist)
+        ? next
+        : current
+    );
+  }
+  if (!best) {
     return null;
   }
-  const best = tracks.reduce((current, next) =>
-    scoreSoundCloudMatch(next, title, artist) > scoreSoundCloudMatch(current, title, artist)
-      ? next
-      : current
-  );
-  if (!best.duration || best.duration <= 60000) {
+  if (!permalink && (!best.duration || best.duration <= 60000)) {
     return null;
   }
   const transcoding = pickSoundCloudTranscoding(best);
@@ -425,37 +653,81 @@ async function resolveSoundCloudWithClientId(
   return { url, mimeType: transcoding?.format?.mime_type ?? 'audio/mpeg', provider: 'soundcloud' };
 }
 
-export async function resolveSoundCloudStream(
-  title: string,
-  artist: string
-): Promise<StreamResult | null> {
-  try {
-    const dynamicId = await fetchSoundCloudClientId();
-    const candidates = [
-      ...(dynamicId ? [dynamicId] : []),
-      ...SOUNDCLOUD_FALLBACK_CLIENT_IDS.filter((id) => id !== dynamicId),
-    ];
-    if (candidates.length > SOUNDCLOUD_FALLBACK_CLIENT_IDS.length) {
-      candidates.length = SOUNDCLOUD_FALLBACK_CLIENT_IDS.length;
+function soundCloudClientIdCandidates(): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  const push = (value: string | null | undefined) => {
+    if (value && !seen.has(value)) {
+      seen.add(value);
+      ordered.push(value);
     }
-    for (const clientId of candidates) {
-      try {
-        const result = await resolveSoundCloudWithClientId(title, artist, clientId);
-        if (result) {
-          return result;
-        }
-      } catch (error) {
-        const status = (error as { status?: number }).status;
-        if (status === 401 || status === 403) {
-          console.warn(`[audio] SoundCloud client_id rejected (${status}), rotating.`);
-          continue;
-        }
+  };
+  push(soundCloudClientIdCache);
+  for (const id of SOUNDCLOUD_FALLBACK_CLIENT_IDS) {
+    push(id);
+  }
+  return ordered;
+}
+
+async function runSoundCloudClientIdAction<T>(
+  action: (clientId: string) => Promise<T | null>,
+  label: string
+): Promise<T | null> {
+  let lastError: unknown = null;
+  const candidates = soundCloudClientIdCandidates();
+  for (const clientId of candidates) {
+    try {
+      const value = await action(clientId);
+      if (value != null) {
+        soundCloudClientIdCache = clientId;
+        return value;
+      }
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 401 || status === 403) {
+        console.warn(`[audio-soundcloud] ${label} client_id rejected (${status}), rotating.`);
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  const dynamicId = await fetchSoundCloudClientId();
+  if (dynamicId && !candidates.includes(dynamicId)) {
+    try {
+      const value = await action(dynamicId);
+      if (value != null) {
+        soundCloudClientIdCache = dynamicId;
+        return value;
+      }
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 401 || status === 403) {
+        console.warn(`[audio-soundcloud] ${label} dynamic client_id rejected (${status}).`);
+        lastError = error;
+      } else {
         throw error;
       }
     }
-    return null;
+  }
+  if (lastError) {
+    console.warn(`[audio-soundcloud] All client_ids rejected for ${label}.`, lastError);
+  }
+  return null;
+}
+
+export async function resolveSoundCloudStream(
+  title: string,
+  artist: string,
+  permalink?: string
+): Promise<StreamResult | null> {
+  try {
+    return await runSoundCloudClientIdAction(
+      (clientId) => resolveSoundCloudWithClientId(title, artist, clientId, permalink),
+      'stream resolution'
+    );
   } catch (error) {
-    console.warn('[audio] SoundCloud resolution failed.', error);
+    console.warn('[audio-soundcloud] SoundCloud resolution failed.', error);
     return null;
   }
 }

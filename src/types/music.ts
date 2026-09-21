@@ -8,6 +8,8 @@ export interface Track {
   streamUrl?: string;
   streamMimeType?: string;
   duration?: number;
+  provider?: 'itunes' | 'soundcloud' | 'jiosaavn' | 'lan' | 'spotify';
+  permalink?: string;
 }
 
 export interface StreamResult {

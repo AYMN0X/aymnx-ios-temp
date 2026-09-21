@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   loginGuestLabel: {
-    color: '#8A8F9D',
+    color: '#949BA4',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   loginToggleText: {
-    color: '#8A8F9D',
+    color: '#949BA4',
     fontSize: 14,
     fontWeight: '500',
   },

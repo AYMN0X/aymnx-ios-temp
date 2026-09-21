@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
 import { NowPlayingScreen } from '../../screens/NowPlayingScreen';
 
 interface NowPlayingModalProps {
@@ -7,26 +9,36 @@ interface NowPlayingModalProps {
 }
 
 export function NowPlayingModal({ visible, onClose }: NowPlayingModalProps) {
+  useEffect(() => {
+    if (visible) {
+      return;
+    }
+    Image.clearMemoryCache()
+      .catch(() => undefined);
+  }, [visible]);
+
   return (
     <Modal
       visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
+      transparent
+      animationType="none"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
       onRequestClose={onClose}
     >
-      <View style={styles.background} />
-      <NowPlayingScreen onClose={onClose} />
+      {visible ? (
+        <View style={styles.overlay}>
+          <NowPlayingScreen onClose={onClose} />
+        </View>
+      ) : null}
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  background: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#0B0C0E',
+  overlay: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: 'transparent',
   },
 });

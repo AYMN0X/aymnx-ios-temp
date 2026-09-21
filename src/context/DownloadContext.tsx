@@ -11,6 +11,7 @@ import * as downloads from '../services/downloadService';
 import { DownloadedTrack } from '../services/downloadService';
 import { Track } from '../services/musicApi';
 import * as storage from '../services/storage';
+import { approximateBytes, bootLog, bootLogOnce } from '../services/bootLog';
 import { useAuth } from './AuthContext';
 
 interface BatchProgress {
@@ -38,6 +39,7 @@ interface DownloadContextValue {
 const DownloadContext = createContext<DownloadContextValue | undefined>(undefined);
 
 export function DownloadProvider({ children }: { children: ReactNode }) {
+  bootLogOnce('DownloadProvider mounted');
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const [downloadedTracks, setDownloadedTracks] = useState<DownloadedTrack[]>([]);
@@ -51,10 +53,19 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       setDownloadedTracks([]);
       return;
     }
+    bootLog('downloads hydration start');
     (async () => {
-      const tracks = await storage.getDownloadedTracks(userId);
-      if (active) {
-        setDownloadedTracks(tracks);
+      try {
+        const tracks = await storage.getDownloadedTracks(userId);
+        if (active) {
+          setDownloadedTracks(tracks);
+          bootLog('downloads hydrated', {
+            count: tracks.length,
+            kb: Math.round(approximateBytes(tracks) / 1024),
+          });
+        }
+      } catch (error) {
+        console.warn('[downloads] Failed to load downloaded tracks.', error);
       }
     })();
     return () => {
@@ -80,12 +91,16 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       setDownloadingIds((current) => new Set(current).add(track.id));
       try {
         const downloaded = await downloads.downloadTrack(track);
-        const current = await storage.getDownloadedTracks(userId);
-        const next = current.some((item) => item.id === downloaded.id)
-          ? current
-          : [...current, downloaded];
-        await storage.writeDownloadedTracks(userId, next);
-        setDownloadedTracks(next);
+        try {
+          const current = await storage.getDownloadedTracks(userId);
+          const next = current.some((item) => item.id === downloaded.id)
+            ? current
+            : [...current, downloaded];
+          await storage.writeDownloadedTracks(userId, next);
+          setDownloadedTracks(next);
+        } catch (error) {
+          console.warn('[downloads] Failed to persist download metadata.', error);
+        }
       } finally {
         setDownloadingIds((current) => {
           const next = new Set(current);
@@ -103,10 +118,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         return;
       }
       await downloads.deleteTrackFiles(trackId);
-      const current = await storage.getDownloadedTracks(userId);
-      const next = current.filter((item) => item.id !== trackId);
-      await storage.writeDownloadedTracks(userId, next);
-      setDownloadedTracks(next);
+      try {
+        const current = await storage.getDownloadedTracks(userId);
+        const next = current.filter((item) => item.id !== trackId);
+        await storage.writeDownloadedTracks(userId, next);
+        setDownloadedTracks(next);
+      } catch (error) {
+        console.warn('[downloads] Failed to persist download removal.', error);
+      }
     },
     [userId]
   );
@@ -138,13 +157,17 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           onProgress({ done, total: tracks.length, failed });
         }
       }
-      const current = await storage.getDownloadedTracks(userId);
-      const merged = [
-        ...current.filter((item) => !metas.some((meta) => meta.id === item.id)),
-        ...metas,
-      ];
-      await storage.writeDownloadedTracks(userId, merged);
-      setDownloadedTracks(merged);
+      try {
+        const current = await storage.getDownloadedTracks(userId);
+        const merged = [
+          ...current.filter((item) => !metas.some((meta) => meta.id === item.id)),
+          ...metas,
+        ];
+        await storage.writeDownloadedTracks(userId, merged);
+        setDownloadedTracks(merged);
+      } catch (error) {
+        console.warn('[downloads] Failed to persist batch download metadata.', error);
+      }
       setIsBatchDownloading(false);
     },
     [userId, isBatchDownloading]

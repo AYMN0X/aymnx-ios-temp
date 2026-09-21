@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Activity } from 'lucide-react-native';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlayer } from '../context/PlayerContext';
@@ -31,6 +32,7 @@ interface ImportResult {
 }
 
 export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
+  const insets = useSafeAreaInsets();
   const { createImportedPlaylist } = useLibrary();
   const { playTrack } = usePlayer();
 
@@ -158,7 +160,7 @@ export function ImportScreen({ onOpenImportedPlaylist }: ImportScreenProps) {
   return (
     <ScrollView
       style={styles.importScroll}
-      contentContainerStyle={styles.importContent}
+      contentContainerStyle={[styles.importContent, { paddingBottom: insets.bottom + 146 }]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
@@ -315,7 +317,6 @@ const styles = StyleSheet.create({
   importContent: {
     padding: 16,
     paddingTop: 8,
-    paddingBottom: 40,
   },
   lanSection: {
     backgroundColor: COLORS.elevated,

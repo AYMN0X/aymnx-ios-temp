@@ -1,24 +1,42 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MoreHorizontal, X } from 'lucide-react-native';
-import type { Track } from '../services/musicApi';
-import { COLORS, TYPE } from '../theme/appTheme';
+import { getThumbnailArtworkUrl, Track } from '../services/musicApi';
+import { COLORS } from '../theme/appTheme';
 
 interface TrackRowProps {
   track: Track;
   liked: boolean;
+  active?: boolean;
   onPlay: () => void;
   onToggleLike: () => void;
   onMore?: () => void;
   onRemove?: () => void;
 }
 
-export function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove }: TrackRowProps) {
+export function TrackRow({
+  track,
+  liked,
+  active,
+  onPlay,
+  onToggleLike,
+  onMore,
+  onRemove,
+}: TrackRowProps) {
   return (
-    <View style={styles.trackRow}>
+    <View style={[styles.trackRow, active && styles.trackRowActive]}>
+      {active ? <View style={styles.playingIndicator} /> : null}
       <Pressable style={({ pressed }) => [styles.trackRowMain, pressed && styles.trackRowPressed]} onPress={onPlay}>
         {track.artwork ? (
-          <Image source={{ uri: track.artwork }} style={styles.trackArtwork} />
+          <Image
+            source={{ uri: getThumbnailArtworkUrl(track.artwork), width: 40, height: 40 }}
+            style={styles.trackArtwork}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={track.id}
+            transition={150}
+          />
         ) : (
           <View style={[styles.trackArtwork, styles.trackArtworkFallback]} />
         )}
@@ -31,7 +49,7 @@ export function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove 
           </Text>
         </View>
       </Pressable>
-      <Pressable onPress={onToggleLike} hitSlop={8} style={styles.trackAction}>
+      <Pressable onPress={onToggleLike} hitSlop={10} style={styles.trackAction}>
         <Ionicons
           name={liked ? 'checkmark-circle' : 'add-circle-outline'}
           size={20}
@@ -39,12 +57,12 @@ export function TrackRow({ track, liked, onPlay, onToggleLike, onMore, onRemove 
         />
       </Pressable>
       {onMore ? (
-        <Pressable onPress={onMore} hitSlop={8} style={styles.trackAction}>
+        <Pressable onPress={onMore} hitSlop={10} style={styles.trackAction}>
           <MoreHorizontal size={18} color={COLORS.tabInactive} />
         </Pressable>
       ) : null}
       {onRemove ? (
-        <Pressable onPress={onRemove} hitSlop={8} style={styles.trackAction}>
+        <Pressable onPress={onRemove} hitSlop={10} style={styles.trackAction}>
           <X size={18} color={COLORS.tabInactive} />
         </Pressable>
       ) : null}
@@ -56,26 +74,36 @@ const styles = StyleSheet.create({
   trackRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.elevated,
-    borderRadius: 12,
-    marginBottom: 8,
-    padding: 10,
-    paddingHorizontal: 12,
+    height: 52,
+    paddingHorizontal: 16,
+    position: 'relative',
   },
-  trackRowPressed: {
-    backgroundColor: COLORS.cardPress,
+  trackRowActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+  },
+  playingIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 6,
+    bottom: 6,
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: COLORS.accent,
   },
   trackRowMain: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 12,
+    alignSelf: 'stretch',
+  },
+  trackRowPressed: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
   },
   trackArtwork: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 6,
     backgroundColor: COLORS.card,
   },
   trackArtworkFallback: {
@@ -86,15 +114,16 @@ const styles = StyleSheet.create({
   },
   trackTitle: {
     color: COLORS.textPrimary,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
   },
   trackArtist: {
-    ...TYPE.body,
-    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontSize: 11.5,
     marginTop: 2,
   },
   trackAction: {
-    marginLeft: 12,
+    padding: 6,
+    marginLeft: 8,
   },
 });

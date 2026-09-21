@@ -1,5 +1,5 @@
 {
-  "name": "spotify-white",
+  "name": "AYMNX_M",
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
@@ -8,7 +8,15 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
     "expo": "~57.0.20",
+    "expo-application": "~57.0.3",
+    "expo-audio": "~57.0.5",
+    "expo-blur": "~57.0.3",
+    "expo-clipboard": "~57.0.2",
+    "expo-constants": "~57.0.19",
+    "expo-crypto": "~57.0.3",
+    "expo-dev-client": "~57.0.19",
     "expo-file-system": "~57.0.6",
+    "expo-haptics": "~57.0.3",
     "expo-image": "~57.0.4",
     "expo-image-picker": "~57.0.16",
     "expo-linear-gradient": "~57.0.1",
@@ -18,10 +26,9 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "^5.9.1",
-    "react-native-track-player": "^4.1.2",
-    "react-native-web": "^0.21.2",
-    "shaka-player": "^4.16.48"
+    "react-native-web": "^0.21.2"
   },
   "scripts": {
     "start": "expo start",

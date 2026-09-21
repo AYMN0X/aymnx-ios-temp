@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowUpDown, Download, Heart } from 'lucide-react-native';
 import { TrackRow } from '../components/TrackRow';
@@ -38,6 +39,7 @@ interface LibraryItem {
 }
 
 export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }: LibraryScreenProps) {
+  const insets = useSafeAreaInsets();
   const {
     likedSongs,
     likedMeta,
@@ -46,7 +48,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
     toggleLike,
     isLiked,
   } = useLibrary();
-  const { playTrack } = usePlayer();
+  const { playTrack, currentTrack } = usePlayer();
   const { openTrack } = useTrackActions();
   const { downloadedTracks, deleteDownload } = useDownloads();
   const { user } = useAuth();
@@ -142,7 +144,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
         <Pressable style={styles.libraryAvatar} onPress={onOpenAccount}>
           <Text style={styles.libraryAvatarLetter}>{userInitial}</Text>
         </Pressable>
-        <Text style={styles.libraryTitle}>Library</Text>
+        <Text style={styles.libraryTitle}>Your Library</Text>
         <View style={styles.libraryHeaderActions}>
           <Pressable style={styles.libraryHeaderBtn} hitSlop={8}>
             <Ionicons name="search" size={22} color={COLORS.white} />
@@ -217,7 +219,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
       <FlatList
         data={filteredItems}
         keyExtractor={(item) => item.key}
-        contentContainerStyle={styles.libraryList}
+        contentContainerStyle={[styles.libraryList, { paddingBottom: insets.bottom + 146 }]}
         ListEmptyComponent={
           libraryFilter === 'Playlists' ? (
             <Text style={styles.libraryEmpty}>No songs yet</Text>
@@ -259,6 +261,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
             return (
               <TrackRow
                 track={item.track!}
+                active={item.track!.id === currentTrack?.id}
                 liked={isLiked(item.track!.id)}
                 onPlay={() => item.track && playTrack(item.track, downloadedTracks)}
                 onToggleLike={() => item.track && toggleLike(item.track)}
@@ -299,31 +302,35 @@ const styles = StyleSheet.create({
   libraryScreen: {
     flex: 1,
     backgroundColor: COLORS.background,
-    paddingTop: 12,
+    paddingTop: 8,
     paddingBottom: 8,
   },
   libraryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     marginBottom: 16,
     paddingHorizontal: 16,
   },
   libraryAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.cardPress,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   libraryAvatarLetter: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   libraryTitle: {
-    ...TYPE.display,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
     color: COLORS.textPrimary,
     flex: 1,
   },
@@ -385,14 +392,14 @@ const styles = StyleSheet.create({
   libRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 64,
+    height: 60,
     gap: 12,
     paddingHorizontal: 16,
   },
   libCover: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -415,7 +422,6 @@ const styles = StyleSheet.create({
     ...TYPE.body,
   },
   libraryList: {
-    paddingBottom: 90,
   },
   libraryCreateRow: {
     flexDirection: 'row',
@@ -434,13 +440,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   libraryCreateBtn: {
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.accent,
     borderRadius: 6,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   libraryCreateLabel: {
-    color: '#121212',
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   libraryEmpty: {

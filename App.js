@@ -1,16 +1,17 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
+import { bootLog } from './src/services/bootLog';
 import {
   SafeAreaProvider,
   SafeAreaView,
-  useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import { TabBar } from './src/components/layout/TabBar';
-import { AccountSheet } from './src/components/modals/AccountSheet';
 import { CreatePlaylistModal } from './src/components/modals/CreatePlaylistModal';
 import { NowPlayingModal } from './src/components/modals/NowPlayingModal';
-import { MiniPlayer } from './src/components/player/MiniPlayer';
+import { SettingsSheet } from './src/components/modals/SettingsSheet';
+import { MiniPlayerDock } from './src/components/MiniPlayerDock';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider } from './src/context/DownloadContext';
 import { LibraryProvider } from './src/context/LibraryContext';
@@ -25,14 +26,16 @@ import { SearchScreen } from './src/screens/SearchScreen';
 import { getHasSeenOnboarding, setHasSeenOnboarding } from './src/services/storage';
 
 function AppShell() {
-  const insets = useSafeAreaInsets();
-  const { currentTrack } = usePlayer();
   const [activeTab, setActiveTab] = useState('home');
   const [tabKeys, setTabKeys] = useState({ home: 0, search: 0, create: 0, library: 0 });
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false);
   const [pendingPlaylistId, setPendingPlaylistId] = useState(null);
+
+  useEffect(() => {
+    bootLog('AppShell mounted (first screen render)');
+  }, []);
 
   const openImportedPlaylist = (id) => {
     setPendingPlaylistId(id);
@@ -44,17 +47,13 @@ function AppShell() {
       setTabKeys((keys) => ({ ...keys, [tabKey]: keys[tabKey] + 1 }));
     } else {
       setActiveTab(tabKey);
+      Image.clearMemoryCache().catch(() => undefined);
     }
   };
 
   return (
     <View style={styles.container}>
-      <View
-        style={[
-          styles.screenContent,
-          { paddingBottom: 49 + insets.bottom + (currentTrack ? 64 : 0) },
-        ]}
-      >
+      <View style={styles.screenContent}>
         {activeTab === 'home' ? (
           <HomeScreen
             key={tabKeys.home}
@@ -74,10 +73,10 @@ function AppShell() {
           />
         )}
       </View>
-      <MiniPlayer onOpen={() => setNowPlayingOpen(true)} />
+      <MiniPlayerDock onOpen={() => setNowPlayingOpen(true)} />
       <TabBar active={activeTab} onChange={handleTabChange} />
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
-      <AccountSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
+      <SettingsSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
       <CreatePlaylistModal
         visible={createPlaylistOpen}
         onClose={() => setCreatePlaylistOpen(false)}
@@ -94,6 +93,7 @@ function AuthGate() {
     let mounted = true;
     getHasSeenOnboarding()
       .then((seen) => {
+        bootLog('onboarding flag resolved', { seen });
         if (mounted) {
           setOnboardingSeen(seen);
         }
@@ -141,6 +141,11 @@ function AuthGate() {
 }
 
 export default function App() {
+  useEffect(() => {
+    bootLog('App mounted');
+    Image.clearMemoryCache().catch(() => undefined);
+  }, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
@@ -154,21 +159,21 @@ const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#0B0C0E',
+    backgroundColor: '#111216',
   },
   safeArea: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#0B0C0E',
+    backgroundColor: '#111216',
   },
   onboardingRoot: {
     flex: 1,
-    backgroundColor: '#0B0C0E',
+    backgroundColor: '#111216',
   },
   container: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#0B0C0E',
+    backgroundColor: '#111216',
   },
   screenContent: {
     flex: 1,

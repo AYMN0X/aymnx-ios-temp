@@ -1,8 +1,7 @@
 import * as React from "react";
 import {
   ActivityIndicator,
-  Image,
-  SafeAreaView,
+  FlatList,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,34 +9,20 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary } from "../context/LibraryContext";
 import { usePlayer } from "../context/PlayerContext";
 import { useTrackActions } from "../context/TrackActionsContext";
 import { useAuth } from "../context/AuthContext";
-import { searchITunes } from "../services/musicApi";
+import { searchSoundCloudTracks } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
-import { Border, Color } from "../theme/GlobalStyles";
-import { PlaylistDetailScreen } from "./PlaylistDetailScreen";
-
-interface PlaylistView {
-  title: string;
-  subtitle: string;
-  tracks: Track[];
-  coverColor: string;
-}
+import { Color } from "../theme/GlobalStyles";
+import { TrackRow } from "../components/TrackRow";
+import { SoundCloudResultRow } from "../components/SoundCloudResultRow";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const TRACK_LIMIT = 25;
-
-const FALLBACK_PLAYLIST_GRADIENTS: [string, string][] = [
-  ["#6A1B9A", "#311B92"],
-  ["#2B4B7A", "#0E7C7B"],
-  ["#8D67AB", "#503750"],
-  ["#D84000", "#E13300"],
-  ["#1A237E", "#6A1B9A"],
-];
 
 const DEFAULT_LIKED: Track[] = [
   {
@@ -96,112 +81,25 @@ const DEFAULT_LIKED: Track[] = [
   },
 ];
 
-function TrackListRow({
-  track,
-  active,
-  onPress,
-  liked,
-  onToggleLike,
-  onMore,
-}: {
-  track: Track;
-  active: boolean;
-  onPress: () => void;
-  liked: boolean;
-  onToggleLike: () => void;
-  onMore?: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.trackRow} activeOpacity={0.7} onPress={onPress}>
-      {track.artwork ? (
-        <Image source={{ uri: track.artwork }} style={styles.trackArtwork} />
-      ) : (
-        <View style={[styles.trackArtwork, styles.trackArtworkFallback]} />
-      )}
-      <View style={styles.trackInfo}>
-        <Text
-          style={[styles.trackTitle, active && styles.trackTitleActive]}
-          numberOfLines={1}
-        >
-          {track.title}
-        </Text>
-        <Text
-          style={[styles.trackArtist, active && styles.trackArtistActive]}
-          numberOfLines={1}
-        >
-          {track.artist}
-        </Text>
-      </View>
-      {active && <Text style={styles.playingDot}>●</Text>}
-      <TouchableOpacity onPress={onToggleLike} hitSlop={8} style={styles.rowQuickAdd}>
-        <Ionicons
-          name={liked ? 'checkmark-circle' : 'add-circle-outline'}
-          size={20}
-          color={liked ? Color.accent : Color.tabInactive}
-        />
-      </TouchableOpacity>
-      <TouchableOpacity onPress={onMore} hitSlop={8} style={styles.rowQuickAdd}>
-        <Ionicons name="ellipsis-horizontal" size={20} color={Color.tabInactive} />
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
-}
-
-function PlaylistCard({
-  title,
-  subtitle,
-  coverUrl,
-  colors,
-  icon,
-  onPress,
-}: {
-  title: string;
-  subtitle: string;
-  coverUrl?: string;
-  colors: [string, string];
-  icon?: React.ReactNode;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.playlistCard} onPress={onPress} activeOpacity={0.8}>
-      {coverUrl ? (
-        <Image source={{ uri: coverUrl }} style={styles.playlistCardCover} resizeMode="cover" />
-      ) : (
-        <LinearGradient colors={colors} style={styles.playlistCardCover}>
-          {icon ?? null}
-        </LinearGradient>
-      )}
-      <Text style={styles.playlistCardTitle} numberOfLines={1}>
-        {title}
-      </Text>
-      <Text style={styles.playlistCardSubtitle} numberOfLines={1}>
-        {subtitle}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
 export const HomeScreen: React.FC<{
   onCreatePlaylist?: () => void;
   onOpenAccount?: () => void;
 }> = ({ onCreatePlaylist, onOpenAccount }) => {
+  const insets = useSafeAreaInsets();
   const { playTrack, currentTrack } = usePlayer();
-  const { likedSongs, playlists, isLiked, toggleLike } = useLibrary();
+  const { likedSongs, isLiked, toggleLike } = useLibrary();
   const { openTrack } = useTrackActions();
   const { user } = useAuth();
   const userInitial = (user?.name || user?.username || "?").charAt(0).toUpperCase();
 
-  const [playlistView, setPlaylistView] = React.useState<PlaylistView | null>(null);
-  const [libraryView, setLibraryView] = React.useState<
-    | { kind: "playlist"; id: string }
-    | null
-  >(null);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<Track[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
+  const [hasSearchCompleted, setHasSearchCompleted] = React.useState(false);
   const [searchError, setSearchError] = React.useState("");
 
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeqRef = React.useRef(0);
 
   const isSearchingNow = searchQuery.trim().length > 0;
 
@@ -215,21 +113,34 @@ export const HomeScreen: React.FC<{
 
   const runSearch = React.useCallback(async (term: string) => {
     const trimmed = term.trim();
+    const seq = ++searchSeqRef.current;
     if (!trimmed) {
       setSearchResults([]);
       setSearchError("");
+      setHasSearchCompleted(false);
+      setIsSearching(false);
       return;
     }
     setIsSearching(true);
     setSearchError("");
     try {
-      const tracks = await searchITunes(trimmed, TRACK_LIMIT);
-      setSearchResults(tracks);
+      const tracks = await searchSoundCloudTracks(trimmed, TRACK_LIMIT);
+      if (seq !== searchSeqRef.current) {
+        return;
+      }
+      setSearchResults(tracks.slice(0, TRACK_LIMIT));
+      setHasSearchCompleted(true);
     } catch (error) {
+      if (seq !== searchSeqRef.current) {
+        return;
+      }
       setSearchError("Search failed. Tap to retry.");
       setSearchResults([]);
+      setHasSearchCompleted(true);
     } finally {
-      setIsSearching(false);
+      if (seq === searchSeqRef.current) {
+        setIsSearching(false);
+      }
     }
   }, []);
 
@@ -238,6 +149,18 @@ export const HomeScreen: React.FC<{
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
+    searchSeqRef.current += 1;
+    if (!text.trim()) {
+      setSearchResults([]);
+      setSearchError("");
+      setHasSearchCompleted(false);
+      setIsSearching(false);
+      return;
+    }
+    setSearchResults([]);
+    setSearchError("");
+    setHasSearchCompleted(false);
+    setIsSearching(true);
     debounceRef.current = setTimeout(() => runSearch(text), SEARCH_DEBOUNCE_MS);
   };
 
@@ -248,167 +171,115 @@ export const HomeScreen: React.FC<{
 
   const favouritesList = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
 
-  const countLabel = (count: number) => `${count} ${count === 1 ? "song" : "songs"}`;
-
-  const sortedHomePlaylists = [
-    ...playlists.filter((p) => p.id !== "liked" && !p.isImported)
-      .slice()
-      .reverse(),
-    ...playlists.filter((p) => p.isImported),
-  ];
-
-  const playlistCards: Array<{
-    key: string;
-    title: string;
-    subtitle: string;
-    coverUrl?: string;
-    colors: [string, string];
-    icon?: React.ReactNode;
-    onPress: () => void;
-  }> = sortedHomePlaylists.map((playlist, index) => ({
-    key: playlist.id,
-    title: playlist.name,
-    subtitle: countLabel(playlist.tracks?.length ?? 0),
-    coverUrl: playlist.coverUrl,
-    colors: FALLBACK_PLAYLIST_GRADIENTS[index % FALLBACK_PLAYLIST_GRADIENTS.length],
-    onPress: () => setLibraryView({ kind: "playlist", id: playlist.id }),
-  }));
-
   const renderTracks = (tracks: Track[], onPlay: (track: Track) => void) =>
     tracks.map((track) => (
-      <TrackListRow
+      <TrackRow
         key={track.id}
         track={track}
         active={currentTrack?.id === track.id}
         liked={isLiked(track.id)}
         onToggleLike={() => toggleLike(track)}
         onMore={() => openTrack(track)}
-        onPress={() => onPlay(track)}
+        onPlay={() => onPlay(track)}
       />
     ));
 
-  if (playlistView) {
-    return (
-      <PlaylistDetailScreen
-        title={playlistView.title}
-        subtitle={playlistView.subtitle}
-        tracks={playlistView.tracks}
-        coverColor={playlistView.coverColor}
-        onBack={() => setPlaylistView(null)}
-      />
-    );
-  }
+  const headerNode = (
+    <View style={styles.header}>
+      <View style={styles.headerTop}>
+        <TouchableOpacity
+          onPress={onOpenAccount}
+          hitSlop={12}
+          style={styles.profileAvatar}
+        >
+          <Text style={styles.profileAvatarLetter}>{userInitial}</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Your Library</Text>
+        <View style={styles.headerActions}>
+          {onCreatePlaylist ? (
+            <TouchableOpacity onPress={onCreatePlaylist} hitSlop={8} style={styles.headerBtn}>
+              <Ionicons name="add" size={24} color={Color.textPrimary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
 
-  if (libraryView) {
-    return <PlaylistDetailScreen playlistId={libraryView.id} onBack={() => setLibraryView(null)} />;
-  }
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={16} color={Color.placeholder} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search music..."
+          placeholderTextColor={Color.placeholder}
+          value={searchQuery}
+          onChangeText={handleSearchChange}
+          autoCorrect={false}
+          returnKeyType="search"
+          onSubmitEditing={() => runSearch(searchQuery)}
+        />
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+      {headerNode}
+      {isSearchingNow ? (
+        <FlatList
+          style={styles.scrollView}
+          data={searchResults}
+          keyExtractor={(item) => item.id}
+          windowSize={5}
+          initialNumToRender={10}
+          maxToRenderPerBatch={8}
+          removeClippedSubviews
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 146 }]}
+          ListHeaderComponent={
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Results for "{searchQuery.trim()}"</Text>
+            </View>
+          }
+          ListEmptyComponent={
+            isSearching ? (
+              <ActivityIndicator color={Color.accent} style={styles.loading} />
+            ) : searchError ? (
+              <TouchableOpacity onPress={() => runSearch(searchQuery)}>
+                <Text style={styles.errorText}>{searchError}</Text>
+              </TouchableOpacity>
+            ) : hasSearchCompleted ? (
+              <Text style={styles.emptyText}>No results found. Try a different search.</Text>
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <SoundCloudResultRow
+              track={item}
+              active={currentTrack?.id === item.id}
+              onPlay={() => handlePlayTrack(item)}
+            />
+          )}
+        />
+      ) : (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 146 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.header}>
-            {onOpenAccount ? (
-              <View style={styles.headerTop}>
-                <TouchableOpacity
-                  onPress={onOpenAccount}
-                  hitSlop={12}
-                  style={styles.profileAvatar}
-                >
-                  <Text style={styles.profileAvatarLetter}>{userInitial}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-            <Text style={styles.greetingTitle}>Welcome back!</Text>
-            <Text style={styles.greetingSubtitle}>What do you feel like today?</Text>
-
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color={Color.placeholder} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search music..."
-                placeholderTextColor={Color.placeholder}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                autoCorrect={false}
-                returnKeyType="search"
-                onSubmitEditing={() => runSearch(searchQuery)}
-              />
-            </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your favourites</Text>
+            {likedSongs.length === 0 && (
+              <Text style={styles.favouritesHint}>
+                You haven't liked any songs yet — here are some picks to get you
+                started.
+              </Text>
+            )}
           </View>
-
-          {isSearchingNow ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Results for "{searchQuery.trim()}"</Text>
-              {isSearching ? (
-                <ActivityIndicator color={Color.accent} style={styles.loading} />
-              ) : searchError ? (
-                <TouchableOpacity onPress={() => runSearch(searchQuery)}>
-                  <Text style={styles.errorText}>{searchError}</Text>
-                </TouchableOpacity>
-              ) : searchResults.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  No results found. Try a different search.
-                </Text>
-              ) : (
-                <View style={styles.trackList}>
-                  {renderTracks(searchResults, handlePlayTrack)}
-                </View>
-              )}
-            </View>
-          ) : (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Your favourites</Text>
-                {likedSongs.length === 0 && (
-                  <Text style={styles.favouritesHint}>
-                    You haven't liked any songs yet — here are some picks to get you
-                    started.
-                  </Text>
-                )}
-                <View style={styles.trackList}>
-                  {renderTracks(favouritesList, handlePlayTrack)}
-                </View>
-              </View>
-
-              <View style={[styles.section, styles.playlistsSection]}>
-                <Text style={styles.sectionTitle}>Your playlists</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.playlistRail}
-                >
-                  {playlistCards.map((card) => (
-                    <PlaylistCard
-                      key={card.key}
-                      title={card.title}
-                      subtitle={card.subtitle}
-                      coverUrl={card.coverUrl}
-                      colors={card.colors}
-                      icon={card.icon}
-                      onPress={card.onPress}
-                    />
-                  ))}
-                  {playlistCards.length === 0 ? (
-                    <PlaylistCard
-                      title="Create Playlist"
-                      subtitle="Start your own mix"
-                      colors={["#9066FE", "#5C39E8"]}
-                      icon={<Ionicons name="add" size={28} color="#FFFFFF" />}
-                      onPress={() => onCreatePlaylist?.()}
-                    />
-                  ) : null}
-                </ScrollView>
-              </View>
-            </>
-          )}
+          <View style={styles.trackList}>
+            {renderTracks(favouritesList, handlePlayTrack)}
+          </View>
         </ScrollView>
-      </SafeAreaView>
+      )}
     </View>
   );
 };
@@ -422,12 +293,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: Color.background,
   },
-  safeArea: {
-    flex: 1,
-    width: "100%",
-    alignSelf: "stretch",
-    backgroundColor: Color.background,
-  },
   scrollView: {
     flex: 1,
     width: "100%",
@@ -437,26 +302,27 @@ const styles = StyleSheet.create({
   scrollContent: {
     width: "100%",
     alignSelf: "stretch",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 90,
+    paddingTop: 8,
   },
   header: {
     gap: 4,
     width: "100%",
     alignSelf: "stretch",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    backgroundColor: Color.background,
   },
   headerTop: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
+    gap: 10,
+    width: "100%",
   },
   profileAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Color.surface,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Color.card,
     borderWidth: 1,
     borderColor: Color.border,
     alignItems: "center",
@@ -464,72 +330,46 @@ const styles = StyleSheet.create({
   },
   profileAvatarLetter: {
     color: Color.textPrimary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  greetingTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: Color.textPrimary,
-    flexShrink: 1,
-  },
-  greetingSubtitle: {
     fontSize: 14,
-    color: Color.textSecondary,
-    fontWeight: "500",
+    fontWeight: "700",
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    color: Color.textPrimary,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerBtn: {
+    padding: 4,
   },
   searchContainer: {
     marginTop: 12,
     flexDirection: "row",
     alignItems: "center",
-    height: 48,
-    backgroundColor: Color.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Color.inputBorder,
-    paddingHorizontal: 14,
-    marginBottom: 16,
+    height: 36,
+    backgroundColor: Color.searchBg,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    marginBottom: 20,
   },
   searchInput: {
     flex: 1,
     color: Color.textPrimary,
-    fontSize: 15,
-    marginLeft: 8,
+    fontSize: 14,
+    marginLeft: 6,
     paddingVertical: 0,
   },
-  playlistRail: {
-    gap: 12,
-    paddingRight: 16,
-  },
-  playlistCard: {
-    width: 140,
-    gap: 6,
-  },
-  playlistCardCover: {
-    width: 140,
-    height: 140,
-    borderRadius: Border.md,
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Color.card,
-  },
-  playlistCardTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Color.textPrimary,
-  },
-  playlistCardSubtitle: {
-    fontSize: 12,
-    color: Color.textSecondary,
-  },
   section: {
-    gap: 14,
+    gap: 10,
     width: "100%",
     alignSelf: "stretch",
-  },
-  playlistsSection: {
-    marginTop: 20,
+    paddingHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 17,
@@ -544,11 +384,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Color.accent,
     paddingVertical: 16,
+    paddingHorizontal: 16,
   },
   emptyText: {
     fontSize: 13,
     color: Color.textSecondary,
     paddingVertical: 16,
+    paddingHorizontal: 16,
   },
   favouritesHint: {
     fontSize: 13,
@@ -557,51 +399,6 @@ const styles = StyleSheet.create({
   },
   trackList: {
     gap: 0,
-  },
-  trackRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Color.surface,
-    borderRadius: 12,
-    marginBottom: 8,
-    padding: 10,
-    paddingHorizontal: 12,
-    gap: 12,
-  },
-  trackArtwork: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: Color.card,
-  },
-  trackArtworkFallback: {
-    backgroundColor: Color.card,
-  },
-  trackInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  trackTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: Color.textPrimary,
-  },
-  trackTitleActive: {
-    color: Color.accent,
-  },
-  trackArtist: {
-    fontSize: 13,
-    color: Color.textSecondary,
-  },
-  trackArtistActive: {
-    color: Color.accent,
-  },
-  playingDot: {
-    fontSize: 10,
-    color: Color.accent,
-  },
-  rowQuickAdd: {
-    padding: 6,
   },
 });
 

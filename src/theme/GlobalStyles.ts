@@ -1,19 +1,20 @@
 export const Color = {
-  background: '#0B0C0E',
-  surface: '#16171B',
-  card: '#18191E',
-  accent: '#9066FE',
+  background: '#111216',
+  surface: '#191A20',
+  card: '#232428',
+  accent: '#E94B35',
   textPrimary: '#FFFFFF',
-  textSecondary: '#8A8F9D',
-  border: '#23252B',
-  tabInactive: '#5A5E6B',
-  tabBarBg: '#0E0F12',
-  tabBarBorder: '#1D1F24',
-  placeholder: '#636773',
-  inputBorder: '#282A30',
+  textSecondary: '#949BA4',
+  border: 'rgba(255, 255, 255, 0.06)',
+  tabInactive: '#949BA4',
+  tabBarBg: '#111216',
+  tabBarBorder: 'rgba(255, 255, 255, 0.06)',
+  placeholder: '#949BA4',
+  inputBorder: 'rgba(255, 255, 255, 0.08)',
+  searchBg: '#1E1F22',
 };
 
 export const Border = {
-  sm: 8,
+  sm: 6,
   md: 12,
 };

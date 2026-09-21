@@ -2,7 +2,7 @@ import { Cast, Heart, Pause, Play } from 'lucide-react-native';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLibrary } from '../../context/LibraryContext';
-import { usePlayer } from '../../context/PlayerContext';
+import { usePlayer, useProgress } from '../../context/PlayerContext';
 import { COLORS, TYPE } from '../../theme/appTheme';
 
 interface MiniPlayerProps {
@@ -11,16 +11,10 @@ interface MiniPlayerProps {
 
 export function MiniPlayer({ onOpen }: MiniPlayerProps) {
   const insets = useSafeAreaInsets();
-  const {
-    currentTrack,
-    isPlaying,
-    playbackPosition,
-    duration,
-    playbackError,
-    togglePlayPause,
-  } = usePlayer();
+  const { currentTrack, isPlaying, playbackError, togglePlayPause } = usePlayer();
+  const { positionMs, durationMs } = useProgress();
   const { isLiked, toggleLike } = useLibrary();
-  const progress = duration > 0 ? Math.min(Math.max(playbackPosition / duration, 0), 1) : 0;
+  const progress = durationMs > 0 ? Math.min(Math.max(positionMs / durationMs, 0), 1) : 0;
 
   if (!currentTrack) {
     return null;
