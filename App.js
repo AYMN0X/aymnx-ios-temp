@@ -8,6 +8,7 @@ import {
   SafeAreaView,
 } from 'react-native-safe-area-context';
 import { TabBar } from './src/components/layout/TabBar';
+import { TelemetryHud } from './src/components/TelemetryHud';
 import { CreatePlaylistModal } from './src/components/modals/CreatePlaylistModal';
 import { NowPlayingModal } from './src/components/modals/NowPlayingModal';
 import { SettingsSheet } from './src/components/modals/SettingsSheet';
@@ -150,6 +151,7 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <AuthGate />
+        <TelemetryHud />
       </AuthProvider>
     </SafeAreaProvider>
   );
