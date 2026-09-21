@@ -1,23 +1,23 @@
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { Pause, Play, SkipForward } from 'lucide-react-native';
+import { Pause, Play } from 'lucide-react-native';
 import { memo, useCallback, useEffect } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM_GAP } from './layout/TabBar';
 import { usePlayer, useProgress } from '../context/PlayerContext';
+import { COLORS } from '../theme/appTheme';
 
 interface MiniPlayerDockProps {
   onOpen: () => void;
 }
 
-const DOCK_HEIGHT = 64;
+const DOCK_HEIGHT = 60;
 const DOCK_HORIZONTAL_MARGIN = 12;
 const DOCK_BOTTOM_GAP = 8;
-const ARTWORK_SIZE = 44;
-const BUTTON_SIZE = 36;
+const ARTWORK_SIZE = 40;
+const BUTTON_SIZE = 40;
 
 const DockProgressBar: React.FC = memo(function DockProgressBar() {
   const { positionMs, durationMs } = useProgress();
@@ -31,7 +31,7 @@ const DockProgressBar: React.FC = memo(function DockProgressBar() {
 
 export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
   const insets = useSafeAreaInsets();
-  const { currentTrack, isPlaying, playbackError, togglePlayPause, playNext } = usePlayer();
+  const { currentTrack, isPlaying, togglePlayPause } = usePlayer();
 
   const hasTrack = Boolean(currentTrack);
 
@@ -69,11 +69,6 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
     togglePlayPause();
   }, [tapHaptic, togglePlayPause]);
 
-  const handleNext = useCallback(() => {
-    tapHaptic();
-    playNext();
-  }, [tapHaptic, playNext]);
-
   if (!currentTrack) {
     return null;
   }
@@ -87,12 +82,6 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
       ]}
     >
       <View style={styles.dockCard}>
-        <View style={styles.base} />
-        <BlurView
-          intensity={75}
-          tint="systemUltraThinMaterialDark"
-          style={StyleSheet.absoluteFill}
-        />
         <View style={styles.dockRow}>
           <Pressable
             style={styles.openArea}
@@ -119,11 +108,9 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
                 <View style={[styles.artwork, styles.artworkFallback]} />
               )}
               <View style={styles.meta}>
+                <Text style={styles.nowPlaying}>Now Playing</Text>
                 <Text style={styles.title} numberOfLines={1}>
                   {currentTrack.title}
-                </Text>
-                <Text style={styles.artist} numberOfLines={1}>
-                  {playbackError || currentTrack.artist}
                 </Text>
               </View>
             </Animated.View>
@@ -133,24 +120,15 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
             <Pressable
               onPress={handlePlayPause}
               hitSlop={12}
-              style={styles.playButton}
+              style={({ pressed }) => [styles.playButton, pressed && styles.playPressed]}
               accessibilityRole="button"
               accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
-                <Pause size={20} color="#FFFFFF" fill="#FFFFFF" />
+                <Pause size={20} color={COLORS.white} fill={COLORS.white} />
               ) : (
-                <Play size={20} color="#FFFFFF" fill="#FFFFFF" style={styles.playIcon} />
+                <Play size={20} color={COLORS.white} fill={COLORS.white} style={styles.playIcon} />
               )}
-            </Pressable>
-            <Pressable
-              onPress={handleNext}
-              hitSlop={12}
-              style={styles.nextButton}
-              accessibilityRole="button"
-              accessibilityLabel="Next track"
-            >
-              <SkipForward size={22} color="#FFFFFF" fill="#FFFFFF" />
             </Pressable>
           </View>
         </View>
@@ -177,22 +155,15 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: '#181C1C',
     overflow: 'hidden',
-  },
-  base: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(18, 19, 23, 0.78)',
   },
   dockRow: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
   openArea: {
     flex: 1,
@@ -208,49 +179,44 @@ const styles = StyleSheet.create({
     width: ARTWORK_SIZE,
     height: ARTWORK_SIZE,
     borderRadius: 8,
-    backgroundColor: '#23252B',
+    backgroundColor: COLORS.card,
   },
   artworkFallback: {
-    backgroundColor: '#23252B',
+    backgroundColor: COLORS.cardPress,
   },
   meta: {
     flex: 1,
     marginLeft: 10,
+    gap: 2,
+  },
+  nowPlaying: {
+    color: '#828B84',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.6,
   },
   title: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  artist: {
-    color: '#949BA4',
-    fontSize: 12,
-    marginTop: 2,
+    color: '#F0F3F1',
+    fontSize: 13,
+    fontWeight: '600',
   },
   controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 4,
+    paddingLeft: 6,
   },
   playButton: {
     width: BUTTON_SIZE,
     height: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
-    backgroundColor: '#E94B35',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  playPressed: {
+    opacity: 0.7,
   },
   playIcon: {
-    marginLeft: 1,
-  },
-  nextButton: {
-    width: BUTTON_SIZE,
-    height: BUTTON_SIZE,
-    borderRadius: BUTTON_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
+    marginLeft: 1.5,
   },
   progressTrack: {
     position: 'absolute',
@@ -258,11 +224,11 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#E94B35',
+    backgroundColor: COLORS.green,
   },
 });

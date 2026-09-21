@@ -98,22 +98,22 @@ const styles = StyleSheet.create({
   },
   artist: {
     flexShrink: 1,
-    color: '#949BA4',
+    color: COLORS.textSecondary,
     fontSize: 11.5,
   },
   badge: {
-    backgroundColor: '#232428',
+    backgroundColor: COLORS.card,
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
   },
   badgeText: {
-    color: '#949BA4',
+    color: COLORS.textSecondary,
     fontSize: 9,
     fontWeight: '700',
   },
   duration: {
-    color: '#949BA4',
+    color: COLORS.textSecondary,
     fontSize: 12,
     marginLeft: 8,
   },

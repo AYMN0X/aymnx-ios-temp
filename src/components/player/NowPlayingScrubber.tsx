@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 12,
-    color: '#949BA4',
+    color: Color.textSecondary,
     fontVariant: ['tabular-nums'],
   },
 });

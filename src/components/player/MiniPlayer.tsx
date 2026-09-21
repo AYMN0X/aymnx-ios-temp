@@ -1,9 +1,9 @@
-import { Cast, Heart, Pause, Play } from 'lucide-react-native';
+import { Pause, Play } from 'lucide-react-native';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLibrary } from '../../context/LibraryContext';
 import { usePlayer, useProgress } from '../../context/PlayerContext';
-import { COLORS, TYPE } from '../../theme/appTheme';
+import { COLORS } from '../../theme/appTheme';
+import { TAB_BAR_BOTTOM_GAP, TAB_BAR_HEIGHT } from '../layout/TabBar';
 
 interface MiniPlayerProps {
   onOpen: () => void;
@@ -11,9 +11,8 @@ interface MiniPlayerProps {
 
 export function MiniPlayer({ onOpen }: MiniPlayerProps) {
   const insets = useSafeAreaInsets();
-  const { currentTrack, isPlaying, playbackError, togglePlayPause } = usePlayer();
+  const { currentTrack, isPlaying, togglePlayPause } = usePlayer();
   const { positionMs, durationMs } = useProgress();
-  const { isLiked, toggleLike } = useLibrary();
   const progress = durationMs > 0 ? Math.min(Math.max(positionMs / durationMs, 0), 1) : 0;
 
   if (!currentTrack) {
@@ -24,47 +23,37 @@ export function MiniPlayer({ onOpen }: MiniPlayerProps) {
     <View
       style={[
         styles.miniPlayer,
-        { bottom: (49 + insets.bottom) + 8 },
+        { bottom: Math.max(insets.bottom, TAB_BAR_BOTTOM_GAP) + TAB_BAR_HEIGHT + 8 },
       ]}
     >
-      <Pressable style={styles.miniPlayerMain} onPress={onOpen}>
+      <Pressable style={styles.main} onPress={onOpen}>
         {currentTrack.artwork ? (
-          <Image source={{ uri: currentTrack.artwork }} style={styles.miniPlayerArtwork} />
+          <Image source={{ uri: currentTrack.artwork }} style={styles.artwork} />
         ) : (
-          <View style={[styles.miniPlayerArtwork, styles.miniPlayerArtworkFallback]} />
+          <View style={[styles.artwork, styles.artworkFallback]} />
         )}
-        <View style={styles.miniPlayerInfo}>
-          <Text style={styles.miniPlayerTitle} numberOfLines={1}>
+        <View style={styles.info}>
+          <Text style={styles.nowPlaying}>Now Playing</Text>
+          <Text style={styles.title} numberOfLines={1}>
             {currentTrack.title}
-          </Text>
-          <Text style={styles.miniPlayerArtist} numberOfLines={1}>
-            {playbackError || currentTrack.artist}
           </Text>
         </View>
       </Pressable>
-      <View style={styles.miniPlayerActions}>
-        <Cast size={20} color={COLORS.textSecondary} />
-        <Pressable onPress={() => toggleLike(currentTrack)} hitSlop={8}>
-          <Heart
-            size={18}
-            color={isLiked(currentTrack.id) ? COLORS.accent : COLORS.textSecondary}
-            fill={isLiked(currentTrack.id) ? COLORS.accent : 'transparent'}
-          />
-        </Pressable>
-        <Pressable
-          style={styles.miniPlayerPlay}
-          onPress={togglePlayPause}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          {isPlaying ? (
-            <Pause size={22} color="#FFFFFF" fill="#FFFFFF" />
-          ) : (
-            <Play size={22} color="#FFFFFF" fill="#FFFFFF" />
-          )}
-        </Pressable>
-      </View>
-      <View style={styles.miniProgressTrack}>
-        <View style={[styles.miniProgressFill, { width: `${progress * 100}%` }]} />
+      <Pressable
+        style={({ pressed }) => [styles.playButton, pressed && styles.playPressed]}
+        onPress={togglePlayPause}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+      >
+        {isPlaying ? (
+          <Pause size={20} color={COLORS.white} fill={COLORS.white} />
+        ) : (
+          <Play size={20} color={COLORS.white} fill={COLORS.white} style={styles.playIcon} />
+        )}
+      </Pressable>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>
     </View>
   );
@@ -75,70 +64,79 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    height: 56,
-    backgroundColor: COLORS.elevated,
+    height: 60,
+    backgroundColor: '#181C1C',
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     overflow: 'hidden',
     zIndex: 999,
     elevation: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
   },
-  miniPlayerMain: {
+  main: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  miniPlayerArtwork: {
-    width: 42,
-    height: 42,
+  artwork: {
+    width: 40,
+    height: 40,
     borderRadius: 8,
+    backgroundColor: COLORS.card,
   },
-  miniPlayerArtworkFallback: {
+  artworkFallback: {
     backgroundColor: COLORS.cardPress,
   },
-  miniPlayerInfo: {
+  info: {
     flex: 1,
-    paddingLeft: 8,
+    paddingLeft: 10,
+    gap: 2,
   },
-  miniPlayerTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
+  nowPlaying: {
+    color: '#828B84',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+  },
+  title: {
+    color: '#F0F3F1',
+    fontSize: 13,
     fontWeight: '600',
   },
-  miniPlayerArtist: {
-    ...TYPE.body,
-    marginTop: 1,
-  },
-  miniPlayerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingRight: 12,
-  },
-  miniPlayerPlay: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.accent,
+  playButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniProgressTrack: {
+  playPressed: {
+    opacity: 0.7,
+  },
+  playIcon: {
+    marginLeft: 1.5,
+  },
+  progressTrack: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     height: 2,
     width: '100%',
-    backgroundColor: '#23252B',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 1,
   },
-  miniProgressFill: {
+  progressFill: {
     height: 2,
-    backgroundColor: COLORS.accent,
+    backgroundColor: COLORS.green,
     borderRadius: 1,
   },
 });

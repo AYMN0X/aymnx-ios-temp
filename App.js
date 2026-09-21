@@ -28,7 +28,7 @@ import { getHasSeenOnboarding, setHasSeenOnboarding } from './src/services/stora
 
 function AppShell() {
   const [activeTab, setActiveTab] = useState('home');
-  const [tabKeys, setTabKeys] = useState({ home: 0, search: 0, create: 0, library: 0 });
+  const [tabKeys, setTabKeys] = useState({ home: 0, heart: 0, search: 0, bell: 0, profile: 0 });
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false);
@@ -40,10 +40,14 @@ function AppShell() {
 
   const openImportedPlaylist = (id) => {
     setPendingPlaylistId(id);
-    setActiveTab('library');
+    setActiveTab('heart');
   };
 
   const handleTabChange = (tabKey, wasActive) => {
+    if (tabKey === 'profile') {
+      setAccountOpen(true);
+      return;
+    }
     if (wasActive) {
       setTabKeys((keys) => ({ ...keys, [tabKey]: keys[tabKey] + 1 }));
     } else {
@@ -63,11 +67,11 @@ function AppShell() {
           />
         ) : activeTab === 'search' ? (
           <SearchScreen key={tabKeys.search} />
-        ) : activeTab === 'create' ? (
-          <ImportScreen key={tabKeys.create} onOpenImportedPlaylist={openImportedPlaylist} />
+        ) : activeTab === 'bell' ? (
+          <ImportScreen key={tabKeys.bell} onOpenImportedPlaylist={openImportedPlaylist} />
         ) : (
           <LibraryScreen
-            key={tabKeys.library}
+            key={tabKeys.heart}
             onOpenAccount={() => setAccountOpen(true)}
             initialDetail={pendingPlaylistId ? { type: 'playlist', id: pendingPlaylistId } : null}
             onDetailConsumed={() => setPendingPlaylistId(null)}
@@ -161,21 +165,21 @@ const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#111216',
+    backgroundColor: '#101313',
   },
   safeArea: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#111216',
+    backgroundColor: '#101313',
   },
   onboardingRoot: {
     flex: 1,
-    backgroundColor: '#111216',
+    backgroundColor: '#101313',
   },
   container: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#111216',
+    backgroundColor: '#101313',
   },
   screenContent: {
     flex: 1,

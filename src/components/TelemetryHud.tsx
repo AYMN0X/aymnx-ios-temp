@@ -7,7 +7,7 @@ const MONO_FONT = Platform.OS === 'ios' ? 'Courier New' : 'monospace';
 const REFRESH_MS = 1000;
 
 export const TelemetryHud: React.FC = memo(function TelemetryHud() {
-  const { heapMb, allocMb, supported } = useTelemetry(REFRESH_MS);
+  const { processMb, heapMb, allocMb, supported } = useTelemetry(REFRESH_MS);
 
   bootLogOnce('TelemetryHud mounted');
 
@@ -19,7 +19,9 @@ export const TelemetryHud: React.FC = memo(function TelemetryHud() {
     <View style={styles.hud} pointerEvents="none">
       <View style={styles.badge}>
         <Text style={styles.mono} numberOfLines={1}>
-          <Text style={styles.hardwareLabel}>HERMES: </Text>
+          <Text style={styles.ramLabel}>RAM: </Text>
+          <Text style={styles.value}>{processMb ?? '--'} MB</Text>
+          <Text style={styles.hardwareLabel}>  HERMES: </Text>
           <Text style={styles.value}>{heapMb ?? '--'} MB</Text>
           <Text style={styles.hardwareLabel}>  ALLOC: </Text>
           <Text style={styles.allocation}>{allocMb ?? '--'} MB</Text>
@@ -54,6 +56,9 @@ const styles = StyleSheet.create({
   },
   hardwareLabel: {
     color: '#ff9800',
+  },
+  ramLabel: {
+    color: '#00e5ff',
   },
   value: {
     color: '#00e676',

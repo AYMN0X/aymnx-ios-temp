@@ -163,7 +163,7 @@ export function SearchScreen() {
             searching ? (
               <ActivityIndicator
                 size="small"
-                color="#E94B35"
+                color={COLORS.accent}
                 style={styles.searchLoading}
               />
             ) : error ? (
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: '#E94B35',
+    backgroundColor: COLORS.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },

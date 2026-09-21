@@ -765,7 +765,7 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     alignSelf: "stretch",
-    backgroundColor: "#191A20",
+    backgroundColor: Color.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,

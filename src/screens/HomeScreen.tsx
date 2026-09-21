@@ -1,28 +1,13 @@
 import * as React from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../context/AuthContext";
 import { useLibrary } from "../context/LibraryContext";
 import { usePlayer } from "../context/PlayerContext";
-import { useTrackActions } from "../context/TrackActionsContext";
-import { useAuth } from "../context/AuthContext";
-import { searchSoundCloudTracks } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
-import { Color } from "../theme/GlobalStyles";
-import { TrackRow } from "../components/TrackRow";
-import { SoundCloudResultRow } from "../components/SoundCloudResultRow";
-
-const SEARCH_DEBOUNCE_MS = 300;
-const TRACK_LIMIT = 25;
+import { COLORS } from "../theme/appTheme";
 
 const DEFAULT_LIKED: Track[] = [
   {
@@ -87,199 +72,93 @@ export const HomeScreen: React.FC<{
 }> = ({ onCreatePlaylist, onOpenAccount }) => {
   const insets = useSafeAreaInsets();
   const { playTrack, currentTrack } = usePlayer();
-  const { likedSongs, isLiked, toggleLike } = useLibrary();
-  const { openTrack } = useTrackActions();
+  const { likedSongs } = useLibrary();
   const { user } = useAuth();
-  const userInitial = (user?.name || user?.username || "?").charAt(0).toUpperCase();
 
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [searchResults, setSearchResults] = React.useState<Track[]>([]);
-  const [isSearching, setIsSearching] = React.useState(false);
-  const [hasSearchCompleted, setHasSearchCompleted] = React.useState(false);
-  const [searchError, setSearchError] = React.useState("");
+  const displayName = (user?.name || user?.username || "Ayman")
+    .toUpperCase()
+    .trim();
+  const tracks = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
 
-  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchSeqRef = React.useRef(0);
-
-  const isSearchingNow = searchQuery.trim().length > 0;
-
-  React.useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, []);
-
-  const runSearch = React.useCallback(async (term: string) => {
-    const trimmed = term.trim();
-    const seq = ++searchSeqRef.current;
-    if (!trimmed) {
-      setSearchResults([]);
-      setSearchError("");
-      setHasSearchCompleted(false);
-      setIsSearching(false);
-      return;
-    }
-    setIsSearching(true);
-    setSearchError("");
-    try {
-      const tracks = await searchSoundCloudTracks(trimmed, TRACK_LIMIT);
-      if (seq !== searchSeqRef.current) {
-        return;
-      }
-      setSearchResults(tracks.slice(0, TRACK_LIMIT));
-      setHasSearchCompleted(true);
-    } catch (error) {
-      if (seq !== searchSeqRef.current) {
-        return;
-      }
-      setSearchError("Search failed. Tap to retry.");
-      setSearchResults([]);
-      setHasSearchCompleted(true);
-    } finally {
-      if (seq === searchSeqRef.current) {
-        setIsSearching(false);
-      }
-    }
-  }, []);
-
-  const handleSearchChange = (text: string) => {
-    setSearchQuery(text);
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-    searchSeqRef.current += 1;
-    if (!text.trim()) {
-      setSearchResults([]);
-      setSearchError("");
-      setHasSearchCompleted(false);
-      setIsSearching(false);
-      return;
-    }
-    setSearchResults([]);
-    setSearchError("");
-    setHasSearchCompleted(false);
-    setIsSearching(true);
-    debounceRef.current = setTimeout(() => runSearch(text), SEARCH_DEBOUNCE_MS);
+  const handlePlay = (track: Track) => {
+    playTrack(track, tracks);
   };
 
-  const handlePlayTrack = (track: Track) => {
-    const queue = isSearchingNow ? searchResults : favouritesList;
-    playTrack(track, queue.length > 0 ? queue : [track]);
-  };
-
-  const favouritesList = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
-
-  const renderTracks = (tracks: Track[], onPlay: (track: Track) => void) =>
-    tracks.map((track) => (
-      <TrackRow
-        key={track.id}
-        track={track}
-        active={currentTrack?.id === track.id}
-        liked={isLiked(track.id)}
-        onToggleLike={() => toggleLike(track)}
-        onMore={() => openTrack(track)}
-        onPlay={() => onPlay(track)}
-      />
-    ));
-
-  const headerNode = (
-    <View style={styles.header}>
-      <View style={styles.headerTop}>
-        <TouchableOpacity
-          onPress={onOpenAccount}
-          hitSlop={12}
-          style={styles.profileAvatar}
+  const renderCard = ({ item }: { item: Track }) => {
+    const active = currentTrack?.id === item.id;
+    return (
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={() => handlePlay(item)}
+        accessibilityRole="button"
+      >
+        {item.artwork ? (
+          <Image
+            source={{ uri: item.artwork }}
+            style={styles.artwork}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={item.id}
+            transition={150}
+          />
+        ) : (
+          <View style={[styles.artwork, styles.artworkFallback]}>
+            <Ionicons name="musical-note" size={28} color={COLORS.tabInactive} />
+          </View>
+        )}
+        <Text
+          style={[styles.cardTitle, active && styles.cardTitleActive]}
+          numberOfLines={1}
         >
-          <Text style={styles.profileAvatarLetter}>{userInitial}</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Your Library</Text>
-        <View style={styles.headerActions}>
-          {onCreatePlaylist ? (
-            <TouchableOpacity onPress={onCreatePlaylist} hitSlop={8} style={styles.headerBtn}>
-              <Ionicons name="add" size={24} color={Color.textPrimary} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={16} color={Color.placeholder} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search music..."
-          placeholderTextColor={Color.placeholder}
-          value={searchQuery}
-          onChangeText={handleSearchChange}
-          autoCorrect={false}
-          returnKeyType="search"
-          onSubmitEditing={() => runSearch(searchQuery)}
-        />
-      </View>
-    </View>
-  );
+          {item.title}
+        </Text>
+        <Text style={styles.cardSubtitle} numberOfLines={1}>
+          {item.artist || item.album}
+        </Text>
+      </Pressable>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      {headerNode}
-      {isSearchingNow ? (
-        <FlatList
-          style={styles.scrollView}
-          data={searchResults}
-          keyExtractor={(item) => item.id}
-          windowSize={5}
-          initialNumToRender={10}
-          maxToRenderPerBatch={8}
-          removeClippedSubviews
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 146 }]}
-          ListHeaderComponent={
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Results for "{searchQuery.trim()}"</Text>
+      <FlatList
+        data={tracks}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.columnWrapper}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: insets.bottom + 150 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        renderItem={renderCard}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <View style={styles.appBar}>
+              <View style={styles.backButton}>
+                <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
+              </View>
+              <Pressable onPress={onOpenAccount} hitSlop={12} style={styles.avatar}>
+                {user?.avatarUrl ? (
+                  <Image
+                    source={{ uri: user.avatarUrl }}
+                    style={styles.avatar}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <Text style={styles.avatarLetter}>
+                    {(user?.name || user?.username || "A").charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </Pressable>
             </View>
-          }
-          ListEmptyComponent={
-            isSearching ? (
-              <ActivityIndicator color={Color.accent} style={styles.loading} />
-            ) : searchError ? (
-              <TouchableOpacity onPress={() => runSearch(searchQuery)}>
-                <Text style={styles.errorText}>{searchError}</Text>
-              </TouchableOpacity>
-            ) : hasSearchCompleted ? (
-              <Text style={styles.emptyText}>No results found. Try a different search.</Text>
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <SoundCloudResultRow
-              track={item}
-              active={currentTrack?.id === item.id}
-              onPlay={() => handlePlayTrack(item)}
-            />
-          )}
-        />
-      ) : (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 146 }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your favourites</Text>
-            {likedSongs.length === 0 && (
-              <Text style={styles.favouritesHint}>
-                You haven't liked any songs yet — here are some picks to get you
-                started.
-              </Text>
-            )}
+            <Text style={styles.welcome} numberOfLines={1}>
+              WELCOME, {displayName}
+            </Text>
+            <Text style={styles.sectionTitle}>Recently Played</Text>
           </View>
-          <View style={styles.trackList}>
-            {renderTracks(favouritesList, handlePlayTrack)}
-          </View>
-        </ScrollView>
-      )}
+        }
+      />
     </View>
   );
 };
@@ -288,117 +167,94 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     width: "100%",
-    maxWidth: "100%",
     alignSelf: "stretch",
-    overflow: "hidden",
-    backgroundColor: Color.background,
+    backgroundColor: COLORS.background,
   },
-  scrollView: {
-    flex: 1,
-    width: "100%",
-    alignSelf: "stretch",
-    backgroundColor: Color.background,
+  listContent: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    gap: 16,
   },
-  scrollContent: {
-    width: "100%",
-    alignSelf: "stretch",
-    paddingTop: 8,
+  columnWrapper: {
+    gap: 16,
   },
   header: {
-    gap: 4,
     width: "100%",
-    alignSelf: "stretch",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    backgroundColor: Color.background,
+    paddingBottom: 4,
   },
-  headerTop: {
+  appBar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    width: "100%",
+    justifyContent: "space-between",
   },
-  profileAvatar: {
+  backButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Color.card,
-    borderWidth: 1,
-    borderColor: Color.border,
     alignItems: "center",
     justifyContent: "center",
   },
-  profileAvatarLetter: {
-    color: Color.textPrimary,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    color: Color.textPrimary,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  headerBtn: {
-    padding: 4,
-  },
-  searchContainer: {
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
+  avatar: {
+    width: 36,
     height: 36,
-    backgroundColor: Color.searchBg,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginBottom: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    backgroundColor: COLORS.card,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
-  searchInput: {
-    flex: 1,
-    color: Color.textPrimary,
+  avatarLetter: {
+    color: COLORS.textPrimary,
     fontSize: 14,
-    marginLeft: 6,
-    paddingVertical: 0,
+    fontWeight: "600",
   },
-  section: {
-    gap: 10,
-    width: "100%",
-    alignSelf: "stretch",
-    paddingHorizontal: 16,
+  welcome: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.5,
+    color: "#828B84",
+    marginTop: 18,
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: Color.textPrimary,
-  },
-  loading: {
-    paddingVertical: 16,
-  },
-  errorText: {
-    fontSize: 13,
+    fontSize: 26,
     fontWeight: "600",
-    color: Color.accent,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    letterSpacing: -0.3,
+    color: "#75AA78",
+    marginTop: 4,
+    marginBottom: 20,
   },
-  emptyText: {
+  card: {
+    flex: 1,
+    borderRadius: 14,
+  },
+  cardPressed: {
+    opacity: 0.85,
+  },
+  artwork: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 14,
+    backgroundColor: COLORS.card,
+  },
+  artworkFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardTitle: {
     fontSize: 13,
-    color: Color.textSecondary,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    fontWeight: "700",
+    color: "#F0F3F1",
+    marginTop: 8,
   },
-  favouritesHint: {
-    fontSize: 13,
-    color: Color.textSecondary,
-    lineHeight: 18,
+  cardTitleActive: {
+    color: "#75AA78",
   },
-  trackList: {
-    gap: 0,
+  cardSubtitle: {
+    fontSize: 11,
+    color: "#828B84",
+    marginTop: 2,
   },
 });
 

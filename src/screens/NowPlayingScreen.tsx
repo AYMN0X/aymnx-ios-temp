@@ -336,7 +336,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
               <Ionicons
                 name="shuffle"
                 size={23}
-                color={isShuffle ? Color.accent : "#949BA4"}
+                color={isShuffle ? Color.accent : Color.textSecondary}
               />
             </TouchableOpacity>
 
@@ -634,7 +634,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#949BA4",
+    color: Color.textSecondary,
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   artworkFallback: {
-    backgroundColor: "#191A20",
+    backgroundColor: Color.surface,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -688,7 +688,7 @@ const styles = StyleSheet.create({
   },
   trackArtist: {
     fontSize: 15,
-    color: "#949BA4",
+    color: Color.textSecondary,
     fontWeight: "500",
     marginTop: 4,
   },
@@ -833,7 +833,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   queueSheet: {
-    backgroundColor: "#191A20",
+    backgroundColor: Color.surface,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     paddingHorizontal: 24,
@@ -852,7 +852,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 8,
-    backgroundColor: "#1E1F22",
+    backgroundColor: Color.surface,
   },
   queueRowMeta: {
     flex: 1,

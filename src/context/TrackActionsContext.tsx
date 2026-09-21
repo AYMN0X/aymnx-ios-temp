@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#191A20',
+    backgroundColor: Color.surface,
     borderWidth: 1,
     borderColor: '#23252B',
     borderRadius: 999,
