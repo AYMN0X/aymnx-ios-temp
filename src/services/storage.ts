@@ -239,6 +239,19 @@ export async function getPlaylists(userId: string): Promise<SavedPlaylist[]> {
   return (await readUserData(userId)).playlists ?? [];
 }
 
+export async function saveLikedSongs(userId: string, tracks: Track[]): Promise<Track[]> {
+  const data = await updateUserData(userId, (d) => ({ ...d, likedSongs: tracks }));
+  return data.likedSongs ?? [];
+}
+
+export async function savePlaylists(
+  userId: string,
+  playlists: SavedPlaylist[]
+): Promise<SavedPlaylist[]> {
+  const data = await updateUserData(userId, (d) => ({ ...d, playlists }));
+  return data.playlists ?? [];
+}
+
 export async function createPlaylist(userId: string, name: string): Promise<SavedPlaylist[]> {
   const data = await updateUserData(userId, (d) => {
     const playlist: SavedPlaylist = {

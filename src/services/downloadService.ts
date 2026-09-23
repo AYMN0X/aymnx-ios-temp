@@ -167,3 +167,23 @@ export async function deleteTrackFiles(trackId: string): Promise<void> {
     console.warn('[downloads] Could not list tracks directory for deletion.', error);
   }
 }
+
+export async function filterExistingDownloads(
+  tracks: DownloadedTrack[]
+): Promise<DownloadedTrack[]> {
+  const results = await Promise.all(
+    tracks.map(async (track) => {
+      if (!track.localAudioUri) {
+        return null;
+      }
+      try {
+        const info = await FileSystem.getInfoAsync(track.localAudioUri);
+        return info.exists ? track : null;
+      } catch (error) {
+        console.warn('[downloads] Could not verify download file for:', track.id, error);
+        return null;
+      }
+    })
+  );
+  return results.filter((track): track is DownloadedTrack => track !== null);
+}

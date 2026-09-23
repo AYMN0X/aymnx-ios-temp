@@ -57,12 +57,17 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const tracks = await storage.getDownloadedTracks(userId);
+        const present = await downloads.filterExistingDownloads(tracks);
         if (active) {
-          setDownloadedTracks(tracks);
+          setDownloadedTracks(present);
           bootLog('downloads hydrated', {
-            count: tracks.length,
-            kb: Math.round(approximateBytes(tracks) / 1024),
+            count: present.length,
+            pruned: tracks.length - present.length,
+            kb: Math.round(approximateBytes(present) / 1024),
           });
+        }
+        if (present.length !== tracks.length) {
+          await storage.writeDownloadedTracks(userId, present);
         }
       } catch (error) {
         console.warn('[downloads] Failed to load downloaded tracks.', error);

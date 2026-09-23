@@ -1,9 +1,11 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
 import type { Track } from '../services/musicApi';
 import * as storage from '../services/storage';
 import { approximateBytes, bootLog, bootLogOnce } from '../services/bootLog';
 import { fetchLikedTracks, removeLikedTrack, setLikedTrack } from '../services/firebase';
 import { createOrUpdatePlaylist, deletePlaylist, fetchPlaylists } from '../services/firebase';
+import { isNetworkAvailable, invalidateNetworkCache } from '../utils/network';
 import { useAuth } from './AuthContext';
 
 type SavedPlaylist = storage.SavedPlaylist;
@@ -21,6 +23,36 @@ function mergePlaylists(local: SavedPlaylist[], cloud: SavedPlaylist[]): SavedPl
     byId.set(playlist.id, playlist);
   }
   return Array.from(byId.values());
+}
+
+function mergeLikedSongsList(local: Track[], cloud: Track[]): Track[] {
+  const byId = new Map<string, Track>();
+  for (const track of local) {
+    byId.set(track.id, track);
+  }
+  for (const track of cloud) {
+    byId.set(track.id, track);
+  }
+  return Array.from(byId.values());
+}
+
+async function persistLibrarySnapshot(
+  userId: string,
+  likedSongs: Track[],
+  playlists: SavedPlaylist[]
+): Promise<void> {
+  try {
+    const [, savedPlaylists] = await Promise.all([
+      storage.saveLikedSongs(userId, likedSongs),
+      storage.savePlaylists(userId, playlists),
+    ]);
+    bootLog('library snapshot persisted locally', {
+      liked: likedSongs.length,
+      playlists: savedPlaylists.length,
+    });
+  } catch (error) {
+    console.warn('[library] Failed to persist library snapshot locally.', error);
+  }
 }
 
 interface LibraryContextValue {
@@ -63,6 +95,29 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const syncCloudLibrary = useCallback(
+    async (userId: string): Promise<{ likedSongs: Track[]; playlists: SavedPlaylist[] } | null> => {
+      try {
+        const [cloudSongs, cloudPlaylists] = await Promise.all([
+          fetchLikedTracks(userId),
+          fetchPlaylists(userId),
+        ]);
+        const [localSongs, localPlaylists] = await Promise.all([
+          storage.getLikedSongs(userId),
+          storage.getPlaylists(userId),
+        ]);
+        const songs = mergeLikedSongsList(localSongs, cloudSongs);
+        const mergedPlaylists = mergePlaylists(localPlaylists, cloudPlaylists);
+        await persistLibrarySnapshot(userId, songs, mergedPlaylists);
+        return { likedSongs: songs, playlists: mergedPlaylists };
+      } catch (error) {
+        console.warn('[library] Failed to sync from Firestore.', error);
+        return null;
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     let active = true;
     if (!userId) {
@@ -73,63 +128,92 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
     bootLog('library hydration start');
     (async () => {
-      try {
+      const hydrateLocal = async () => {
         const [savedPlaylists, meta] = await Promise.all([
           storage.getPlaylists(userId),
           storage.getLikedMeta(userId),
         ]);
+        const songs = await storage.getLikedSongs(userId);
         if (!active) {
           return;
         }
         setPlaylists(savedPlaylists);
         setLikedMeta(meta);
-        if (isGuestUser) {
-          const songs = await storage.getLikedSongs(userId);
-          if (active) {
-            setLikedSongs(songs);
-            bootLog('library hydrated (guest)', {
-              liked: songs.length,
-              likedKb: Math.round(approximateBytes(songs) / 1024),
-            });
-          }
-          return;
-        }
-        try {
-          const [songs, cloudPlaylists] = await Promise.all([
-            fetchLikedTracks(userId),
-            fetchPlaylists(userId),
-          ]);
-          const merged = mergePlaylists(savedPlaylists, cloudPlaylists);
-          if (active) {
-            setLikedSongs(songs);
-            setPlaylists(merged);
-            bootLog('library hydrated (cloud)', {
-              liked: songs.length,
-              likedKb: Math.round(approximateBytes(songs) / 1024),
-              playlists: merged.length,
-              playlistTracks: countPlaylistTracks(merged),
-              playlistsKb: Math.round(approximateBytes(merged) / 1024),
-            });
-          }
-        } catch (error) {
-          console.warn('[library] Failed to sync from Firestore.', error);
-          const songs = await storage.getLikedSongs(userId);
-          if (active) {
-            setLikedSongs(songs);
-            bootLog('library hydrated (local fallback)', {
-              liked: songs.length,
-              likedKb: Math.round(approximateBytes(songs) / 1024),
-            });
-          }
-        }
+        setLikedSongs(songs);
+        bootLog('library hydrated (local snapshot)', {
+          liked: songs.length,
+          likedKb: Math.round(approximateBytes(songs) / 1024),
+          playlists: savedPlaylists.length,
+          playlistTracks: countPlaylistTracks(savedPlaylists),
+          playlistsKb: Math.round(approximateBytes(savedPlaylists) / 1024),
+        });
+      };
+      try {
+        await hydrateLocal();
       } catch (error) {
-        console.warn('[library] Failed to load the library.', error);
+        console.warn('[library] Failed to load the local library.', error);
+        return;
       }
+      if (!active || isGuestUser) {
+        return;
+      }
+      let online = false;
+      try {
+        online = await isNetworkAvailable();
+      } catch {
+        online = false;
+      }
+      if (!active) {
+        return;
+      }
+      if (!online) {
+        bootLog('library offline; keeping local snapshot');
+        return;
+      }
+      const synced = await syncCloudLibrary(userId);
+      if (!active || !synced) {
+        return;
+      }
+      setLikedSongs(synced.likedSongs);
+      setPlaylists(synced.playlists);
+      bootLog('library hydrated (cloud, persisted locally)', {
+        liked: synced.likedSongs.length,
+        likedKb: Math.round(approximateBytes(synced.likedSongs) / 1024),
+        playlists: synced.playlists.length,
+        playlistTracks: countPlaylistTracks(synced.playlists),
+        playlistsKb: Math.round(approximateBytes(synced.playlists) / 1024),
+      });
     })();
     return () => {
       active = false;
     };
-  }, [userId, isGuestUser]);
+  }, [userId, isGuestUser, syncCloudLibrary]);
+
+  useEffect(() => {
+    if (!userId || isGuestUser) {
+      return undefined;
+    }
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        return;
+      }
+      invalidateNetworkCache();
+      (async () => {
+        const online = await isNetworkAvailable();
+        if (!online) {
+          return;
+        }
+        const synced = await syncCloudLibrary(userId);
+        if (synced) {
+          setLikedSongs(synced.likedSongs);
+          setPlaylists(synced.playlists);
+        }
+      })().catch((error) => console.warn('[library] Background library re-sync failed.', error));
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [userId, isGuestUser, syncCloudLibrary]);
 
   const likedIds = useMemo(() => new Set(likedSongs.map((track) => track.id)), [likedSongs]);
 
@@ -367,18 +451,22 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         setLikedSongs(songs);
         return;
       }
+      let online = false;
       try {
-        const [songs, cloudPlaylists] = await Promise.all([
-          fetchLikedTracks(userId),
-          fetchPlaylists(userId),
-        ]);
-        setLikedSongs(songs);
-        setPlaylists(mergePlaylists(savedPlaylists, cloudPlaylists));
-      } catch (error) {
-        console.warn('[library] Failed to sync from Firestore.', error);
-        const songs = await storage.getLikedSongs(userId);
-        setLikedSongs(songs);
+        online = await isNetworkAvailable();
+      } catch {
+        online = false;
       }
+      if (online) {
+        const synced = await syncCloudLibrary(userId);
+        if (synced) {
+          setLikedSongs(synced.likedSongs);
+          setPlaylists(synced.playlists);
+          return;
+        }
+      }
+      const songs = await storage.getLikedSongs(userId);
+      setLikedSongs(songs);
     } catch (error) {
       console.warn('[library] Failed to refresh the library.', error);
     }

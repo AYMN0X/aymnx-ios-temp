@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,7 @@ import { useDownloads } from '../context/DownloadContext';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlayer } from '../context/PlayerContext';
 import { useTrackActions } from '../context/TrackActionsContext';
+import type { DownloadedTrack } from '../services/downloadService';
 import type { Track } from '../services/musicApi';
 import { COLORS, TYPE } from '../theme/appTheme';
 import { PlaylistDetailScreen } from './PlaylistDetailScreen';
@@ -58,6 +59,11 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
   const [name, setName] = useState('');
   const [libraryFilter, setLibraryFilter] = useState('Playlists');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+
+  const downloadedLikedCount = useMemo(() => {
+    const downloadedIds = new Set(downloadedTracks.map((track) => track.id));
+    return likedSongs.reduce((count, track) => (downloadedIds.has(track.id) ? count + 1 : count), 0);
+  }, [likedSongs, downloadedTracks]);
 
   const selectedPlaylist =
     detail && detail.type === 'playlist'
@@ -114,7 +120,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
       type: 'liked',
       key: 'liked',
       title: likedMeta.name || 'Liked Songs',
-      subtitle: `Playlist • ${likedSongs.length} songs`,
+      subtitle: `Playlist • ${downloadedLikedCount} songs`,
       coverUrl: likedMeta.coverUrl,
     },
     ...playlists.map((item: { id: string; name: string; tracks: Track[]; coverUrl?: string }) => ({
@@ -129,10 +135,10 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
 
   const filteredItems: LibraryItem[] =
     libraryFilter === 'Downloaded'
-      ? downloadedTracks.map((track: Track) => ({
+      ? downloadedTracks.map((track: DownloadedTrack) => ({
           type: 'downloaded',
           key: `downloaded-${track.id}`,
-          track,
+          track: { ...track, artwork: track.localArtworkUri || track.artwork },
         }))
       : libraryFilter === 'Playlists'
       ? libraryItems
