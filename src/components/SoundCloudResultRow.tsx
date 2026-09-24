@@ -18,7 +18,16 @@ interface SoundCloudResultRowProps {
   onPlay: () => void;
 }
 
+const PROVIDER_BADGE: Record<string, string> = {
+  soundcloud: 'sc',
+  itunes: 'it',
+  jiosaavn: 'js',
+  lan: 'lan',
+  spotify: 'sp',
+};
+
 export function SoundCloudResultRow({ track, active, onPlay }: SoundCloudResultRowProps) {
+  const badgeLabel = PROVIDER_BADGE[track.provider ?? ''] ?? 'sc';
   return (
     <Pressable
       onPress={onPlay}
@@ -50,7 +59,7 @@ export function SoundCloudResultRow({ track, active, onPlay }: SoundCloudResultR
             {track.artist}
           </Text>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>sc</Text>
+            <Text style={styles.badgeText}>{badgeLabel}</Text>
           </View>
         </View>
       </View>

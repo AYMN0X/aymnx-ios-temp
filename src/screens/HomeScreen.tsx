@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { useLibrary } from "../context/LibraryContext";
 import { usePlayer } from "../context/PlayerContext";
-import { searchSoundCloudTracks } from "../services/musicApi";
+import { searchSoundCloudTracks, searchTracks } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 import { SoundCloudResultRow } from "../components/SoundCloudResultRow";
 import { COLORS } from "../theme/appTheme";
@@ -95,6 +95,8 @@ export const HomeScreen: React.FC<{
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'sc'>('all');
+  const sourceFilterRef = useRef<'all' | 'sc'>('all');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
 
@@ -112,7 +114,7 @@ export const HomeScreen: React.FC<{
   const tracks = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
   const searchActive = query.trim().length >= MIN_QUERY_LENGTH;
 
-  const runSearch = async (term: string) => {
+  const runSearch = async (term: string, source: 'all' | 'sc' = sourceFilterRef.current) => {
     const trimmed = term.trim();
     const seq = ++searchSeqRef.current;
     if (trimmed.length < MIN_QUERY_LENGTH) {
@@ -125,11 +127,14 @@ export const HomeScreen: React.FC<{
     setSearching(true);
     setError("");
     try {
-      const found = await searchSoundCloudTracks(trimmed, SEARCH_LIMIT);
+      const found =
+        source === 'sc'
+          ? await searchSoundCloudTracks(trimmed, SEARCH_LIMIT)
+          : await searchTracks(trimmed, SEARCH_LIMIT);
       if (seq !== searchSeqRef.current) {
         return;
       }
-      setResults(found.slice(0, SEARCH_LIMIT));
+      setResults(found);
       setHasSearched(true);
     } catch (e) {
       if (seq !== searchSeqRef.current) {
@@ -152,13 +157,29 @@ export const HomeScreen: React.FC<{
     }
     searchSeqRef.current += 1;
     if (text.trim().length < MIN_QUERY_LENGTH) {
+      setSourceFilter("all");
+      sourceFilterRef.current = "all";
       setResults([]);
       setError("");
       setHasSearched(false);
       setSearching(false);
       return;
     }
-    debounceRef.current = setTimeout(() => runSearch(text), SEARCH_DEBOUNCE_MS);
+    debounceRef.current = setTimeout(
+      () => runSearch(text, sourceFilterRef.current),
+      SEARCH_DEBOUNCE_MS
+    );
+  };
+
+  const toggleSourceFilter = () => {
+    const next: 'all' | 'sc' = sourceFilterRef.current === 'sc' ? 'all' : 'sc';
+    sourceFilterRef.current = next;
+    setSourceFilter(next);
+    searchSeqRef.current += 1;
+    const trimmed = query.trim();
+    if (trimmed.length >= MIN_QUERY_LENGTH) {
+      runSearch(trimmed, next);
+    }
   };
 
   const handlePlay = (track: Track) => {
@@ -204,81 +225,89 @@ export const HomeScreen: React.FC<{
     );
   };
 
-  const renderItem = ({ item }: { item: Track }) =>
-    searchActive ? (
-      <SoundCloudResultRow
-        track={item}
-        active={currentTrack?.id === item.id}
-        onPlay={() => handlePlayResult(item)}
-      />
-    ) : (
-      renderCard({ item })
-    );
-
   return (
     <View style={styles.container}>
-      <FlatList
-        data={searchActive ? results : tracks}
-        keyExtractor={(item) => item.id}
-        numColumns={searchActive ? 1 : 2}
-        columnWrapperStyle={searchActive ? undefined : styles.columnWrapper}
-        contentContainerStyle={[
-          styles.listContent,
-          searchActive && styles.searchListContent,
-          { paddingBottom: insets.bottom + 150 },
-        ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        renderItem={renderItem}
-        ListHeaderComponent={
-          <View style={[styles.header, searchActive && styles.headerPadding]}>
-            <View style={styles.headerRow}>
-              <Text style={styles.welcome} numberOfLines={1}>
-                WELCOME, {displayName}
+      <View style={styles.topSection}>
+        <View style={styles.headerRow}>
+          <Text style={styles.welcome} numberOfLines={1}>
+            WELCOME, {displayName}
+          </Text>
+          <Pressable onPress={onOpenAccount} hitSlop={12} style={styles.avatar}>
+            {user?.avatarUrl ? (
+              <Image
+                source={{ uri: user.avatarUrl }}
+                style={styles.avatarImage}
+                contentFit="cover"
+              />
+            ) : (
+              <Text style={styles.avatarLetter}>
+                {(user?.name || user?.username || "A").charAt(0).toUpperCase()}
               </Text>
-              <Pressable onPress={onOpenAccount} hitSlop={12} style={styles.avatar}>
-                {user?.avatarUrl ? (
-                  <Image
-                    source={{ uri: user.avatarUrl }}
-                    style={styles.avatarImage}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <Text style={styles.avatarLetter}>
-                    {(user?.name || user?.username || "A").charAt(0).toUpperCase()}
-                  </Text>
-                )}
-              </Pressable>
-            </View>
+            )}
+          </Pressable>
+        </View>
 
-            <View style={styles.searchContainer}>
+        <View style={styles.searchContainer}>
+          <Ionicons
+            name="search"
+            size={18}
+            color="#8E8E93"
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            onChangeText={handleSearchChange}
+            placeholder="Search songs, artists, or links"
+            placeholderTextColor="#8E8E93"
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+            onSubmitEditing={() => runSearch(query)}
+          />
+        </View>
+
+        {query.trim().length > 0 && (
+          <View style={styles.filterRow}>
+            <Pressable
+              onPress={toggleSourceFilter}
+              style={[styles.filterChip, sourceFilter === 'sc' && styles.filterChipActive]}
+              accessibilityRole="button"
+            >
               <Ionicons
-                name="search"
-                size={18}
-                color="#8E8E93"
-                style={styles.searchIcon}
+                name="cloud-outline"
+                size={14}
+                style={{ marginRight: 6 }}
+                color={sourceFilter === 'sc' ? '#000000' : '#FFFFFF'}
               />
-              <TextInput
-                style={styles.searchInput}
-                value={query}
-                onChangeText={handleSearchChange}
-                placeholder="Search SoundCloud"
-                placeholderTextColor="#8E8E93"
-                autoCorrect={false}
-                autoCapitalize="none"
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-                onSubmitEditing={() => runSearch(query)}
-              />
-            </View>
-
-            <Text style={styles.sectionTitle}>
-              {searchActive ? "Search Results" : "Recently Played"}
-            </Text>
+              <Text
+                style={[
+                  styles.filterChipText,
+                  sourceFilter === 'sc' && styles.filterChipTextActive,
+                ]}
+              >
+                sc
+              </Text>
+            </Pressable>
           </View>
-        }
-        ListEmptyComponent={
-          searchActive ? (
+        )}
+      </View>
+
+      {searchActive ? (
+        <FlatList
+          key="search-results"
+          data={results}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.searchListContent,
+            { paddingBottom: insets.bottom + 150 },
+          ]}
+          ListHeaderComponent={
+            <Text style={styles.searchResultsTitle}>Search Results</Text>
+          }
+          ListEmptyComponent={
             searching ? (
               <ActivityIndicator
                 size="small"
@@ -289,12 +318,34 @@ export const HomeScreen: React.FC<{
               <Text style={styles.searchError}>{error}</Text>
             ) : hasSearched ? (
               <Text style={styles.searchEmpty}>
-                Nothing found on SoundCloud. Try a different search.
+                Nothing found. Try a different search.
               </Text>
             ) : null
-          ) : null
-        }
-      />
+          }
+          renderItem={({ item }: { item: Track }) => (
+            <SoundCloudResultRow
+              track={item}
+              active={currentTrack?.id === item.id}
+              onPlay={() => handlePlayResult(item)}
+            />
+          )}
+        />
+      ) : (
+        <FlatList
+          key="home-grid"
+          data={tracks}
+          numColumns={2}
+          columnWrapperStyle={styles.columnWrapper}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + 150 },
+          ]}
+          ListHeaderComponent={<Text style={styles.sectionTitle}>Recently Played</Text>}
+          renderItem={renderCard}
+        />
+      )}
     </View>
   );
 };
@@ -314,16 +365,24 @@ const styles = StyleSheet.create({
   searchListContent: {
     paddingHorizontal: 0,
     gap: 0,
+    paddingTop: 4,
+  },
+  searchResultsTitle: {
+    fontSize: 26,
+    fontWeight: "600",
+    letterSpacing: -0.3,
+    color: "#FFFFFF",
+    marginTop: 0,
+    marginBottom: 20,
+    paddingHorizontal: 16,
   },
   columnWrapper: {
     gap: 16,
   },
-  header: {
+  topSection: {
     width: "100%",
-    paddingBottom: 4,
-  },
-  headerPadding: {
     paddingHorizontal: 16,
+    paddingTop: 4,
   },
   headerRow: {
     flexDirection: "row",
@@ -377,6 +436,34 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginLeft: 8,
     paddingVertical: 0,
+  },
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    marginBottom: 14,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1A1A1A",
+    borderWidth: 1,
+    borderColor: "#2E2E2E",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  filterChipActive: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#FFFFFF",
+  },
+  filterChipText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  filterChipTextActive: {
+    color: "#000000",
   },
   searchLoading: {
     alignSelf: "center",

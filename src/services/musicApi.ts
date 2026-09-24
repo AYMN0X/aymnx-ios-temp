@@ -10,6 +10,7 @@ interface ITunesResult {
     collectionName: string;
     artworkUrl100?: string;
     previewUrl?: string;
+    trackTimeMillis?: number;
   }>;
 }
 
@@ -61,12 +62,17 @@ export async function searchITunes(query: string, limit = 25): Promise<Track[]> 
   }
   const json = (await response.json()) as ITunesResult;
   return (json.results ?? []).map((result) => ({
-    id: String(result.trackId),
+    id: `it-${result.trackId}`,
     title: result.trackName,
     artist: result.artistName,
     album: result.collectionName,
     artwork: (result.artworkUrl100 ?? '').replace('100x100bb.jpg', ARTWORK_HIRES_SUFFIX),
     previewUrl: result.previewUrl ?? '',
+    duration:
+      typeof result.trackTimeMillis === 'number' && result.trackTimeMillis > 0
+        ? result.trackTimeMillis / 1000
+        : undefined,
+    provider: 'itunes' as const,
   }));
 }
 
@@ -161,6 +167,7 @@ interface JioSaavnSong {
   duration?: number | string;
   artists?: { primary?: Array<{ name?: string }> };
   downloadUrl?: JioSaavnDownload[];
+  image?: Array<{ link?: string; quality?: string }>;
 }
 
 interface JioSaavnSearchResponse {
@@ -225,6 +232,17 @@ function pickJioSaavnDownload(song: JioSaavnSong): string | null {
   return toHttps(downloads[0]?.url) ?? null;
 }
 
+function pickJioSaavnArtwork(song: JioSaavnSong): string {
+  const images = (song.image ?? [])
+    .map((entry) => entry.link ?? '')
+    .filter((link) => /^https?:\/\//i.test(link) && !/r2\.music\.api\.com|\.audio/i.test(link));
+  if (images.length === 0) {
+    return '';
+  }
+  const hires = images.find((link) => /500x500/.test(link));
+  return toHttps(hires ?? images[0]) ?? '';
+}
+
 function scoreJioSaavnSong(song: JioSaavnSong, title: string, artist: string): number {
   const songTitle = (song.name ?? '').toLowerCase();
   const artistNames = (song.artists?.primary ?? [])
@@ -280,6 +298,44 @@ export async function resolveJioSaavnStream(
   } catch (error) {
     console.warn('[audio] JioSaavn resolution failed.', error);
     return null;
+  }
+}
+
+export async function searchJioSaavn(query: string, limit = 15): Promise<Track[]> {
+  const term = query.trim();
+  if (!term) {
+    return [];
+  }
+  try {
+    const search = await apiFetch<JioSaavnSearchResponse>(
+      `/api/search/songs?query=${encodeURIComponent(term)}&limit=${limit}`,
+      JIOSAAVN_INSTANCES
+    );
+    const results = search.data?.results ?? [];
+    return results.map((song, index) => {
+      const artists = (song.artists?.primary ?? [])
+        .map((entry) => (entry.name ?? '').trim())
+        .filter(Boolean);
+      const rawDuration =
+        typeof song.duration === 'number'
+          ? song.duration
+          : parseFloat(String(song.duration ?? ''));
+      const duration =
+        Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined;
+      return {
+        id: song.id ? `js-${song.id}` : `js-${normalizeTrackTitle(song.name ?? '')}-${index}`,
+        title: song.name ?? 'Unknown track',
+        artist: artists.length > 0 ? artists.join(', ') : 'Unknown artist',
+        album: '',
+        artwork: pickJioSaavnArtwork(song),
+        previewUrl: pickJioSaavnDownload(song) ?? '',
+        duration,
+        provider: 'jiosaavn' as const,
+      };
+    });
+  } catch (error) {
+    console.warn('[audio] searchJioSaavn failed.', error);
+    throw error;
   }
 }
 
@@ -653,6 +709,53 @@ export async function searchSoundCloudTracks(
     console.warn('[audio-soundcloud] searchSoundCloudTracks failed.', error);
     throw error;
   }
+}
+
+/**
+ * Aggregated multi-source search. Runs every available catalog provider
+ * concurrently with Promise.allSettled so one failing/slow source never blocks
+ * the others, then interleaves the results round-robin (1 from each provider at
+ * a time) and dedupes by title + artist. Every returned track carries its
+ * correct `provider` tag so the UI can render the right source badge.
+ */
+export async function searchTracks(query: string, perSourceLimit = 20): Promise<Track[]> {
+  const term = query.trim();
+  if (!term) {
+    return [];
+  }
+  const settled = await Promise.allSettled([
+    searchSoundCloudTracks(term, perSourceLimit),
+    searchJioSaavn(term, perSourceLimit),
+    searchITunes(term, perSourceLimit),
+  ]);
+  const scResults = settled[0].status === 'fulfilled' ? settled[0].value : [];
+  const jsResults = settled[1].status === 'fulfilled' ? settled[1].value : [];
+  const itResults = settled[2].status === 'fulfilled' ? settled[2].value : [];
+  console.log('[Search Results]', {
+    sc: scResults.length,
+    js: jsResults.length,
+    it: itResults.length,
+  });
+
+  const combined: Track[] = [];
+  const seen = new Set<string>();
+  const sources = [scResults, jsResults, itResults];
+  const longest = Math.max(...sources.map((list) => list.length));
+  for (let index = 0; index < longest; index += 1) {
+    for (const list of sources) {
+      const track = list[index];
+      if (!track) {
+        continue;
+      }
+      const key = `${track.title}|${track.artist}`.trim().toLowerCase();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      combined.push(track);
+    }
+  }
+  return combined;
 }
 
 async function resolveSoundCloudWithClientId(
