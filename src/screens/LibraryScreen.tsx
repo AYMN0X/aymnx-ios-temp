@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Dimensions, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowUpDown, Download, Heart } from 'lucide-react-native';
@@ -16,6 +16,8 @@ import { COLORS, TYPE } from '../theme/appTheme';
 import { PlaylistDetailScreen } from './PlaylistDetailScreen';
 
 const LIKED_GRADIENT: readonly [string, string] = ['#450AF5', '#8E8EE5'];
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const LIBRARY_FILTERS = ['Playlists', 'Podcasts', 'Albums', 'Downloaded'];
 
@@ -76,17 +78,34 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
     setName('');
   };
 
+  const dragOffset = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+
+  const openDetail = useCallback(
+    (next: LibraryDetail) => {
+      dragOffset.setValue(SCREEN_WIDTH);
+      setDetail(next);
+      Animated.spring(dragOffset, {
+        toValue: 0,
+        damping: 28,
+        stiffness: 280,
+        mass: 0.8,
+        useNativeDriver: true,
+      }).start();
+    },
+    [dragOffset]
+  );
+
   useEffect(() => {
     if (initialDetail && initialDetail.type === 'playlist' && !detail) {
       const playlist = playlists.find((item: { id: string }) => item.id === initialDetail.id);
       if (playlist) {
-        setDetail({ type: 'playlist', id: playlist.id, title: playlist.name });
+        openDetail({ type: 'playlist', id: playlist.id, title: playlist.name });
         if (onDetailConsumed) {
           onDetailConsumed();
         }
       }
     }
-  }, [initialDetail, playlists, detail, onDetailConsumed]);
+  }, [initialDetail, playlists, detail, onDetailConsumed, openDetail]);
 
   const submitCreate = async () => {
     const trimmed = name.trim();
@@ -97,23 +116,6 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
     setName('');
     setCreating(false);
   };
-
-  if (detail) {
-    if (detail.type === 'liked') {
-      return <PlaylistDetailScreen isLikedPlaylist onBack={backToRoot} />;
-    }
-    const tracks = selectedPlaylist ? selectedPlaylist.tracks : [];
-    return (
-      <PlaylistDetailScreen
-        title={selectedPlaylist ? selectedPlaylist.name : 'Playlist'}
-        subtitle={tracks.length === 1 ? '1 song' : `${tracks.length} songs`}
-        tracks={tracks}
-        coverImage={selectedPlaylist?.coverUrl}
-        playlistId={detail.id}
-        onBack={backToRoot}
-      />
-    );
-  }
 
   const libraryItems: LibraryItem[] = [
     {
@@ -144,8 +146,39 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
       ? libraryItems
       : libraryItems.filter((i) => i.type === 'liked');
 
+  const selectedTracks = selectedPlaylist ? selectedPlaylist.tracks : [];
+
+  const libraryTranslateX = useMemo(
+    () =>
+      dragOffset.interpolate({
+        inputRange: [0, SCREEN_WIDTH],
+        outputRange: [-SCREEN_WIDTH * 0.25, 0],
+        extrapolate: 'clamp',
+      }),
+    [dragOffset]
+  );
+  const libraryScale = useMemo(
+    () =>
+      dragOffset.interpolate({
+        inputRange: [0, SCREEN_WIDTH],
+        outputRange: [0.97, 1.0],
+        extrapolate: 'clamp',
+      }),
+    [dragOffset]
+  );
+
   return (
     <View style={styles.libraryScreen}>
+      <Animated.View
+        style={[
+          styles.libraryBody,
+          detail
+            ? {
+                transform: [{ translateX: libraryTranslateX }, { scale: libraryScale }],
+              }
+            : null,
+        ]}
+      >
       <View style={styles.libraryHeader}>
         <Pressable style={styles.libraryAvatar} onPress={onOpenAccount}>
           <Text style={styles.libraryAvatarLetter}>{userInitial}</Text>
@@ -238,7 +271,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
         renderItem={({ item }) => {
           if (item.type === 'liked') {
             return (
-              <Pressable style={styles.libRow} onPress={() => setDetail({ type: 'liked' })}>
+              <Pressable style={styles.libRow} onPress={() => openDetail({ type: 'liked' })}>
                 {item.coverUrl ? (
                   <Image source={{ uri: item.coverUrl }} style={styles.libCover} />
                 ) : (
@@ -256,7 +289,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
                     {item.title}
                   </Text>
                   <View style={styles.libRowSubtitleRow}>
-                    <Download size={12} color={COLORS.green} />
+                    <Download size={12} color={COLORS.accent} />
                     <Text style={styles.libRowSubtitle}>{item.subtitle}</Text>
                   </View>
                 </View>
@@ -280,7 +313,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
             <Pressable
               style={styles.libRow}
               onPress={() =>
-                setDetail({ type: 'playlist', id: item.playlistId!, title: item.title! })
+                openDetail({ type: 'playlist', id: item.playlistId!, title: item.title! })
               }
             >
               <View style={[styles.libCover, { backgroundColor: COLORS.card }]}>
@@ -300,6 +333,32 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
           );
         }}
       />
+      </Animated.View>
+      {detail ? (
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          {detail.type === 'liked' ? (
+            <PlaylistDetailScreen
+              key="liked"
+              isLikedPlaylist
+              onBack={backToRoot}
+              dragOffset={dragOffset}
+            />
+          ) : (
+            <PlaylistDetailScreen
+              key={detail.id}
+              title={selectedPlaylist ? selectedPlaylist.name : 'Playlist'}
+              subtitle={
+                selectedTracks.length === 1 ? '1 song' : `${selectedTracks.length} songs`
+              }
+              tracks={selectedTracks}
+              coverImage={selectedPlaylist?.coverUrl}
+              playlistId={detail.id}
+              onBack={backToRoot}
+              dragOffset={dragOffset}
+            />
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -310,6 +369,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     paddingTop: 8,
     paddingBottom: 8,
+  },
+  libraryBody: {
+    flex: 1,
+    width: '100%',
   },
   libraryHeader: {
     flexDirection: 'row',

@@ -12,43 +12,30 @@ import { TabBar } from './src/components/layout/TabBar';
 import { TelemetryHud } from './src/components/TelemetryHud';
 import { CreatePlaylistModal } from './src/components/modals/CreatePlaylistModal';
 import { NowPlayingModal } from './src/components/modals/NowPlayingModal';
-import { SettingsSheet } from './src/components/modals/SettingsSheet';
 import { MiniPlayerDock } from './src/components/MiniPlayerDock';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DownloadProvider } from './src/context/DownloadContext';
 import { LibraryProvider } from './src/context/LibraryContext';
 import { PlayerProvider, usePlayer } from './src/context/PlayerContext';
 import { TrackActionsProvider } from './src/context/TrackActionsContext';
-import { ImportScreen } from './src/screens/ImportScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
-import { SearchScreen } from './src/screens/SearchScreen';
+import { AccountScreen } from './src/screens/AccountScreen';
 import { getHasSeenOnboarding, setHasSeenOnboarding } from './src/services/storage';
 
 function AppShell() {
   const [activeTab, setActiveTab] = useState('home');
-  const [tabKeys, setTabKeys] = useState({ home: 0, heart: 0, search: 0, bell: 0, profile: 0 });
+  const [tabKeys, setTabKeys] = useState({ home: 0, library: 0, profile: 0 });
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
   const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false);
-  const [pendingPlaylistId, setPendingPlaylistId] = useState(null);
 
   useEffect(() => {
     bootLog('AppShell mounted (first screen render)');
   }, []);
 
-  const openImportedPlaylist = (id) => {
-    setPendingPlaylistId(id);
-    setActiveTab('heart');
-  };
-
   const handleTabChange = (tabKey, wasActive) => {
-    if (tabKey === 'profile') {
-      setAccountOpen(true);
-      return;
-    }
     if (wasActive) {
       setTabKeys((keys) => ({ ...keys, [tabKey]: keys[tabKey] + 1 }));
     } else {
@@ -64,25 +51,20 @@ function AppShell() {
           <HomeScreen
             key={tabKeys.home}
             onCreatePlaylist={() => setCreatePlaylistOpen(true)}
-            onOpenAccount={() => setAccountOpen(true)}
+            onOpenAccount={() => setActiveTab('profile')}
           />
-        ) : activeTab === 'search' ? (
-          <SearchScreen key={tabKeys.search} />
-        ) : activeTab === 'bell' ? (
-          <ImportScreen key={tabKeys.bell} onOpenImportedPlaylist={openImportedPlaylist} />
+        ) : activeTab === 'profile' ? (
+          <AccountScreen key={tabKeys.profile} />
         ) : (
           <LibraryScreen
-            key={tabKeys.heart}
-            onOpenAccount={() => setAccountOpen(true)}
-            initialDetail={pendingPlaylistId ? { type: 'playlist', id: pendingPlaylistId } : null}
-            onDetailConsumed={() => setPendingPlaylistId(null)}
+            key={tabKeys.library}
+            onOpenAccount={() => setActiveTab('profile')}
           />
         )}
       </View>
       <MiniPlayerDock onOpen={() => setNowPlayingOpen(true)} />
       <TabBar active={activeTab} onChange={handleTabChange} />
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
-      <SettingsSheet visible={accountOpen} onClose={() => setAccountOpen(false)} />
       <CreatePlaylistModal
         visible={createPlaylistOpen}
         onClose={() => setCreatePlaylistOpen(false)}

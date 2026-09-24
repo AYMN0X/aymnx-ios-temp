@@ -138,7 +138,7 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
                   cx={RING_CENTER}
                   cy={RING_CENTER}
                   r={RING_RADIUS}
-                  stroke={COLORS.green}
+                  stroke={COLORS.accent}
                   strokeWidth={RING_STROKE}
                   fill="none"
                   strokeLinecap="round"
@@ -221,13 +221,13 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   nowPlaying: {
-    color: '#828B84',
+    color: '#A0A0A0',
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 0.6,
   },
   title: {
-    color: '#F0F3F1',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -269,6 +269,6 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: COLORS.green,
+    backgroundColor: COLORS.accent,
   },
 });

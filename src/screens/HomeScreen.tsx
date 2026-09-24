@@ -1,13 +1,28 @@
 import * as React from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { useLibrary } from "../context/LibraryContext";
 import { usePlayer } from "../context/PlayerContext";
+import { searchSoundCloudTracks } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
+import { SoundCloudResultRow } from "../components/SoundCloudResultRow";
 import { COLORS } from "../theme/appTheme";
+
+const MIN_QUERY_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_LIMIT = 25;
 
 const DEFAULT_LIKED: Track[] = [
   {
@@ -75,13 +90,83 @@ export const HomeScreen: React.FC<{
   const { likedSongs } = useLibrary();
   const { user } = useAuth();
 
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Track[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [error, setError] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeqRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
   const displayName = (user?.name || user?.username || "Ayman")
     .toUpperCase()
     .trim();
   const tracks = likedSongs.length > 0 ? likedSongs : DEFAULT_LIKED;
+  const searchActive = query.trim().length >= MIN_QUERY_LENGTH;
+
+  const runSearch = async (term: string) => {
+    const trimmed = term.trim();
+    const seq = ++searchSeqRef.current;
+    if (trimmed.length < MIN_QUERY_LENGTH) {
+      setResults([]);
+      setError("");
+      setHasSearched(false);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    setError("");
+    try {
+      const found = await searchSoundCloudTracks(trimmed, SEARCH_LIMIT);
+      if (seq !== searchSeqRef.current) {
+        return;
+      }
+      setResults(found.slice(0, SEARCH_LIMIT));
+      setHasSearched(true);
+    } catch (e) {
+      if (seq !== searchSeqRef.current) {
+        return;
+      }
+      setError("Search failed. Please try again.");
+      setResults([]);
+      setHasSearched(true);
+    } finally {
+      if (seq === searchSeqRef.current) {
+        setSearching(false);
+      }
+    }
+  };
+
+  const handleSearchChange = (text: string) => {
+    setQuery(text);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    searchSeqRef.current += 1;
+    if (text.trim().length < MIN_QUERY_LENGTH) {
+      setResults([]);
+      setError("");
+      setHasSearched(false);
+      setSearching(false);
+      return;
+    }
+    debounceRef.current = setTimeout(() => runSearch(text), SEARCH_DEBOUNCE_MS);
+  };
 
   const handlePlay = (track: Track) => {
     playTrack(track, tracks);
+  };
+
+  const handlePlayResult = (track: Track) => {
+    playTrack(track, results);
   };
 
   const renderCard = ({ item }: { item: Track }) => {
@@ -119,30 +204,43 @@ export const HomeScreen: React.FC<{
     );
   };
 
+  const renderItem = ({ item }: { item: Track }) =>
+    searchActive ? (
+      <SoundCloudResultRow
+        track={item}
+        active={currentTrack?.id === item.id}
+        onPlay={() => handlePlayResult(item)}
+      />
+    ) : (
+      renderCard({ item })
+    );
+
   return (
     <View style={styles.container}>
       <FlatList
-        data={tracks}
+        data={searchActive ? results : tracks}
         keyExtractor={(item) => item.id}
-        numColumns={2}
-        columnWrapperStyle={styles.columnWrapper}
+        numColumns={searchActive ? 1 : 2}
+        columnWrapperStyle={searchActive ? undefined : styles.columnWrapper}
         contentContainerStyle={[
           styles.listContent,
+          searchActive && styles.searchListContent,
           { paddingBottom: insets.bottom + 150 },
         ]}
         showsVerticalScrollIndicator={false}
-        renderItem={renderCard}
+        keyboardShouldPersistTaps="handled"
+        renderItem={renderItem}
         ListHeaderComponent={
-          <View style={styles.header}>
-            <View style={styles.appBar}>
-              <View style={styles.backButton}>
-                <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
-              </View>
+          <View style={[styles.header, searchActive && styles.headerPadding]}>
+            <View style={styles.headerRow}>
+              <Text style={styles.welcome} numberOfLines={1}>
+                WELCOME, {displayName}
+              </Text>
               <Pressable onPress={onOpenAccount} hitSlop={12} style={styles.avatar}>
                 {user?.avatarUrl ? (
                   <Image
                     source={{ uri: user.avatarUrl }}
-                    style={styles.avatar}
+                    style={styles.avatarImage}
                     contentFit="cover"
                   />
                 ) : (
@@ -152,11 +250,49 @@ export const HomeScreen: React.FC<{
                 )}
               </Pressable>
             </View>
-            <Text style={styles.welcome} numberOfLines={1}>
-              WELCOME, {displayName}
+
+            <View style={styles.searchContainer}>
+              <Ionicons
+                name="search"
+                size={18}
+                color="#8E8E93"
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                value={query}
+                onChangeText={handleSearchChange}
+                placeholder="Search SoundCloud"
+                placeholderTextColor="#8E8E93"
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                onSubmitEditing={() => runSearch(query)}
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>
+              {searchActive ? "Search Results" : "Recently Played"}
             </Text>
-            <Text style={styles.sectionTitle}>Recently Played</Text>
           </View>
+        }
+        ListEmptyComponent={
+          searchActive ? (
+            searching ? (
+              <ActivityIndicator
+                size="small"
+                color={COLORS.accent}
+                style={styles.searchLoading}
+              />
+            ) : error ? (
+              <Text style={styles.searchError}>{error}</Text>
+            ) : hasSearched ? (
+              <Text style={styles.searchEmpty}>
+                Nothing found on SoundCloud. Try a different search.
+              </Text>
+            ) : null
+          ) : null
         }
       />
     </View>
@@ -175,6 +311,10 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     gap: 16,
   },
+  searchListContent: {
+    paddingHorizontal: 0,
+    gap: 0,
+  },
   columnWrapper: {
     gap: 16,
   },
@@ -182,17 +322,13 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingBottom: 4,
   },
-  appBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  headerPadding: {
+    paddingHorizontal: 16,
   },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    justifyContent: "center",
   },
   avatar: {
     width: 36,
@@ -204,6 +340,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
+    marginLeft: 12,
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
   },
   avatarLetter: {
     color: COLORS.textPrimary,
@@ -211,18 +352,52 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   welcome: {
-    fontSize: 11,
+    flex: 1,
+    fontSize: 13,
     fontWeight: "600",
-    letterSpacing: 1.5,
-    color: "#828B84",
-    marginTop: 18,
+    letterSpacing: 1.2,
+    color: "#A0A0A0",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E1E1E",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    marginTop: 16,
+    marginBottom: 20,
+  },
+  searchIcon: {
+    marginLeft: 2,
+  },
+  searchInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 15,
+    marginLeft: 8,
+    paddingVertical: 0,
+  },
+  searchLoading: {
+    alignSelf: "center",
+    marginVertical: 16,
+  },
+  searchError: {
+    color: "#F15E6C",
+    marginTop: 24,
+    textAlign: "center",
+  },
+  searchEmpty: {
+    color: "#A0A0A0",
+    marginTop: 24,
+    textAlign: "center",
   },
   sectionTitle: {
     fontSize: 26,
     fontWeight: "600",
     letterSpacing: -0.3,
-    color: "#75AA78",
-    marginTop: 4,
+    color: "#FFFFFF",
+    marginTop: 0,
     marginBottom: 20,
   },
   card: {
@@ -245,15 +420,15 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#F0F3F1",
+    color: "#FFFFFF",
     marginTop: 8,
   },
   cardTitleActive: {
-    color: "#75AA78",
+    color: "#FFFFFF",
   },
   cardSubtitle: {
     fontSize: 11,
-    color: "#828B84",
+    color: "#A0A0A0",
     marginTop: 2,
   },
 });

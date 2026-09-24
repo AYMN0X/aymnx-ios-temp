@@ -1,8 +1,13 @@
 import * as React from "react";
 import {
   Alert,
+  Animated,
+  Dimensions,
+  Easing,
   Image,
   Modal,
+  PanResponder,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -33,6 +38,7 @@ interface PlaylistDetailScreenProps {
   coverImage?: string;
   isLikedPlaylist?: boolean;
   playlistId?: string;
+  dragOffset?: Animated.Value;
   onBack: () => void;
 }
 
@@ -44,6 +50,14 @@ const PRESET_COVERS = [
   "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=400&q=80",
 ];
 
+const EDGE_HIT_WIDTH = 28;
+const POP_THRESHOLD = 80;
+const FLING_DISTANCE = 40;
+const FLING_VELOCITY = 0.65;
+const WINDOW_WIDTH = Dimensions.get("window").width;
+
+const clampDrag = (value: number) => Math.min(Math.max(value, 0), WINDOW_WIDTH);
+
 export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   title,
   tracks,
@@ -51,6 +65,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   coverImage,
   isLikedPlaylist,
   playlistId,
+  dragOffset,
   onBack,
 }) => {
   const { user } = useAuth();
@@ -107,6 +122,75 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   const [detailsCover, setDetailsCover] = React.useState("");
 
   const canEdit = !!livePlaylist || isLikedPlaylist;
+
+  const dragValue = dragOffset ?? React.useRef(new Animated.Value(0)).current;
+
+  const animateClose = (onDone?: () => void) => {
+    Animated.timing(dragValue, {
+      toValue: WINDOW_WIDTH,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      if (onDone) {
+        onDone();
+      }
+    });
+  };
+
+  const swipeBackResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_evt, gestureState) => {
+        if (Platform.OS !== "ios") {
+          return false;
+        }
+        return (
+          gestureState.x0 <= EDGE_HIT_WIDTH &&
+          gestureState.dx > 12 &&
+          gestureState.dx > Math.abs(gestureState.dy)
+        );
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dx > 0) {
+          dragValue.setValue(clampDrag(gestureState.dx));
+        }
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        const shouldPop =
+          gestureState.dx > POP_THRESHOLD ||
+          (gestureState.dx > FLING_DISTANCE && gestureState.vx > FLING_VELOCITY);
+        if (shouldPop) {
+          Animated.timing(dragValue, {
+            toValue: WINDOW_WIDTH,
+            duration: 220,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start(() => onBack());
+        } else {
+          Animated.spring(dragValue, {
+            toValue: 0,
+            stiffness: 320,
+            damping: 34,
+            mass: 1,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderTerminate: () => {
+        Animated.spring(dragValue, {
+          toValue: 0,
+          stiffness: 320,
+          damping: 34,
+          mass: 1,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
 
   const pendingForDownload = displayTracks.filter((track) => !downloadedIds.has(track.id));
   const allDownloaded = displayTracks.length > 0 && pendingForDownload.length === 0;
@@ -225,7 +309,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
           style: "destructive",
           onPress: () => {
             removePlaylist(playlistId);
-            onBack();
+            animateClose(() => onBack());
           },
         },
       ]
@@ -233,11 +317,29 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   };
 
   return (
-    <LinearGradient
-      colors={["#0d221c", "#0f1413", "#0e1111"]}
-      locations={[0, 0.35, 1]}
-      style={styles.container}
+    <Animated.View
+      style={[
+        styles.popRoot,
+        {
+          transform: [
+            { translateX: dragValue },
+            {
+              scaleX: dragValue.interpolate({
+                inputRange: [0, WINDOW_WIDTH],
+                outputRange: [1, 0.96],
+                extrapolate: "clamp",
+              }),
+            },
+          ],
+        },
+      ]}
+      {...swipeBackResponder.panHandlers}
     >
+      <LinearGradient
+        colors={["#0f1413", "#0f1413", "#0e1111"]}
+        locations={[0, 0.35, 1]}
+        style={styles.container}
+      >
       <StatusBar barStyle="light-content" />
 
       <ScrollView
@@ -247,7 +349,11 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
       >
         <SafeAreaView style={styles.safeTop}>
           <View style={styles.topNav}>
-            <TouchableOpacity onPress={onBack} style={styles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity
+              onPress={() => animateClose(() => onBack())}
+              style={styles.iconButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <Ionicons name="chevron-back" size={26} color={Color.textPrimary} />
             </TouchableOpacity>
             {isEditing ? (
@@ -299,7 +405,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
             disabled={isDownloading}
             onValueChange={handleDownloadToggle}
             thumbColor="#ffffff"
-            trackColor={{ false: "#262b2b", true: "#75aa78" }}
+            trackColor={{ false: "#262b2b", true: "#FFFFFF" }}
           />
         </View>
 
@@ -369,7 +475,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                       <Ionicons
                         name="ellipsis-horizontal"
                         size={20}
-                        color={isCurrent ? "#a0aba4" : "#6c7770"}
+                        color={isCurrent ? "#A0A0A0" : "#707070"}
                       />
                     </TouchableOpacity>
                   )}
@@ -552,14 +658,48 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+      </LinearGradient>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.edgeShadow,
+          {
+            opacity: dragValue.interpolate({
+              inputRange: [0, WINDOW_WIDTH * 0.5],
+              outputRange: [0, 1],
+              extrapolate: "clamp",
+            }),
+          },
+        ]}
+      >
+        <View style={styles.edgeShadowFill} />
+      </Animated.View>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
+  popRoot: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: Color.background,
+  },
   container: {
     flex: 1,
     backgroundColor: Color.background,
+  },
+  edgeShadow: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 28,
+    zIndex: 20,
+  },
+  edgeShadowFill: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
   },
   safeTop: {
     zIndex: 10,
@@ -629,7 +769,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     letterSpacing: 1.5,
-    color: "#828B84",
+    color: "#A0A0A0",
     textTransform: "uppercase",
   },
   titleRow: {
@@ -645,7 +785,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   playlistTitleAccent: {
-    color: "#75AA78",
+    color: "#FFFFFF",
   },
   downloadRow: {
     flexDirection: "row",
@@ -658,7 +798,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 1.5,
-    color: "#828B84",
+    color: "#A0A0A0",
   },
   scrollView: {
     flex: 1,
@@ -709,7 +849,7 @@ const styles = StyleSheet.create({
   trackTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#F0F3F1",
+    color: "#FFFFFF",
   },
   trackTitleCurrent: {
     color: "#FFFFFF",
@@ -717,11 +857,11 @@ const styles = StyleSheet.create({
   },
   trackArtist: {
     fontSize: 12,
-    color: "#828B84",
+    color: "#A0A0A0",
     marginTop: 3,
   },
   trackArtistCurrent: {
-    color: "#828B84",
+    color: "#A0A0A0",
   },
   moreButton: {
     padding: 6,

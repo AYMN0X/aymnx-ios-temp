@@ -35,14 +35,14 @@ const SCRUB_DISMISS_DISTANCE = 140;
 const SCRUB_DISMISS_VELOCITY = 1.2;
 
 const COLORS = {
-  bgTop: "#092622",
+  bgTop: "#0E1414",
   bgMid: "#0e1414",
   bgBottom: "#0d1111",
-  textPrimary: "#F0F3F1",
-  textSecondary: "#828B84",
-  textMuted: "#6C7770",
-  sage: "#75AA78",
-  dockInactive: "#A0ABA4",
+  textPrimary: "#FFFFFF",
+  textSecondary: "#A0A0A0",
+  textMuted: "#707070",
+  accent: "#FFFFFF",
+  dockInactive: "#A0A0A0",
 };
 
 interface NowPlayingScreenProps {
@@ -333,7 +333,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                 <Ionicons
                   name="heart-outline"
                   size={22}
-                  color={isLiked ? COLORS.sage : COLORS.textMuted}
+                  color={isLiked ? COLORS.accent : COLORS.textMuted}
                 />
               </TouchableOpacity>
             ) : (
@@ -376,7 +376,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                 <Ionicons
                   name="shuffle"
                   size={18}
-                  color={isShuffle ? COLORS.sage : COLORS.dockInactive}
+                  color={isShuffle ? COLORS.accent : COLORS.dockInactive}
                 />
               </TouchableOpacity>
 
@@ -468,7 +468,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                 <Ionicons
                   name="repeat"
                   size={16}
-                  color={repeatMode === "off" ? "#8E9990" : Color.accent}
+                  color={repeatMode === "off" ? "#8E8E8E" : Color.accent}
                 />
                 <Text
                   style={[
@@ -675,13 +675,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
     letterSpacing: 1.8,
-    color: "#828B84",
+    color: "#A0A0A0",
   },
   headerContext: {
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.2,
-    color: "#75AA78",
+    color: "#FFFFFF",
     marginTop: 2,
   },
   avatar: {
@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
   avatarInitial: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#75AA78",
+    color: "#FFFFFF",
   },
   artworkWrap: {
     width: "100%",
@@ -853,7 +853,7 @@ const styles = StyleSheet.create({
   queueRepeatText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#8E9990",
+    color: "#8E8E8E",
   },
   queueRepeatTextActive: {
     color: Color.accent,
@@ -894,7 +894,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(117,170,120,0.18)",
+    backgroundColor: "rgba(255,255,255,0.18)",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4,

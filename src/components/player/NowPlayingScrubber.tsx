@@ -212,14 +212,14 @@ const styles = StyleSheet.create({
     borderRadius: BAR_WIDTH / 2,
   },
   barActive: {
-    backgroundColor: '#75AA78',
+    backgroundColor: '#FFFFFF',
   },
   barInactive: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   timeText: {
     fontSize: 11,
-    color: '#6C7770',
+    color: '#707070',
     minWidth: 34,
     fontVariant: ['tabular-nums'],
   },
