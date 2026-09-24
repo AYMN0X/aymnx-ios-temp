@@ -45,6 +45,13 @@ const CACHE_DIR_NAME = 'stream-cache';
 
 const MIN_AUDIO_FILE_BYTES = 2048;
 
+/**
+ * Cached LAN mirror files older than this are considered stale and re-downloaded
+ * on next access, so a changed source file (or a reused tokenized URL) can no
+ * longer serve outdated or wrong audio indefinitely.
+ */
+const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 const MIME_EXTENSIONS: Record<string, string> = {
   'audio/mpeg': '.mp3',
   'audio/mp3': '.mp3',
@@ -128,11 +135,20 @@ export function canonicalizeHttpUrl(input: string): string {
 }
 
 function hashString(value: string): string {
-  let hash = 5381;
+  // Two independent 32-bit hashes concatenated into a 64-bit filename key so
+  // URL hash collisions cannot alias two different streams to one cached file.
+  let h1 = 5381;
+  let h2 = 52711;
   for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 33) ^ value.charCodeAt(i);
+    const code = value.charCodeAt(i);
+    h1 = (h1 * 33) ^ code;
+    h2 = (h2 * 31) ^ code;
+    h1 |= 0;
+    h2 |= 0;
   }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  const part1 = (h1 >>> 0).toString(16).padStart(8, '0');
+  const part2 = (h2 >>> 0).toString(16).padStart(8, '0');
+  return `${part1}${part2}`;
 }
 
 function pathExtension(url: string): string {
@@ -169,7 +185,19 @@ export async function getCachedStream(httpUrl: string): Promise<string | null> {
   }
   const file = new File(cacheFilePath(httpUrl));
   try {
-    return file.exists ? file.uri : null;
+    if (!file.exists) {
+      return null;
+    }
+    if ((file.size ?? 0) < MIN_AUDIO_FILE_BYTES) {
+      console.warn('[stream-cache] Ignoring suspiciously small cached stream, re-downloading.');
+      return null;
+    }
+    const modifiedAt = file.modificationTime;
+    if (typeof modifiedAt === 'number' && Date.now() - modifiedAt > CACHE_MAX_AGE_MS) {
+      console.warn('[stream-cache] Cached stream is stale, re-downloading.');
+      return null;
+    }
+    return file.uri;
   } catch (error) {
     console.warn('[stream-cache] Cache lookup failed.', error);
     return null;
@@ -188,7 +216,19 @@ export async function cacheStream(httpUrl: string, mimeType?: string): Promise<s
   }
   const destination = new File(directory, `${hashString(httpUrl)}${extensionFor(httpUrl, mimeType)}`);
   if (destination.exists) {
-    return destination.uri;
+    const stale =
+      typeof destination.modificationTime === 'number' &&
+      Date.now() - destination.modificationTime > CACHE_MAX_AGE_MS;
+    const tooSmall = (destination.size ?? 0) < MIN_AUDIO_FILE_BYTES;
+    if (!stale && !tooSmall) {
+      return destination.uri;
+    }
+    console.warn('[stream-cache] Replacing stale cache entry for:', httpUrl);
+    try {
+      destination.delete();
+    } catch (error) {
+      console.warn('[stream-cache] Could not delete stale cache entry.', error);
+    }
   }
   const downloaded = await File.downloadFileAsync(httpUrl, destination);
   const file = downloaded && downloaded.exists ? downloaded : destination;

@@ -14,26 +14,80 @@ function countPlaylistTracks(playlists: SavedPlaylist[]): number {
   return playlists.reduce((total, playlist) => total + (playlist.tracks?.length ?? 0), 0);
 }
 
+/**
+ * Field-level merge: the cloud document is authoritative for fields it
+ * actually populated, but a populated LOCAL value is never overwritten by an
+ * undefined/empty cloud value. This keeps `provider`/`permalink`/`streamUrl`
+ * (which older cloud docs never wrote) intact on SoundCloud-sourced and
+ * imported tracks.
+ */
+function pickString(
+  local: string | undefined,
+  cloud: string | undefined
+): string | undefined {
+  if (cloud != null && cloud !== '') {
+    return cloud;
+  }
+  if (local != null && local !== '') {
+    return local;
+  }
+  return cloud ?? local;
+}
+
+function mergeTrack(local: Track, cloud: Track): Track {
+  return {
+    id: cloud.id || local.id,
+    title: pickString(local.title, cloud.title) ?? '',
+    artist: pickString(local.artist, cloud.artist) ?? '',
+    album: pickString(local.album, cloud.album) ?? '',
+    artwork: pickString(local.artwork, cloud.artwork) ?? '',
+    previewUrl: pickString(local.previewUrl, cloud.previewUrl) ?? '',
+    streamUrl: pickString(local.streamUrl, cloud.streamUrl),
+    streamMimeType: pickString(local.streamMimeType, cloud.streamMimeType),
+    duration: cloud.duration ?? local.duration,
+    provider: pickString(local.provider, cloud.provider) as Track['provider'] | undefined,
+    permalink: pickString(local.permalink, cloud.permalink),
+  };
+}
+
+function mergeTrackLists(local: Track[], cloud: Track[]): Track[] {
+  const byId = new Map<string, Track>();
+  for (const track of local) {
+    byId.set(track.id, track);
+  }
+  for (const track of cloud) {
+    const existing = byId.get(track.id);
+    byId.set(track.id, existing ? mergeTrack(existing, track) : track);
+  }
+  return Array.from(byId.values());
+}
+
 function mergePlaylists(local: SavedPlaylist[], cloud: SavedPlaylist[]): SavedPlaylist[] {
   const byId = new Map<string, SavedPlaylist>();
   for (const playlist of local) {
     byId.set(playlist.id, playlist);
   }
   for (const playlist of cloud) {
-    byId.set(playlist.id, playlist);
+    const existing = byId.get(playlist.id);
+    if (!existing) {
+      byId.set(playlist.id, playlist);
+      continue;
+    }
+    byId.set(playlist.id, {
+      ...existing,
+      ...playlist,
+      name: pickString(existing.name, playlist.name) ?? existing.name ?? '',
+      description: pickString(existing.description, playlist.description),
+      coverUrl: pickString(existing.coverUrl, playlist.coverUrl),
+      isImported: playlist.isImported ?? existing.isImported,
+      tracks: mergeTrackLists(existing.tracks ?? [], playlist.tracks ?? []),
+    });
   }
   return Array.from(byId.values());
 }
 
 function mergeLikedSongsList(local: Track[], cloud: Track[]): Track[] {
-  const byId = new Map<string, Track>();
-  for (const track of local) {
-    byId.set(track.id, track);
-  }
-  for (const track of cloud) {
-    byId.set(track.id, track);
-  }
-  return Array.from(byId.values());
+  return mergeTrackLists(local, cloud);
 }
 
 async function persistLibrarySnapshot(

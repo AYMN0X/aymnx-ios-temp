@@ -77,12 +77,45 @@ const API_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
 };
 
-async function apiFetch<T>(path: string, instances: string[]): Promise<T> {
-  let lastError: unknown;
-  for (const instance of instances) {
-    if (!/^https:\/\//i.test(instance)) {
-      continue;
+/**
+ * Mirrors confirmed unreachable this session (network error, timeout, or a
+ * non-2xx response) are skipped for subsequent lookups so a dead JioSaavn
+ * third-party mirror never stalls resolution again. A mirror that succeeds
+ * later is re-admitted automatically.
+ */
+const deadApiMirrors = new Set<string>();
+
+function isTerminalMirrorFailure(error: unknown): boolean {
+  const status = (error as { status?: number }).status;
+  if (status != null) {
+    return status === 401 || status === 403 || status === 404 || status >= 500;
+  }
+  // Abort (timeout), DNS, or network failure.
+  return true;
+}
+
+function firstFulfilled<T>(promises: Array<Promise<T>>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let remaining = promises.length;
+    let lastError: unknown;
+    for (const promise of promises) {
+      promise.then(resolve, (error: unknown) => {
+        lastError = error;
+        remaining -= 1;
+        if (remaining === 0) {
+          reject(lastError);
+        }
+      });
     }
+  });
+}
+
+async function apiFetch<T>(path: string, instances: string[]): Promise<T> {
+  const healthy = instances.filter((instance) => !deadApiMirrors.has(instance));
+  // If every mirror looks dead, retry the full set once so transient outages
+  // can self-heal instead of failing closed.
+  const candidates = healthy.length > 0 ? healthy : instances;
+  const attempts = candidates.map(async (instance) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
     try {
@@ -91,16 +124,22 @@ async function apiFetch<T>(path: string, instances: string[]): Promise<T> {
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new Error(`${instance} responded with status ${response.status}`);
+        throw Object.assign(new Error(`${instance} responded with status ${response.status}`), {
+          status: response.status,
+        });
       }
+      deadApiMirrors.delete(instance);
       return (await response.json()) as T;
     } catch (error) {
-      lastError = error;
+      if (isTerminalMirrorFailure(error)) {
+        deadApiMirrors.add(instance);
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
     }
-  }
-  throw new Error(`All API instances failed: ${String(lastError)}`);
+  });
+  return firstFulfilled(attempts);
 }
 
 const JIOSAAVN_INSTANCES = [
@@ -186,16 +225,32 @@ function pickJioSaavnDownload(song: JioSaavnSong): string | null {
   return toHttps(downloads[0]?.url) ?? null;
 }
 
-function pickJioSaavnSong(results: JioSaavnSong[], artist: string): JioSaavnSong {
-  const target = artist.toLowerCase().trim();
-  const match = results.find((song) =>
-    (song.artists?.primary ?? []).some((primary) => {
-      const name = (primary.name ?? '').toLowerCase();
-      return name && (name.includes(target) || target.includes(name));
-    })
-  );
-  return match ?? results[0];
+function scoreJioSaavnSong(song: JioSaavnSong, title: string, artist: string): number {
+  const songTitle = (song.name ?? '').toLowerCase();
+  const artistNames = (song.artists?.primary ?? [])
+    .map((entry) => (entry.name ?? '').toLowerCase())
+    .join(' ');
+  const haystack = `${songTitle} ${artistNames}`;
+  const terms = `${title} ${artist}`
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 2);
+  let score = terms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0);
+  const normSongTitle = normalizeTrackTitle(songTitle);
+  const normRequestedTitle = normalizeTrackTitle(title);
+  if (
+    normRequestedTitle &&
+    normSongTitle &&
+    (normSongTitle === normRequestedTitle ||
+      normSongTitle.includes(normRequestedTitle) ||
+      normRequestedTitle.includes(normSongTitle))
+  ) {
+    score += 3;
+  }
+  return score;
 }
+
+const JIOSAAVN_MATCH_MIN_SCORE = 1;
 
 export async function resolveJioSaavnStream(
   title: string,
@@ -203,24 +258,21 @@ export async function resolveJioSaavnStream(
 ): Promise<StreamResult | null> {
   try {
     const search = await apiFetch<JioSaavnSearchResponse>(
-      `/api/search/songs?query=${encodeURIComponent(title)}&limit=8`,
+      `/api/search/songs?query=${encodeURIComponent(`${title} ${artist}`)}&limit=8`,
       JIOSAAVN_INSTANCES
     );
     const results = search.data?.results ?? [];
     if (results.length === 0) {
       return null;
     }
-    const preferred = pickJioSaavnSong(results, artist);
-    let song: JioSaavnSong | null = null;
-    if (preferred && titleMatches(title, preferred.name ?? '')) {
-      song = preferred;
-    } else {
-      song = results.find((item) => titleMatches(title, item.name ?? '')) ?? null;
-    }
-    if (!song) {
+    const ranked = results
+      .map((song) => ({ song, score: scoreJioSaavnSong(song, title, artist) }))
+      .sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    if (!best || best.score < JIOSAAVN_MATCH_MIN_SCORE) {
       return null;
     }
-    const url = pickJioSaavnDownload(song);
+    const url = pickJioSaavnDownload(best.song);
     if (!url) {
       return null;
     }
@@ -456,6 +508,8 @@ function scoreSoundCloudMatch(track: SoundCloudTrack, title: string, artist: str
   return terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0);
 }
 
+const SOUNDCLOUD_MATCH_MIN_SCORE = 1;
+
 function pickSoundCloudTranscoding(
   track: SoundCloudTrack
 ): SoundCloudTranscoding | undefined {
@@ -634,6 +688,13 @@ async function resolveSoundCloudWithClientId(
   if (!best) {
     return null;
   }
+  // Strict identity gate: an arbitrary SoundCloud track (score 0) is never a
+  // valid resolution for a permalink-less query. The only exception is when the
+  // caller supplied an explicit permalink that already resolved above, which is
+  // an exact match by definition.
+  if (!permalink && scoreSoundCloudMatch(best, title, artist) < SOUNDCLOUD_MATCH_MIN_SCORE) {
+    return null;
+  }
   if (!permalink && (!best.duration || best.duration <= 60000)) {
     return null;
   }
@@ -736,18 +797,22 @@ export async function resolveStream(
   title: string,
   artist: string
 ): Promise<StreamResult> {
-  const jioSaavn = await resolveJioSaavnStream(title, artist);
-  if (jioSaavn?.url) {
-    const url = toHttps(jioSaavn.url);
+  const [jioSaavn, soundCloud] = await Promise.allSettled([
+    resolveJioSaavnStream(title, artist),
+    resolveSoundCloudStream(title, artist),
+  ]);
+  const jioSaavnResult = jioSaavn.status === 'fulfilled' ? jioSaavn.value : null;
+  const soundCloudResult = soundCloud.status === 'fulfilled' ? soundCloud.value : null;
+  if (jioSaavnResult?.url) {
+    const url = toHttps(jioSaavnResult.url);
     if (url) {
-      return { ...jioSaavn, url };
+      return { ...jioSaavnResult, url };
     }
   }
-  const soundCloud = await resolveSoundCloudStream(title, artist);
-  if (soundCloud?.url) {
-    const url = toHttps(soundCloud.url);
+  if (soundCloudResult?.url) {
+    const url = toHttps(soundCloudResult.url);
     if (url) {
-      return { ...soundCloud, url };
+      return { ...soundCloudResult, url };
     }
   }
   throw new Error('No playable https stream found from any provider');

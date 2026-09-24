@@ -11,6 +11,7 @@ import {
   isStreamTimeoutError,
   loadAudioSource,
   MAX_CONSECUTIVE_STREAM_FAILURES,
+  RESOLUTION_TIMEOUT_MS,
   STREAM_TIMEOUT_MS,
   withStreamTimeout,
 } from '../services/AudioService';
@@ -97,6 +98,8 @@ const normalizeTrackSnapshot = (value: unknown): Track | null => {
   const stringOrUndefined = (input: unknown) => (typeof input === 'string' ? input : undefined);
   const finiteNumberOrUndefined = (input: unknown) =>
     typeof input === 'number' && Number.isFinite(input) ? input : undefined;
+  const provider =
+    typeof source.provider === 'string' ? (source.provider as Track['provider']) : undefined;
   return {
     id,
     title,
@@ -107,6 +110,8 @@ const normalizeTrackSnapshot = (value: unknown): Track | null => {
     streamUrl: stringOrUndefined(source.streamUrl),
     streamMimeType: stringOrUndefined(source.streamMimeType),
     duration: finiteNumberOrUndefined(source.duration),
+    provider,
+    permalink: stringOrUndefined(source.permalink),
   };
 };
 
@@ -333,7 +338,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     const loadAndStartPlayback = async (): Promise<void> => {
       let resolvedUrl = '';
-      let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | 'youtube' | undefined;
+      let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | 'youtube' | 'itunes' | undefined;
       let resolvedMimeType: string | undefined;
       const local = downloadedRef.current.find((item) => item.id === track.id);
       if (local) {
@@ -358,12 +363,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           track.artist
         );
       } else if (track.provider === 'soundcloud') {
-        const result =
-          (await resolveSoundCloudStream(track.title, track.artist, track.permalink)) ??
-          (await resolveStream(track.title, track.artist));
-        resolvedUrl = result.url;
-        resolvedProvider = result.provider;
-        resolvedMimeType = result.mimeType;
+        const result = await resolveSoundCloudStream(track.title, track.artist, track.permalink);
+        resolvedUrl = result?.url ?? '';
+        resolvedProvider = result?.provider;
+        resolvedMimeType = result?.mimeType;
       } else {
         const result = await resolveStream(track.title, track.artist);
         resolvedUrl = result.url;
@@ -372,6 +375,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       if (!isCurrent()) {
         return;
+      }
+      // Last-resort fallback: a 30s preview of the RIGHT track is strictly
+      // better than a full-length stream of the WRONG track. SoundCloud tracks
+      // never carry previews and LAN tracks are excluded because they must not
+      // fall back online.
+      if (!resolvedUrl) {
+        if (
+          !isLanSourced(track) &&
+          track.previewUrl &&
+          /^https:\/\//i.test(track.previewUrl)
+        ) {
+          resolvedUrl = track.previewUrl;
+          resolvedProvider = 'itunes';
+          resolvedMimeType = resolvedMimeType || 'audio/mpeg';
+        }
       }
       if (!resolvedUrl) {
         throw new Error('No playable stream URL for this track');
@@ -406,7 +424,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
 
     try {
-      await withStreamTimeout(loadAndStartPlayback());
+      await withStreamTimeout(loadAndStartPlayback(), RESOLUTION_TIMEOUT_MS);
     } catch (error) {
       if (!isCurrent()) {
         return;
@@ -877,6 +895,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           .current(active, 'timeout')
           .catch((error) => console.warn('[player] Stream timeout recovery failed.', error));
       };
+      // While the stream is still being resolved the strict 5s timer must not
+      // fire - resolution has its own (longer) budget handled by the outer
+      // `RESOLUTION_TIMEOUT_MS` race. This watchdog only guards a frozen native
+      // audio engine that never reports a loaded/buffering state.
+      if (resolvingRef.current) {
+        return;
+      }
       const player = playerRef.current;
       if (!player) {
         markTimedOut();

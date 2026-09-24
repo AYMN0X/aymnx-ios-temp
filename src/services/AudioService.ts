@@ -3,6 +3,15 @@ import type { AudioPlayer, AudioSource, AudioStatus } from 'expo-audio';
 
 export const STREAM_TIMEOUT_MS = 5000;
 
+/**
+ * Deadline for the entire track startup pipeline (stream resolution + native
+ * engine load). Resolution alone can legitimately take several seconds when the
+ * free-source mirrors are slow, so this must be comfortably larger than
+ * `STREAM_TIMEOUT_MS`. The strict `STREAM_TIMEOUT_MS` watchdog is reserved for
+ * the native audio engine initializing/buffering without progress.
+ */
+export const RESOLUTION_TIMEOUT_MS = 15000;
+
 export const STREAM_TIMEOUT_MESSAGE = 'STREAM_TIMEOUT';
 
 export const MAX_CONSECUTIVE_STREAM_FAILURES = 3;
@@ -11,10 +20,13 @@ export function isStreamTimeoutError(error: unknown): boolean {
   return error instanceof Error && error.message === STREAM_TIMEOUT_MESSAGE;
 }
 
-export async function withStreamTimeout<T>(promise: Promise<T>): Promise<T> {
+export async function withStreamTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number = STREAM_TIMEOUT_MS
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(STREAM_TIMEOUT_MESSAGE)), STREAM_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error(STREAM_TIMEOUT_MESSAGE)), timeoutMs);
   });
   try {
     return await Promise.race([promise, timeoutPromise]);

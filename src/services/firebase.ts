@@ -111,6 +111,8 @@ interface LikedTrackDoc {
   previewUrl?: string;
   streamUrl?: string;
   streamMimeType?: string;
+  provider?: string;
+  permalink?: string;
   duration?: number;
 }
 
@@ -125,6 +127,9 @@ function likedTrackFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Track {
     previewUrl: data.previewUrl ?? '',
     streamUrl: data.streamUrl,
     streamMimeType: data.streamMimeType,
+    provider:
+      typeof data.provider === 'string' ? (data.provider as Track['provider']) : undefined,
+    permalink: data.permalink,
     duration: typeof data.duration === 'number' ? data.duration : undefined,
   };
 }
@@ -148,6 +153,8 @@ export async function setLikedTrack(userId: string, track: Track): Promise<void>
     previewUrl: track.previewUrl,
     streamUrl: track.streamUrl ?? null,
     streamMimeType: track.streamMimeType ?? null,
+    provider: track.provider ?? null,
+    permalink: track.permalink ?? null,
     duration: track.duration ?? null,
   });
 }
@@ -163,6 +170,8 @@ export interface StoredPlaylistTrack {
   album: string;
   durationSeconds: number;
   coverUrl: string;
+  provider?: string;
+  permalink?: string;
 }
 
 export interface PlaylistDoc {
@@ -182,6 +191,8 @@ function trackToStored(track: Track): StoredPlaylistTrack {
     album: track.album,
     durationSeconds: track.duration ?? 0,
     coverUrl: track.artwork ?? '',
+    provider: track.provider,
+    permalink: track.permalink,
   };
 }
 
@@ -198,6 +209,8 @@ function storedTrackToTrack(data: Record<string, unknown>): Track {
         ? data.artwork
         : '',
     previewUrl: typeof data.previewUrl === 'string' ? data.previewUrl : '',
+    provider: typeof data.provider === 'string' ? (data.provider as Track['provider']) : undefined,
+    permalink: typeof data.permalink === 'string' ? data.permalink : undefined,
     duration:
       typeof data.durationSeconds === 'number'
         ? data.durationSeconds
