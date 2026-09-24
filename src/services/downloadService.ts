@@ -1,5 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { resolveStream, Track } from './musicApi';
+import { resolveDownloadableStream, Track } from './musicApi';
 import { canonicalizeHttpUrl } from '../utils/streamCache';
 import { extractId3Picture, base64ToBytes, bytesToBase64 } from '../utils/id3Artwork';
 
@@ -11,7 +11,29 @@ export interface DownloadedTrack extends Track {
 
 const TRACKS_DIR = `${FileSystem.documentDirectory ?? ''}tracks/`;
 
+// A real audio file is orders of magnitude larger than an HLS manifest (which
+// is a few KB of plaintext with remote segment URLs). Anything under this size
+// is a manifest, a partial/corrupt write, or an empty file — not playable.
+const MIN_AUDIO_FILE_BYTES = 100_000;
+
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+const isLocalSource = (uri: string): boolean => {
+  return uri.startsWith('file://') || uri.startsWith('/');
+};
+
+const isHlsStreamUrl = (url: string): boolean => {
+  return url.split(/[?#]/)[0].endsWith('.m3u8');
+};
+
+/**
+ * iOS AVPlayer (expo-audio) strictly requires `file://`-scheme paths for local
+ * playback. Normalize any absolute or scheme-less path before passing it to
+ * the native player.
+ */
+export function toLocalFileUri(uri: string): string {
+  return uri.startsWith('file://') ? uri : `file://${uri}`;
+}
 
 const MIME_TO_EXT: Record<string, string> = {
   'audio/mpeg': '.mp3',
@@ -48,8 +70,150 @@ const audioFileUri = (trackId: string, ext = '.m4a') => `${TRACKS_DIR}${sanitize
 const artworkFileUri = (trackId: string, ext = '.jpg') =>
   `${TRACKS_DIR}${sanitizeId(trackId)}_art${ext}`;
 
-function isLocalSource(uri: string): boolean {
-  return uri.startsWith('file://') || uri.startsWith('/');
+function extensionForMime(mimeType: string | undefined): string {
+  if (mimeType) {
+    const mapped = MIME_TO_EXT[mimeType.split(';')[0].trim().toLowerCase()];
+    if (mapped) {
+      return mapped;
+    }
+  }
+  return '.mp3';
+}
+
+// Some SoundCloud tracks expose no progressive transcoding at all — only an HLS
+// (.m3u8) playlist. Those are bundled into a directory of local segment files
+// plus a rewritten playlist, all relative to image the bundle at:
+//   <documentDirectory>/tracks/<sanitizedId>/playlist.m3u8
+const hlsDirFor = (trackId: string): string =>
+  `${TRACKS_DIR}${sanitizeId(trackId)}/`;
+const hlsManifestUri = (trackId: string): string =>
+  `${hlsDirFor(trackId)}playlist.m3u8`;
+
+const DOWNLOAD_USER_AGENT =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+const HLS_SEGMENT_BATCH_SIZE = 6;
+
+function resolveSegmentUrl(segment: string, manifestBaseUrl: string): string {
+  const trimmed = segment.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  // Root-relative (starts with '/') segments resolve against the manifest host.
+  if (trimmed.startsWith('/')) {
+    const host = manifestBaseUrl.match(/^https?:\/\/[^/]+/i)?.[0];
+    return host ? `${host}${trimmed}` : trimmed;
+  }
+  return `${manifestBaseUrl}${trimmed}`;
+}
+
+/**
+ * Download an HLS (.m3u8) playlist and all of its media segments so the bundle
+ * plays fully offline. Segments are fetched concurrently in small batches and
+ * stored as `seg_<index>.ts`; the manifest is rewritten to reference those
+ * relative paths (iOS AVPlayer resolves relative segment URIs against the local
+ * playlist, enabling offline playback of local .m3u8 files).
+ */
+async function downloadHlsTrack(
+  trackId: string,
+  sourceUrl: string,
+  onProgress?: (bytesWritten: number, totalBytes: number) => void
+): Promise<{ audioUri: string; mimeType: string; totalBytes: number }> {
+  const dir = hlsDirFor(trackId);
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  const manifestResponse = await fetch(sourceUrl, {
+    headers: { 'User-Agent': DOWNLOAD_USER_AGENT },
+  });
+  if (!manifestResponse.ok) {
+    throw new Error(`HLS manifest download failed (HTTP ${manifestResponse.status}).`);
+  }
+  const manifestText = await manifestResponse.text();
+  if (!manifestText.includes('#EXTM3U')) {
+    throw new Error('Downloaded manifest is not a valid HLS playlist.');
+  }
+  const manifestBaseUrl = sourceUrl.split(/[?#]/)[0];
+  const baseDir = manifestBaseUrl.slice(0, manifestBaseUrl.lastIndexOf('/') + 1);
+  const lines = manifestText.split(/\r?\n/);
+  const segmentLineToIndex = new Map<number, number>();
+  let segmentCounter = 0;
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) {
+      return;
+    }
+    segmentLineToIndex.set(index, segmentCounter++);
+  });
+
+  const segmentUrls = lines
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed !== '' && !trimmed.startsWith('#');
+    })
+    .map((line) => resolveSegmentUrl(line.trim(), baseDir));
+
+  // Download segment chunks in small concurrent batches to keep peak memory and
+  // simultaneous connections bounded.
+  let totalBytes = 0;
+  for (let start = 0; start < segmentUrls.length; start += HLS_SEGMENT_BATCH_SIZE) {
+    const batch = segmentUrls.slice(start, start + HLS_SEGMENT_BATCH_SIZE);
+    const sizes = await Promise.all(
+      batch.map(async (segmentUrl, offset) => {
+        const index = start + offset;
+        const uri = `${dir}seg_${index}.ts`;
+        const result = await FileSystem.downloadAsync(segmentUrl, uri);
+        if (!result || result.status < 200 || result.status >= 300) {
+          throw new Error(`HLS segment ${index} download failed (HTTP ${result?.status}).`);
+        }
+        const info = await FileSystem.getInfoAsync(uri);
+        return info.exists ? (info.size ?? 0) : 0;
+      })
+    );
+    totalBytes += sizes.reduce((sum, size) => sum + size, 0);
+    if (onProgress) {
+      onProgress(totalBytes, 0);
+    }
+  }
+
+  // Rewrite the manifest so every segment line points at a local relative file,
+  // preserving all directive (#) lines untouched.
+  const rewritten = lines
+    .map((line, index) => {
+      const trimmed = line.trim();
+      if (trimmed === '' || trimmed.startsWith('#')) {
+        return line;
+      }
+      const segmentIndex = segmentLineToIndex.get(index);
+      return segmentIndex != null ? `seg_${segmentIndex}.ts` : line;
+    })
+    .join('\n');
+
+  const playlistUri = hlsManifestUri(trackId);
+  await FileSystem.writeAsStringAsync(playlistUri, rewritten, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+  return {
+    audioUri: playlistUri,
+    mimeType: 'application/vnd.apple.mpegurl',
+    totalBytes,
+  };
+}
+
+async function totalHlsBundleBytes(playlistUri: string): Promise<number> {
+  try {
+    const dir = playlistUri.replace(/playlist\.m3u8$/, '');
+    const entries = await FileSystem.readDirectoryAsync(dir);
+    let total = 0;
+    for (const name of entries) {
+      if (name.startsWith('seg_')) {
+        const info = await FileSystem.getInfoAsync(`${dir}${name}`);
+        total += info.exists ? (info.size ?? 0) : 0;
+      }
+    }
+    return total;
+  } catch (error) {
+    console.warn('[downloads] Could not measure HLS bundle size.', error);
+    return 0;
+  }
 }
 
 async function extractEmbeddedArtwork(audioUri: string, trackId: string): Promise<string> {
@@ -91,39 +255,74 @@ export async function downloadTrack(
   track: Track,
   onProgress?: (bytesWritten: number, totalBytes: number) => void
 ): Promise<DownloadedTrack> {
-  if (!FileSystem.documentDirectory) {
+if (!FileSystem.documentDirectory) {
     throw new Error('Downloads are not supported in this environment.');
   }
   await ensureTracksDirectory();
-  const audioUri = audioFileUri(track.id, extensionFor(track));
 
   const ownSource = track.streamUrl && track.streamUrl.trim();
+  let audioUri = '';
+  let resolvedMime: string | undefined;
+  let isHlsBundle = false;
   if (ownSource && isLocalSource(ownSource)) {
+    audioUri = audioFileUri(track.id, extensionFor(track));
     await FileSystem.copyAsync({ from: ownSource, to: audioUri });
-    const exists = await FileSystem.getInfoAsync(audioUri);
-    if (!exists.exists) {
-      throw new Error('Could not persist local audio file.');
-    }
   } else if (ownSource) {
     const source = canonicalizeHttpUrl(ownSource);
-    const result = await FileSystem.downloadAsync(source, audioUri);
-    if (!result || result.status < 200 || result.status >= 300) {
-      throw new Error(`Audio download failed (HTTP ${result?.status}).`);
+    if (isHlsStreamUrl(source)) {
+      isHlsBundle = true;
+      const hls = await downloadHlsTrack(track.id, source, onProgress);
+      audioUri = hls.audioUri;
+      resolvedMime = hls.mimeType;
+    } else {
+      audioUri = audioFileUri(track.id, extensionFor(track));
+      const result = await FileSystem.downloadAsync(source, audioUri);
+      if (!result || result.status < 200 || result.status >= 300) {
+        throw new Error(`Audio download failed (HTTP ${result?.status}).`);
+      }
     }
   } else {
-    const stream = await resolveStream(track.title, track.artist);
+    const stream = await resolveDownloadableStream(track.title, track.artist);
     if (!stream.url) {
       throw new Error('Could not find a downloadable source for this track.');
     }
-    const task = FileSystem.createDownloadResumable(stream.url, audioUri, {}, (progress) => {
-      if (onProgress) {
-        onProgress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
+    if (isHlsStreamUrl(stream.url)) {
+      isHlsBundle = true;
+      const hls = await downloadHlsTrack(track.id, stream.url, onProgress);
+      audioUri = hls.audioUri;
+      resolvedMime = hls.mimeType;
+    } else {
+      resolvedMime = stream.mimeType;
+      audioUri = audioFileUri(track.id, extensionForMime(stream.mimeType));
+      const task = FileSystem.createDownloadResumable(stream.url, audioUri, {}, (progress) => {
+        if (onProgress) {
+          onProgress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
+        }
+      });
+      const result = await task.downloadAsync();
+      if (!result || !result.uri) {
+        throw new Error('Audio download failed.');
       }
-    });
-    const result = await task.downloadAsync();
-    if (!result || !result.uri) {
-      throw new Error('Audio download failed.');
     }
+  }
+
+  // Validation: reject empty writes, partial/interrupted downloads and broken
+  // HLS bundles so a garbage file is never marked as "downloaded". An HLS
+  // playlist file itself is tiny, so its validity is measured by the total size
+  // of the bundled segments instead.
+  const audioInfo = await FileSystem.getInfoAsync(audioUri);
+  const totalSize = isHlsBundle
+    ? await totalHlsBundleBytes(audioUri)
+    : audioInfo.exists
+      ? (audioInfo.size ?? 0)
+      : 0;
+  if (!audioInfo.exists || totalSize < MIN_AUDIO_FILE_BYTES) {
+    if (isHlsBundle) {
+      await FileSystem.deleteAsync(hlsDirFor(track.id), { idempotent: true });
+    } else {
+      await FileSystem.deleteAsync(audioUri, { idempotent: true });
+    }
+    throw new Error(`Downloaded audio too small to be a valid track: ${track.title}`);
   }
 
   let localArtworkUri = '';
@@ -146,9 +345,10 @@ export async function downloadTrack(
     localArtworkUri = await extractEmbeddedArtwork(audioUri, track.id);
   }
 
-  return {
+return {
     ...track,
-    localAudioUri: audioUri,
+    streamMimeType: resolvedMime ?? track.streamMimeType,
+    localAudioUri: toLocalFileUri(audioUri),
     localArtworkUri,
     downloadedAt: Date.now(),
   };
@@ -156,6 +356,11 @@ export async function downloadTrack(
 
 export async function deleteTrackFiles(trackId: string): Promise<void> {
   const prefix = sanitizeId(trackId);
+  try {
+    await FileSystem.deleteAsync(`${TRACKS_DIR}${prefix}/`, { idempotent: true });
+  } catch (error) {
+    console.warn('[downloads] Could not remove HLS bundle directory.', error);
+  }
   try {
     const entries = await FileSystem.readDirectoryAsync(TRACKS_DIR);
     await Promise.allSettled(
@@ -178,7 +383,28 @@ export async function filterExistingDownloads(
       }
       try {
         const info = await FileSystem.getInfoAsync(track.localAudioUri);
-        return info.exists ? track : null;
+        if (!info.exists) {
+          return null;
+        }
+        const isHls = /\.m3u8?$/i.test(track.localAudioUri);
+        // Prune manifest-sized / corrupt entries so they are never treated as
+        // downloaded (offline playback must not attempt a broken file). An HLS
+        // playlist file itself is tiny, so its bundle of segments is measured
+        // instead of the playlist's own byte size.
+        const totalSize = isHls
+          ? await totalHlsBundleBytes(track.localAudioUri)
+          : (info.size ?? 0);
+        if (totalSize < MIN_AUDIO_FILE_BYTES) {
+          await FileSystem.deleteAsync(track.localAudioUri, { idempotent: true });
+          if (isHls) {
+            await FileSystem.deleteAsync(
+              track.localAudioUri.replace(/playlist\.m3u8$/, ''),
+              { idempotent: true }
+            );
+          }
+          return null;
+        }
+        return track;
       } catch (error) {
         console.warn('[downloads] Could not verify download file for:', track.id, error);
         return null;
@@ -186,4 +412,45 @@ export async function filterExistingDownloads(
     })
   );
   return results.filter((track): track is DownloadedTrack => track !== null);
+}
+
+/**
+ * Direct lookup of a cached audio file by deterministic download path, without
+ * consulting the in-memory registry. This is the offline guarantee: playback
+ * can find the file (e.g. `tracks/<sanitized-id>.m4a` or the HLS bundle at
+ * `tracks/<sanitized-id>/playlist.m3u8`) even if the download registry has not
+ * hydrated yet or is stale. Returns the first existing, validly-sized audio
+ * artifact for the track id, or null.
+ */
+export async function getLocalTrackFile(trackId: string): Promise<string | null> {
+  const prefix = sanitizeId(trackId);
+  let entries: string[] = [];
+  try {
+    entries = await FileSystem.readDirectoryAsync(TRACKS_DIR);
+  } catch (error) {
+    console.warn('[downloads] Could not list tracks directory for local lookup.', error);
+  }
+  for (const name of entries) {
+    if (name.startsWith(`${prefix}.`) && !name.includes('_art')) {
+      if (/\.m3u8?$/i.test(name)) {
+        continue;
+      }
+      const uri = toLocalFileUri(`${TRACKS_DIR}${name}`);
+      const info = await FileSystem.getInfoAsync(uri);
+      if (info.exists && (info.size ?? 0) >= MIN_AUDIO_FILE_BYTES) {
+        return uri;
+      }
+    }
+  }
+  // HLS bundle: validate the whole segment directory, then return the playlist.
+  const playlistUri = hlsManifestUri(trackId);
+  try {
+    const playlistInfo = await FileSystem.getInfoAsync(playlistUri);
+    if (playlistInfo.exists && (await totalHlsBundleBytes(playlistUri)) >= MIN_AUDIO_FILE_BYTES) {
+      return toLocalFileUri(playlistUri);
+    }
+  } catch (error) {
+    console.warn('[downloads] Could not inspect HLS bundle for local lookup.', error);
+  }
+  return null;
 }

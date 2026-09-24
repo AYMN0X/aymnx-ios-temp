@@ -388,7 +388,17 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
         </SafeAreaView>
 
         <View style={styles.titleBlock}>
-          <Text style={styles.sectionLabel}>{`${displayTracks.length} SONGS`}</Text>
+          <View style={styles.sectionLabelRow}>
+            {allDownloaded ? (
+              <Ionicons
+                name="arrow-down-circle"
+                size={13}
+                color="#FFFFFF"
+                style={styles.sectionLabelIcon}
+              />
+            ) : null}
+            <Text style={styles.sectionLabel}>{`${displayTracks.length} SONGS`}</Text>
+          </View>
           <View style={styles.titleRow}>
             <Text style={[styles.playlistTitle, styles.playlistTitleWhite]}>
               {titleFirst}
@@ -433,13 +443,23 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                       >
                         {track.title}
                       </Text>
-                      <Text
-                        style={[styles.trackArtist, isCurrent && styles.trackArtistCurrent]}
-                        numberOfLines={1}
-                      >
-                        {track.artist}
-                        {track.album ? ` • ${track.album}` : ""}
-                      </Text>
+                      <View style={styles.trackArtistRow}>
+                        {isDownloaded(track.id) ? (
+                          <Ionicons
+                            name="arrow-down-circle"
+                            size={12}
+                            color="#FFFFFF"
+                            style={styles.trackDownloadIcon}
+                          />
+                        ) : null}
+                        <Text
+                          style={[styles.trackArtist, isCurrent && styles.trackArtistCurrent]}
+                          numberOfLines={1}
+                        >
+                          {track.artist}
+                          {track.album ? ` • ${track.album}` : ""}
+                        </Text>
+                      </View>
                     </View>
                   </TouchableOpacity>
                   {isEditing ? (
@@ -772,6 +792,13 @@ const styles = StyleSheet.create({
     color: "#A0A0A0",
     textTransform: "uppercase",
   },
+  sectionLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  sectionLabelIcon: {
+    marginRight: 5,
+  },
   titleRow: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -855,10 +882,18 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "700",
   },
+  trackArtistRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 3,
+  },
+  trackDownloadIcon: {
+    marginRight: 5,
+  },
   trackArtist: {
     fontSize: 12,
     color: "#A0A0A0",
-    marginTop: 3,
+    flexShrink: 1,
   },
   trackArtistCurrent: {
     color: "#A0A0A0",

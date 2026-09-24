@@ -3,14 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowUpDown, Download, Heart } from 'lucide-react-native';
-import { TrackRow } from '../components/TrackRow';
+import { ArrowUpDown, Heart } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useDownloads } from '../context/DownloadContext';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlayer } from '../context/PlayerContext';
 import { useTrackActions } from '../context/TrackActionsContext';
-import type { DownloadedTrack } from '../services/downloadService';
 import type { Track } from '../services/musicApi';
 import { COLORS, TYPE } from '../theme/appTheme';
 import { PlaylistDetailScreen } from './PlaylistDetailScreen';
@@ -18,8 +16,6 @@ import { PlaylistDetailScreen } from './PlaylistDetailScreen';
 const LIKED_GRADIENT: readonly [string, string] = ['#450AF5', '#8E8EE5'];
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-
-const LIBRARY_FILTERS = ['Playlists', 'Podcasts', 'Albums', 'Downloaded'];
 
 type LibraryDetail =
   | { type: 'liked' }
@@ -32,13 +28,13 @@ interface LibraryScreenProps {
 }
 
 interface LibraryItem {
-  type: 'liked' | 'playlist' | 'downloaded';
+  type: 'liked' | 'playlist';
   key: string;
   title?: string;
   subtitle?: string;
   coverUrl?: string;
   playlistId?: string;
-  track?: Track;
+  tracks?: Track[];
 }
 
 export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }: LibraryScreenProps) {
@@ -53,19 +49,30 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
   } = useLibrary();
   const { playTrack, currentTrack } = usePlayer();
   const { openTrack } = useTrackActions();
-  const { downloadedTracks, deleteDownload } = useDownloads();
+  const { downloadedTracks } = useDownloads();
   const { user } = useAuth();
   const userInitial = (user?.name || user?.username || 'S').charAt(0).toUpperCase();
   const [detail, setDetail] = useState<LibraryDetail | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  const [libraryFilter, setLibraryFilter] = useState('Playlists');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
+  const downloadedIds = useMemo(
+    () => new Set(downloadedTracks.map((track) => track.id)),
+    [downloadedTracks]
+  );
+
   const downloadedLikedCount = useMemo(() => {
-    const downloadedIds = new Set(downloadedTracks.map((track) => track.id));
     return likedSongs.reduce((count, track) => (downloadedIds.has(track.id) ? count + 1 : count), 0);
-  }, [likedSongs, downloadedTracks]);
+  }, [likedSongs, downloadedIds]);
+
+  const isPlaylistDownloaded = useCallback(
+    (tracks: Track[] | undefined) =>
+      !!tracks && tracks.length > 0 && tracks.every((track) => downloadedIds.has(track.id)),
+    [downloadedIds]
+  );
+
+  const likedAllDownloaded = likedSongs.length > 0 && downloadedLikedCount === likedSongs.length;
 
   const selectedPlaylist =
     detail && detail.type === 'playlist'
@@ -122,8 +129,9 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
       type: 'liked',
       key: 'liked',
       title: likedMeta.name || 'Liked Songs',
-      subtitle: `Playlist • ${downloadedLikedCount} songs`,
+      subtitle: `Playlist • ${likedSongs.length} songs`,
       coverUrl: likedMeta.coverUrl,
+      tracks: likedSongs,
     },
     ...playlists.map((item: { id: string; name: string; tracks: Track[]; coverUrl?: string }) => ({
       type: 'playlist' as const,
@@ -132,19 +140,9 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
       subtitle: `Playlist • ${item.tracks.length} songs`,
       playlistId: item.id,
       coverUrl: item.coverUrl,
+      tracks: item.tracks,
     })),
   ];
-
-  const filteredItems: LibraryItem[] =
-    libraryFilter === 'Downloaded'
-      ? downloadedTracks.map((track: DownloadedTrack) => ({
-          type: 'downloaded',
-          key: `downloaded-${track.id}`,
-          track: { ...track, artwork: track.localArtworkUri || track.artwork },
-        }))
-      : libraryFilter === 'Playlists'
-      ? libraryItems
-      : libraryItems.filter((i) => i.type === 'liked');
 
   const selectedTracks = selectedPlaylist ? selectedPlaylist.tracks : [];
 
@@ -197,27 +195,6 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
           </Pressable>
         </View>
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.libraryPillsScroll}
-        contentContainerStyle={styles.libraryPillsContent}
-      >
-        {LIBRARY_FILTERS.map((f) => {
-          const selected = libraryFilter === f;
-          return (
-            <Pressable
-              key={f}
-              onPress={() => setLibraryFilter(f)}
-              style={[styles.libraryPill, selected && styles.libraryPillActive]}
-            >
-              <Text style={[styles.libraryPillText, selected && styles.libraryPillTextActive]}>
-                {f}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
       <View style={styles.libraryToolbar}>
         <Pressable style={styles.libraryToolbarLeft} hitSlop={8}>
           <ArrowUpDown size={16} color={COLORS.white} />
@@ -256,18 +233,10 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
         </View>
       ) : null}
       <FlatList
-        data={filteredItems}
+        data={libraryItems}
         keyExtractor={(item) => item.key}
         contentContainerStyle={[styles.libraryList, { paddingBottom: insets.bottom + 146 }]}
-        ListEmptyComponent={
-          libraryFilter === 'Playlists' ? (
-            <Text style={styles.libraryEmpty}>No songs yet</Text>
-          ) : libraryFilter === 'Downloaded' ? (
-            <Text style={styles.libraryEmpty}>Nothing downloaded yet.</Text>
-          ) : (
-            <Text style={styles.libraryEmpty}>Nothing here yet.</Text>
-          )
-        }
+        ListEmptyComponent={<Text style={styles.libraryEmpty}>No songs yet</Text>}
         renderItem={({ item }) => {
           if (item.type === 'liked') {
             return (
@@ -289,24 +258,18 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
                     {item.title}
                   </Text>
                   <View style={styles.libRowSubtitleRow}>
-                    <Download size={12} color={COLORS.accent} />
+                    {likedAllDownloaded && (
+                      <Ionicons
+                        name="arrow-down-circle"
+                        size={13}
+                        color="#FFFFFF"
+                        style={styles.libRowSubtitleIcon}
+                      />
+                    )}
                     <Text style={styles.libRowSubtitle}>{item.subtitle}</Text>
                   </View>
                 </View>
               </Pressable>
-            );
-          }
-          if (item.type === 'downloaded') {
-            return (
-              <TrackRow
-                track={item.track!}
-                active={item.track!.id === currentTrack?.id}
-                liked={isLiked(item.track!.id)}
-                onPlay={() => item.track && playTrack(item.track, downloadedTracks)}
-                onToggleLike={() => item.track && toggleLike(item.track)}
-                onMore={() => item.track && openTrack(item.track)}
-                onRemove={() => item.track && deleteDownload(item.track.id)}
-              />
             );
           }
           return (
@@ -325,9 +288,19 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
                 <Text style={styles.libRowTitle} numberOfLines={1}>
                   {item.title}
                 </Text>
-                <Text style={styles.libRowSubtitle} numberOfLines={1}>
-                  {item.subtitle}
-                </Text>
+                <View style={styles.libRowSubtitleRow}>
+                  {isPlaylistDownloaded(item.tracks) && (
+                    <Ionicons
+                      name="arrow-down-circle"
+                      size={13}
+                      color="#FFFFFF"
+                      style={styles.libRowSubtitleIcon}
+                    />
+                  )}
+                  <Text style={styles.libRowSubtitle} numberOfLines={1}>
+                    {item.subtitle}
+                  </Text>
+                </View>
               </View>
             </Pressable>
           );
@@ -378,7 +351,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 8,
     paddingHorizontal: 16,
   },
   libraryAvatar: {
@@ -410,36 +383,6 @@ const styles = StyleSheet.create({
   },
   libraryHeaderBtn: {
     padding: 4,
-  },
-  libraryPillsScroll: {
-    flexGrow: 0,
-    marginBottom: 12,
-  },
-  libraryPillsContent: {
-    paddingHorizontal: 16,
-  },
-  libraryPill: {
-    height: 32,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    backgroundColor: COLORS.pill,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginRight: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  libraryPillActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
-  },
-  libraryPillText: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  libraryPillTextActive: {
-    color: '#FFFFFF',
   },
   libraryToolbar: {
     flexDirection: 'row',
@@ -486,6 +429,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
+  },
+  libRowSubtitleIcon: {
+    marginRight: 0,
   },
   libRowSubtitle: {
     ...TYPE.body,

@@ -583,6 +583,47 @@ function pickSoundCloudTranscoding(
   return undefined;
 }
 
+/**
+ * Download-safe transcoding picker. Only a progressive MP3/AAC stream can be
+ * persisted as a real audio file; an HLS transcoding is an m3u8 playlist with
+ * remote segment URLs that AVPlayer cannot open offline ("Cannot Open").
+ * Ogg/Opus containers are excluded too because iOS AVPlayer can't decode them.
+ * Returns undefined when only non-progressive transcodings exist. When only HLS
+ * is available (some tracks have no progressive MP3/MP4 at all) the best HLS
+ * transcoding is returned as a download fallback, since offline HLS bundles are
+ * now supported by the downloader.
+ */
+function pickDownloadableSoundCloudTranscoding(
+  track: SoundCloudTrack
+): SoundCloudTranscoding | undefined {
+  const available = (track.media?.transcodings ?? []).filter((item) => item.snipped === false);
+  const progressive = available.filter((item) => item.format?.protocol === 'progressive');
+  if (progressive.length > 0) {
+    const mpeg = progressive.find((item) =>
+      (item.format?.mime_type ?? '').toLowerCase().includes('mpeg')
+    );
+    if (mpeg) {
+      return mpeg;
+    }
+    return progressive.find((item) =>
+      (item.format?.mime_type ?? '').toLowerCase().includes('mp4')
+    );
+  }
+  const hls = available.filter((item) => item.format?.protocol === 'hls');
+  const hlsMpeg = hls.find((item) =>
+    (item.format?.mime_type ?? '').toLowerCase().includes('mpeg')
+  );
+  if (hlsMpeg) {
+    return hlsMpeg;
+  }
+  return hls.find((item) => (item.format?.mime_type ?? '').toLowerCase().includes('mp4'));
+}
+
+const isHlsStreamUrl = (url: string): boolean => {
+  const path = url.split(/[?#]/)[0];
+  return path.endsWith('.m3u8');
+};
+
 async function soundCloudSearch(
   query: string,
   clientId: string,
@@ -762,7 +803,8 @@ async function resolveSoundCloudWithClientId(
   title: string,
   artist: string,
   clientId: string,
-  permalink?: string
+  permalink?: string,
+  downloadMode = false
 ): Promise<StreamResult | null> {
   let best: SoundCloudTrack | null = null;
   if (permalink) {
@@ -801,7 +843,9 @@ async function resolveSoundCloudWithClientId(
   if (!permalink && (!best.duration || best.duration <= 60000)) {
     return null;
   }
-  const transcoding = pickSoundCloudTranscoding(best);
+  const transcoding = downloadMode
+    ? pickDownloadableSoundCloudTranscoding(best)
+    : pickSoundCloudTranscoding(best);
   const transcodingHttps = toHttps(transcoding?.url);
   if (!transcodingHttps) {
     return null;
@@ -917,6 +961,57 @@ export async function resolveStream(
     if (url) {
       return { ...soundCloudResult, url };
     }
+  }
+  throw new Error('No playable https stream found from any provider');
+}
+
+export async function resolveSoundCloudDownloadableStream(
+  title: string,
+  artist: string,
+  permalink?: string
+): Promise<StreamResult | null> {
+  try {
+    return await runSoundCloudClientIdAction(
+      (clientId) => resolveSoundCloudWithClientId(title, artist, clientId, permalink, true),
+      'downloadable stream resolution'
+    );
+  } catch (error) {
+    console.warn('[audio-soundcloud] Downloadable SoundCloud resolution failed.', error);
+    return null;
+  }
+}
+
+/**
+ * Stream resolution for OFFLINE caching. Prefers a progressive MP3/AAC from
+ * JioSaavn or SoundCloud; falls back to an HLS (`.m3u8`) playlist only when no
+ * progressive stream exists, so tracks without progressive transcodings can
+ * still be downloaded as offline HLS bundles.
+ */
+export async function resolveDownloadableStream(
+  title: string,
+  artist: string
+): Promise<StreamResult> {
+  const [jioSaavn, soundCloud] = await Promise.allSettled([
+    resolveJioSaavnStream(title, artist),
+    resolveSoundCloudDownloadableStream(title, artist),
+  ]);
+  const candidates = [
+    jioSaavn.status === 'fulfilled' ? jioSaavn.value : null,
+    soundCloud.status === 'fulfilled' ? soundCloud.value : null,
+  ];
+  const progressive = candidates.find((candidate) => {
+    const url = candidate?.url ? toHttps(candidate.url) : '';
+    return url ? !isHlsStreamUrl(url) : false;
+  });
+  if (progressive?.url) {
+    return { ...progressive, url: toHttps(progressive.url)! };
+  }
+  const hls = candidates.find((candidate) => {
+    const url = candidate?.url ? toHttps(candidate.url) : '';
+    return url ? isHlsStreamUrl(url) : false;
+  });
+  if (hls?.url) {
+    return { ...hls, url: toHttps(hls.url)! };
   }
   throw new Error('No playable https stream found from any provider');
 }

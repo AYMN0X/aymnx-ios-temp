@@ -3,9 +3,11 @@ import { Alert, Platform } from 'react-native';
 import type { AudioPlayer, AudioStatus } from 'expo-audio';
 import { Image } from 'expo-image';
 import { resolveSoundCloudStream, resolveStream, Track } from '../services/musicApi';
+import { getLocalTrackFile, toLocalFileUri } from '../services/downloadService';
 import { getRecommendedNextTracks } from '../services/autoplayService';
 import * as storage from '../services/storage';
 import { resolveStreamForPlayback, isLanStreamUrl, StreamResolveResult } from '../utils/streamCache';
+import { isNetworkAvailable } from '../utils/network';
 import {
   initializeAudioSession,
   isStreamTimeoutError,
@@ -118,7 +120,7 @@ const normalizeTrackSnapshot = (value: unknown): Track | null => {
 export function PlayerProvider({ children }: { children: ReactNode }) {
   bootLogOnce('PlayerProvider mounted');
   const { user } = useAuth();
-  const { downloadedTracks } = useDownloads();
+  const { downloadedTracks, deleteDownload } = useDownloads();
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
@@ -336,13 +338,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // live players active at the same time (overlapping audio).
     await stopCurrentPlayer();
 
+    // Set when playback resolves to a local file, so a load failure can be
+    // attributed to a corrupt/unsupported cached file and cleanup the download.
+    let localPlaybackUri = '';
+
     const loadAndStartPlayback = async (): Promise<void> => {
       let resolvedUrl = '';
       let resolvedProvider: 'local' | 'jiosaavn' | 'soundcloud' | 'youtube' | 'itunes' | undefined;
       let resolvedMimeType: string | undefined;
+      // Offline-first: use the in-memory download registry, then fall back to a
+      // direct filesystem lookup of the cached audio file. The FS check covers
+      // cold-start races where the registry has not hydrated yet, so a
+      // downloaded track is never sent to remote API resolution.
       const local = downloadedRef.current.find((item) => item.id === track.id);
-      if (local) {
-        resolvedUrl = local.localAudioUri;
+      let localUri = local?.localAudioUri ?? '';
+      if (!localUri) {
+        try {
+          const persisted = await getLocalTrackFile(track.id);
+          if (persisted) {
+            localUri = persisted;
+            console.log(`[Playback] Playing offline file for "${track.title}": ${persisted}`);
+          }
+        } catch (error) {
+          console.warn('[audio] Failed to check local cache for:', track.title, error);
+        }
+      }
+      if (localUri) {
+        resolvedUrl = toLocalFileUri(localUri);
+        localPlaybackUri = localUri;
         resolvedProvider = 'local';
       } else if (track.streamUrl) {
         let resolved: StreamResolveResult | null = null;
@@ -430,6 +453,40 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return;
       }
       console.error('[audio] Stream load failed for:', track.title, track.artist, error);
+      // A local file that fails to open is corrupt (e.g. an HLS manifest saved
+      // as audio, or a 0-byte write): delete it and unmark it as downloaded so
+      // it stops surfacing the offline badge and breaking playback.
+      if (localPlaybackUri) {
+        console.warn(
+          `[audio] Local file corrupted for "${track.title}" (${track.id}), clearing download...`
+        );
+        await deleteDownload(track.id).catch((cleanupError) =>
+          console.warn('[player] Could not remove corrupt download.', cleanupError)
+        );
+      }
+      // Graceful offline guard: an un-downloaded track that fails resolution
+      // because no reachable stream exists is almost always the device being in
+      // Airplane mode. Surface a friendly message instead of a redbox and do not
+      // advance the queue (which would otherwise fail-track after fail-track).
+      const isNoSourceError =
+        error instanceof Error && error.message.includes('No playable https stream');
+      if (isNoSourceError) {
+        let offline = true;
+        try {
+          offline = !(await isNetworkAvailable());
+        } catch {
+          offline = true;
+        }
+        if (offline) {
+          const offlineMessage = 'Not available offline. Download this track to listen without internet.';
+          console.warn(`[audio] Offline playback guard for "${track.title}".`);
+          setPlaybackError(offlineMessage);
+          showToast(offlineMessage);
+          setIsLoadingAudio(false);
+          resolvingRef.current = false;
+          return;
+        }
+      }
       const timedOut = isStreamTimeoutError(error);
       setPlaybackError(
         timedOut
