@@ -18,6 +18,7 @@ interface MiniPlayerDockProps {
 }
 
 const DOCK_HEIGHT = 60;
+const DOCK_TAB_BAR_GAP = 12;
 const ARTWORK_SIZE = 40;
 const BUTTON_SIZE = 40;
 const RING_STROKE = 3;
@@ -185,7 +186,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: DOCK_TAB_BAR_GAP,
     height: DOCK_HEIGHT,
     backgroundColor: 'transparent',
     zIndex: 999,
