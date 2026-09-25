@@ -232,6 +232,14 @@ const NowPlayingScrubber: React.FC = () => {
     : progressRatio;
   const shownPositionMs = isScrubbing ? scrubRatio * (durationMs || 0) : positionMs;
 
+  // Guard the right-hand label independently of useProgress. track.duration is
+  // in seconds; durationMs is already in millis. Anything still unusable falls
+  // back to 0 so the label renders 0:00 rather than formatTime's '-:--'.
+  const trackDurationMs = Number.isFinite(currentTrack?.duration)
+    ? (currentTrack?.duration ?? 0) * 1000
+    : 0;
+  const safeDurationMs = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : trackDurationMs;
+
   const ratioFromTouch = (e: GestureResponderEvent): number => {
     const width = waveWidthRef.current > 0 ? waveWidthRef.current : SCREEN_WIDTH * 0.6;
     return Math.max(0, Math.min(1, e.nativeEvent.locationX / width));
@@ -311,7 +319,9 @@ const NowPlayingScrubber: React.FC = () => {
         </View>
       </View>
 
-      <Text style={[styles.timeText, styles.timeTextRight]}>{formatTime(durationMs)}</Text>
+      <Text style={[styles.timeText, styles.timeTextRight]}>
+        {formatTime(safeDurationMs)}
+      </Text>
     </View>
   );
 };
@@ -329,7 +339,8 @@ const styles = StyleSheet.create({
   },
   waveform: {
     flex: 1,
-    marginHorizontal: 12,
+    // Small enough that the fixed-width timers on either side always fit.
+    marginHorizontal: 8,
     height: WAVEFORM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
@@ -356,11 +367,18 @@ const styles = StyleSheet.create({
     // instead of tracking the platform's font ascent/descent.
     lineHeight: 14,
     textAlignVertical: 'center',
-    color: '#707070',
-    minWidth: 34,
+    // #707070 measured 3.51:1 against the dark ambient backdrop, under the
+    // 4.5:1 WCAG AA floor for 11px text, which made this read as missing.
+    // 0.65 white lands at ~8.3:1.
+    color: 'rgba(255, 255, 255, 0.65)',
+    minWidth: 40,
+    // Never let the flexing waveform squeeze a timer out of the row.
+    flexShrink: 0,
     fontVariant: ['tabular-nums'],
   },
   timeTextRight: {
+    minWidth: 44,
+    flexShrink: 0,
     textAlign: 'right',
   },
 });
