@@ -96,13 +96,10 @@ async function persistLibrarySnapshot(
   playlists: SavedPlaylist[]
 ): Promise<void> {
   try {
-    const [, savedPlaylists] = await Promise.all([
-      storage.saveLikedSongs(userId, likedSongs),
-      storage.savePlaylists(userId, playlists),
-    ]);
+    const saved = await storage.saveLibrarySnapshot(userId, { likedSongs, playlists });
     bootLog('library snapshot persisted locally', {
-      liked: likedSongs.length,
-      playlists: savedPlaylists.length,
+      liked: saved.likedSongs.length,
+      playlists: saved.playlists.length,
     });
   } catch (error) {
     console.warn('[library] Failed to persist library snapshot locally.', error);

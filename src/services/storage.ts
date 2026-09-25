@@ -174,14 +174,31 @@ async function writeUserData(userId: string, data: StoredUserData): Promise<void
   await AsyncStorage.setItem(getUserDataKey(userId), JSON.stringify(data));
 }
 
-async function updateUserData(
+// Serialises every read-modify-write for a given user. Without this, two
+// concurrent updates (e.g. saveLikedSongs + savePlaylists) both read the same
+// base snapshot and the later write silently reverts the earlier one's field,
+// losing it on disk and in the cache.
+const userDataWriteQueues = new Map<string, Promise<void>>();
+
+function updateUserData(
   userId: string,
   updater: (data: StoredUserData) => StoredUserData
 ): Promise<StoredUserData> {
-  const data = await readUserData(userId);
-  const next = updater(data);
-  await writeUserData(userId, next);
-  return next;
+  const previous = userDataWriteQueues.get(userId) ?? Promise.resolve();
+  const run = previous.then(async () => {
+    const data = await readUserData(userId);
+    const next = updater(data);
+    await writeUserData(userId, next);
+    return next;
+  });
+  userDataWriteQueues.set(
+    userId,
+    run.then(
+      () => undefined,
+      () => undefined
+    )
+  );
+  return run;
 }
 
 export async function getLikedSongs(userId: string): Promise<Track[]> {
@@ -237,6 +254,28 @@ export async function reorderLikedSongs(
 
 export async function getPlaylists(userId: string): Promise<SavedPlaylist[]> {
   return (await readUserData(userId)).playlists ?? [];
+}
+
+export interface LibrarySnapshot {
+  likedSongs: Track[];
+  playlists: SavedPlaylist[];
+}
+
+// Writes both library halves in a single read-modify-write so the persisted
+// state can never end up with one half updated and the other stale.
+export async function saveLibrarySnapshot(
+  userId: string,
+  snapshot: LibrarySnapshot
+): Promise<LibrarySnapshot> {
+  const data = await updateUserData(userId, (d) => ({
+    ...d,
+    likedSongs: snapshot.likedSongs,
+    playlists: snapshot.playlists,
+  }));
+  return {
+    likedSongs: data.likedSongs ?? [],
+    playlists: data.playlists ?? [],
+  };
 }
 
 export async function saveLikedSongs(userId: string, tracks: Track[]): Promise<Track[]> {
