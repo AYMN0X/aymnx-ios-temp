@@ -28,6 +28,7 @@ import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
 import { useAuth } from "../context/AuthContext";
 import NowPlayingScrubber, { formatTime } from "../components/player/NowPlayingScrubber";
+import LyricsView from "../components/player/LyricsView";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -82,6 +83,13 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
     (currentTrack?.album || "").trim().toUpperCase() || "NOW PLAYING";
 
   const [isShuffle, setIsShuffle] = React.useState(false);
+  const [showLyrics, setShowLyrics] = React.useState(false);
+
+  // Returning to artwork when the track changes avoids carrying the previous
+  // song's lyrics view over to the next one.
+  React.useEffect(() => {
+    setShowLyrics(false);
+  }, [currentTrack?.id]);
 
   const translateY = React.useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const sheetOpacity = React.useRef(new Animated.Value(1)).current;
@@ -240,6 +248,11 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
     playPrevious();
   };
 
+  const handleToggleLyrics = () => {
+    haptic(Haptics.ImpactFeedbackStyle.Light);
+    setShowLyrics((v) => !v);
+  };
+
   return (
     <View style={styles.screenRoot}>
       <LinearGradient
@@ -262,64 +275,107 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
         <SafeAreaView style={styles.container}>
           <StatusBar barStyle="light-content" />
 
-          <View style={styles.header}>
-            <TouchableOpacity
-              onPress={animateDismiss}
-              style={styles.headerSide}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel="Close player"
-            >
-              <Ionicons name="chevron-back" size={22} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-
-            <View style={styles.headerCenter}>
-              <Text style={styles.headerMicro}>RECENTLY PLAYED</Text>
-              <Text style={styles.headerContext} numberOfLines={1}>
-                {contextLabel}
-              </Text>
-            </View>
-
-            <View style={styles.headerSide}>
-              {user?.avatarUrl ? (
-                <Image
-                  source={{ uri: user.avatarUrl }}
-                  style={styles.avatar}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  recyclingKey={`avatar-${user.id}`}
-                  transition={200}
-                />
-              ) : (
-                <View style={[styles.avatar, styles.avatarFallback]}>
-                  <Text style={styles.avatarInitial}>
-                    {(user?.name || "U").charAt(0).toUpperCase()}
+          {showLyrics ? (
+            <View style={styles.header}>
+              <View style={styles.lyricsHeaderLead}>
+                {artworkUri ? (
+                  <Image
+                    source={{ uri: artworkUri }}
+                    style={styles.lyricsHeaderArt}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={`lyrics-${artworkUri}`}
+                    transition={150}
+                  />
+                ) : (
+                  <View style={[styles.lyricsHeaderArt, styles.artworkFallback]}>
+                    <Ionicons name="musical-notes" size={18} color="rgba(255,255,255,0.35)" />
+                  </View>
+                )}
+                <View style={styles.lyricsHeaderMeta}>
+                  <Text style={styles.lyricsHeaderTitle} numberOfLines={1}>
+                    {currentTrack?.title || "No track playing"}
+                  </Text>
+                  <Text style={styles.lyricsHeaderArtist} numberOfLines={1}>
+                    {currentTrack?.artist || "Unknown Artist"}
                   </Text>
                 </View>
-              )}
-            </View>
-          </View>
+              </View>
 
-          <View style={styles.heroTopSpacer} />
-
-          <View style={styles.artworkWrap}>
-            <View style={styles.artworkShadow}>
-              {artworkUri ? (
-                <Image
-                  source={{ uri: artworkUri }}
-                  style={styles.artwork}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  recyclingKey={artworkUri}
-                  transition={300}
-                />
-              ) : (
-                <View style={[styles.artwork, styles.artworkFallback]}>
-                  <Ionicons name="musical-notes" size={84} color="rgba(255,255,255,0.3)" />
-                </View>
-              )}
+              <TouchableOpacity
+                onPress={() => setQueueOpen(true)}
+                style={styles.headerSide}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="More options"
+              >
+                <Ionicons name="ellipsis-horizontal" size={20} color={COLORS.textSecondary} />
+              </TouchableOpacity>
             </View>
-          </View>
+          ) : (
+            <View style={styles.header}>
+              <TouchableOpacity
+                onPress={animateDismiss}
+                style={styles.headerSide}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close player"
+              >
+                <Ionicons name="chevron-back" size={22} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+
+              <View style={styles.headerCenter}>
+                <Text style={styles.headerMicro}>RECENTLY PLAYED</Text>
+                <Text style={styles.headerContext} numberOfLines={1}>
+                  {contextLabel}
+                </Text>
+              </View>
+
+              <View style={styles.headerSide}>
+                {user?.avatarUrl ? (
+                  <Image
+                    source={{ uri: user.avatarUrl }}
+                    style={styles.avatar}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={`avatar-${user.id}`}
+                    transition={200}
+                  />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarFallback]}>
+                    <Text style={styles.avatarInitial}>
+                      {(user?.name || "U").charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          <View style={[styles.heroTopSpacer, showLyrics && styles.heroSpacerCollapsed]} />
+
+          {showLyrics ? (
+            <LyricsView track={currentTrack} />
+          ) : (
+            <View style={styles.artworkWrap}>
+              <View style={styles.artworkShadow}>
+                {artworkUri ? (
+                  <Image
+                    source={{ uri: artworkUri }}
+                    style={styles.artwork}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={artworkUri}
+                    transition={300}
+                  />
+                ) : (
+                  <View style={[styles.artwork, styles.artworkFallback]}>
+                    <Ionicons name="musical-notes" size={84} color="rgba(255,255,255,0.3)" />
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
 
           <View style={styles.trackInfoRow}>
             {currentTrack ? (
@@ -341,12 +397,16 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
             )}
 
             <View style={styles.titleColumn}>
-              <Text style={styles.trackTitle} numberOfLines={1}>
-                {currentTrack?.title || "No track playing"}
-              </Text>
-              <Text style={styles.trackArtist} numberOfLines={1}>
-                {currentTrack?.artist || "Unknown Artist"}
-              </Text>
+              {showLyrics ? null : (
+                <>
+                  <Text style={styles.trackTitle} numberOfLines={1}>
+                    {currentTrack?.title || "No track playing"}
+                  </Text>
+                  <Text style={styles.trackArtist} numberOfLines={1}>
+                    {currentTrack?.artist || "Unknown Artist"}
+                  </Text>
+                </>
+              )}
             </View>
 
             <TouchableOpacity
@@ -377,6 +437,21 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                   name="shuffle"
                   size={18}
                   color={isShuffle ? COLORS.accent : COLORS.dockInactive}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleToggleLyrics}
+                style={styles.deckSideBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: showLyrics }}
+                accessibilityLabel={showLyrics ? "Hide lyrics" : "Show lyrics"}
+              >
+                <Ionicons
+                  name={showLyrics ? "chatbubble-ellipses" : "chatbubble-ellipses-outline"}
+                  size={18}
+                  color={showLyrics ? COLORS.accent : COLORS.dockInactive}
                 />
               </TouchableOpacity>
 
@@ -762,6 +837,35 @@ const styles = StyleSheet.create({
   heroTopSpacer: {
     flex: 1,
     minHeight: 0,
+  },
+  heroSpacerCollapsed: {
+    flex: 0,
+    minHeight: 4,
+  },
+  lyricsHeaderLead: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingRight: 8,
+  },
+  lyricsHeaderArt: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+  },
+  lyricsHeaderMeta: {
+    flex: 1,
+  },
+  lyricsHeaderTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
+  },
+  lyricsHeaderArtist: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.7)",
+    marginTop: 2,
   },
   dockSpacer: {
     flex: 1,
