@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { requireOptionalNativeModule } from 'expo';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { bootLog } from './src/services/bootLog';
 import {
   SafeAreaProvider,
@@ -141,12 +142,14 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <AuthGate />
-        <TelemetryHud />
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.appRoot}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <AuthGate />
+          <TelemetryHud />
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
