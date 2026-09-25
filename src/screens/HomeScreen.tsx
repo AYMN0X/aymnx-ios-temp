@@ -358,9 +358,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   listContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 4,
-    gap: 16,
+    gap: 18,
   },
   searchListContent: {
     paddingHorizontal: 0,
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   columnWrapper: {
-    gap: 16,
+    gap: 22,
   },
   topSection: {
     width: "100%",
@@ -489,7 +489,7 @@ const styles = StyleSheet.create({
   },
   card: {
     flex: 1,
-    borderRadius: 14,
+    borderRadius: 10,
   },
   cardPressed: {
     opacity: 0.85,
@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
   artwork: {
     width: "100%",
     aspectRatio: 1,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: COLORS.card,
   },
   artworkFallback: {
@@ -505,17 +505,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   cardTitle: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 13.5,
+    fontWeight: "600",
     color: "#FFFFFF",
-    marginTop: 8,
+    marginTop: 6,
   },
   cardTitleActive: {
     color: "#FFFFFF",
   },
   cardSubtitle: {
-    fontSize: 11,
-    color: "#A0A0A0",
+    fontSize: 11.5,
+    color: "rgba(255, 255, 255, 0.6)",
     marginTop: 2,
   },
 });

@@ -279,15 +279,14 @@ async function fetchSpotifyPlaylistMeta(playlistId: string): Promise<{
 function buildImportedTrack(
   raw: ParsedRawTrack,
   stream: StreamResult | null,
-  index: number,
-  playlistArtwork: string
+  index: number
 ): Track {
   return {
     id: `spotify-${raw.sourceKey}-${index}`,
     title: raw.title,
     artist: raw.artists || 'Unknown artist',
     album: '',
-    artwork: raw.artwork ?? playlistArtwork,
+    artwork: raw.artwork ?? '',
     previewUrl: '',
     duration: raw.durationMs != null && Number.isFinite(raw.durationMs) ? raw.durationMs / 1000 : undefined,
     ...(stream
@@ -362,7 +361,7 @@ export function importSpotifyPlaylist(
         if (cancelled) {
           return;
         }
-        tracks[index] = buildImportedTrack(raw, stream, index, playlistArtwork);
+        tracks[index] = buildImportedTrack(raw, stream, index);
         progress += 1;
         callbacks?.onProgress?.(progress, rawTracks.length, raw.title);
       }

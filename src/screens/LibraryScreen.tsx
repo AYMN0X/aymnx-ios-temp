@@ -404,20 +404,22 @@ const styles = StyleSheet.create({
   libRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 60,
-    gap: 12,
+    minHeight: 64,
+    gap: 10,
     paddingHorizontal: 16,
+    paddingVertical: 6,
   },
   libCover: {
-    width: 44,
-    height: 44,
-    borderRadius: 6,
+    width: 52,
+    height: 52,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   libRowInfo: {
     flex: 1,
+    justifyContent: 'center',
   },
   libRowTitle: {
     color: COLORS.textPrimary,
@@ -435,6 +437,8 @@ const styles = StyleSheet.create({
   },
   libRowSubtitle: {
     ...TYPE.body,
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.6)',
   },
   libraryList: {
   },

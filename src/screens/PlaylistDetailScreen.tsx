@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
@@ -13,21 +14,21 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ArrowDown } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { Color, Border } from "../theme/GlobalStyles";
-import { useAuth } from "../context/AuthContext";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
 import { useDownloads } from "../context/DownloadContext";
 import { useTrackActions } from "../context/TrackActionsContext";
+import { getThumbnailArtworkUrl, resolveArtworkForTrack } from "../services/musicApi";
 import type { Track } from "../services/musicApi";
 
 interface PlaylistDetailScreenProps {
@@ -68,7 +69,6 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   dragOffset,
   onBack,
 }) => {
-  const { user } = useAuth();
   const { playTrack, currentTrack } = usePlayer();
   const { openTrack } = useTrackActions();
   const {
@@ -78,6 +78,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
     playlists,
     removePlaylist,
     updatePlaylistDetails,
+    replaceTrack,
     removeTrackFromPlaylist,
     reorderPlaylistTracks,
     reorderLikedSongs,
@@ -103,16 +104,76 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
       ? "Liked Songs"
       : "Playlist";
 
-  const titleWords = displayTitle.trim().split(/\s+/).filter(Boolean);
-  const titleFirst = titleWords[0] ?? displayTitle;
-  const titleRest = titleWords.slice(1).join(" ");
-
   const coverBackground = isLikedPlaylist ? Color.accent : (coverColor ?? Color.accent);
   const effectiveCover = isLikedPlaylist
     ? likedMeta.coverUrl
     : livePlaylist?.coverUrl ?? coverImage;
 
-  const avatarLetter = (user?.name || user?.username || "U").charAt(0).toUpperCase();
+  const playlistCoverUrls = React.useMemo(() => {
+    const values = [effectiveCover, livePlaylist?.coverUrl, coverImage];
+    return new Set(
+      values.filter((value): value is string => typeof value === "string" && value.length > 0)
+    );
+  }, [coverImage, effectiveCover, livePlaylist?.coverUrl]);
+
+  const isPlaylistCoverArtwork = React.useCallback(
+    (artwork?: string) => {
+      if (!artwork || playlistCoverUrls.size === 0) {
+        return false;
+      }
+      const normalized = getThumbnailArtworkUrl(artwork);
+      let dirty = false;
+      playlistCoverUrls.forEach((url) => {
+        if (url === artwork || getThumbnailArtworkUrl(url) === normalized) {
+          dirty = true;
+        }
+      });
+      return dirty;
+    },
+    [playlistCoverUrls]
+  );
+
+  const resolvedArtwork = React.useRef<Record<string, string>>({});
+  const artworkAttempts = React.useRef<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const pending: Track[] = [];
+      for (const track of displayTracks) {
+        if (pending.length >= 8) {
+          break;
+        }
+        if (resolvedArtwork.current[track.id]) {
+          continue;
+        }
+        const needsArtwork = !track.artwork || isPlaylistCoverArtwork(track.artwork);
+        if (!needsArtwork) {
+          continue;
+        }
+        if (artworkAttempts.current.has(track.id)) {
+          continue;
+        }
+        artworkAttempts.current.add(track.id);
+        pending.push(track);
+      }
+      for (const track of pending) {
+        const artwork = await resolveArtworkForTrack(track);
+        if (cancelled) {
+          return;
+        }
+        if (!artwork) {
+          continue;
+        }
+        resolvedArtwork.current[track.id] = artwork;
+        await replaceTrack(track.id, { ...track, artwork });
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [displayTracks, isPlaylistCoverArtwork, replaceTrack]);
 
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [sheetView, setSheetView] = React.useState<"options" | "details">("options");
@@ -196,6 +257,26 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   const allDownloaded = displayTracks.length > 0 && pendingForDownload.length === 0;
   const isDownloading = isBatchDownloading && batchProgress !== null;
 
+  const playlistMetaText = React.useMemo(() => {
+    const songCount = displayTracks.length;
+    const songsLabel = `${songCount} ${songCount === 1 ? "song" : "songs"}`;
+    const totalSeconds = displayTracks.reduce(
+      (total, track) => total + (typeof track.duration === "number" && track.duration > 0 ? track.duration : 0),
+      0
+    );
+    if (totalSeconds <= 0) {
+      return songsLabel;
+    }
+    const totalMinutes = Math.round(totalSeconds / 60);
+    if (totalMinutes < 60) {
+      return `${songsLabel} • ${totalMinutes} min`;
+    }
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const durationText = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    return `${songsLabel} • ${durationText}`;
+  }, [displayTracks]);
+
   const handleDownload = () => {
     if (isBatchDownloading || pendingForDownload.length === 0) {
       return;
@@ -215,6 +296,32 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
     }
     const downloaded = displayTracks.filter((track) => isDownloaded(track.id));
     await Promise.all(downloaded.map((track) => deleteDownload(track.id)));
+  };
+
+  const downloadButtonLabel = isDownloading
+    ? `Downloading ${batchProgress.downloaded}/${batchProgress.total}`
+    : allDownloaded
+    ? "Downloaded"
+    : pendingForDownload.length === displayTracks.length
+    ? "Download"
+    : `Download ${pendingForDownload.length} remaining`;
+
+  const handleDownloadButton = () => {
+    if (isDownloading) {
+      return;
+    }
+    if (!allDownloaded) {
+      handleDownloadToggle(true);
+      return;
+    }
+    Alert.alert(
+      "Remove downloads?",
+      `This deletes the offline files for all ${displayTracks.length} songs.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => handleDownloadToggle(false) },
+      ]
+    );
   };
 
   const openOptionsSheet = () => {
@@ -375,48 +482,42 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                     <Ionicons name="ellipsis-horizontal" size={22} color={Color.textPrimary} />
                   </TouchableOpacity>
                 ) : null}
-                <View style={styles.avatar}>
-                  {user?.avatarUrl ? (
-                    <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} resizeMode="cover" />
-                  ) : (
-                    <Text style={styles.avatarLetter}>{avatarLetter}</Text>
-                  )}
-                </View>
               </View>
             )}
           </View>
         </SafeAreaView>
 
         <View style={styles.titleBlock}>
-          <View style={styles.sectionLabelRow}>
-            {allDownloaded ? (
-              <Ionicons
-                name="arrow-down-circle"
-                size={13}
-                color="#FFFFFF"
-                style={styles.sectionLabelIcon}
-              />
-            ) : null}
-            <Text style={styles.sectionLabel}>{`${displayTracks.length} SONGS`}</Text>
-          </View>
-          <View style={styles.titleRow}>
-            <Text style={[styles.playlistTitle, styles.playlistTitleWhite]}>
-              {titleFirst}
-              {titleRest ? " " : ""}
-            </Text>
-            {titleRest ? <Text style={[styles.playlistTitle, styles.playlistTitleAccent]}>{titleRest}</Text> : null}
-          </View>
+          <Text style={styles.playlistTitle} numberOfLines={2}>
+            {displayTitle}
+          </Text>
+          <Text style={styles.playlistMeta}>{playlistMetaText}</Text>
         </View>
 
         <View style={styles.downloadRow}>
-          <Text style={styles.downloadLabel}>DOWNLOAD</Text>
-          <Switch
-            value={allDownloaded}
+          <Pressable
+            onPress={handleDownloadButton}
             disabled={isDownloading}
-            onValueChange={handleDownloadToggle}
-            thumbColor="#ffffff"
-            trackColor={{ false: "#262b2b", true: "#FFFFFF" }}
-          />
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.downloadButton,
+              allDownloaded && styles.downloadButtonDone,
+              pressed && styles.downloadButtonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={downloadButtonLabel}
+            accessibilityState={{ selected: allDownloaded, disabled: isDownloading }}
+          >
+            {isDownloading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <ArrowDown
+                size={16}
+                color={allDownloaded ? "#101313" : "#A7A7A7"}
+                strokeWidth={3}
+              />
+            )}
+          </Pressable>
         </View>
 
         <View style={styles.trackList}>
@@ -425,6 +526,10 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
           ) : (
             displayTracks.map((track, index) => {
               const isCurrent = !isEditing && currentTrack?.id === track.id;
+              const ownArtwork = isPlaylistCoverArtwork(track.artwork) ? "" : track.artwork;
+              const trackArtwork = getThumbnailArtworkUrl(
+                resolvedArtwork.current[track.id] || ownArtwork
+              );
               return (
                 <View key={track.id} style={[styles.trackRow, isCurrent && styles.trackRowActive]}>
                   <TouchableOpacity
@@ -433,6 +538,11 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                     disabled={isEditing}
                     activeOpacity={0.7}
                   >
+                    {trackArtwork ? (
+                      <Image source={{ uri: trackArtwork }} style={styles.trackArtwork} />
+                    ) : (
+                      <View style={[styles.trackArtwork, styles.trackArtworkFallback]} />
+                    )}
                     {isCurrent ? (
                       <Ionicons name="volume-high" size={18} color="#FFFFFF" style={styles.speakerIcon} />
                     ) : null}
@@ -749,27 +859,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Color.surface,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.10)",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  avatarImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  },
-  avatarLetter: {
-    color: Color.textPrimary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
   doneButtonText: {
     fontSize: 16,
     fontWeight: "600",
@@ -785,47 +874,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
   },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1.5,
-    color: "#A0A0A0",
-    textTransform: "uppercase",
-  },
-  sectionLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  sectionLabelIcon: {
-    marginRight: 5,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    marginTop: 6,
-  },
   playlistTitle: {
-    fontSize: 30,
+    fontSize: 24,
     fontWeight: "700",
-  },
-  playlistTitleWhite: {
     color: "#FFFFFF",
   },
-  playlistTitleAccent: {
-    color: "#FFFFFF",
+  playlistMeta: {
+    fontSize: 13,
+    fontWeight: "400",
+    color: "rgba(255, 255, 255, 0.6)",
+    marginTop: 4,
   },
   downloadRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
     marginVertical: 16,
   },
-  downloadLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-    color: "#A0A0A0",
+  downloadButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2.8,
+    borderColor: "#A7A7A7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  downloadButtonDone: {
+    borderColor: "#FFFFFF",
+    backgroundColor: "#FFFFFF",
+  },
+  downloadButtonPressed: {
+    opacity: 0.7,
   },
   scrollView: {
     flex: 1,
@@ -872,10 +952,23 @@ const styles = StyleSheet.create({
   },
   trackDetails: {
     flex: 1,
+    justifyContent: "center",
+  },
+  trackArtwork: {
+    width: 48,
+    height: 48,
+    borderRadius: 4,
+    marginRight: 12,
+    backgroundColor: Color.card,
+  },
+  trackArtworkFallback: {
+    backgroundColor: Color.background,
+    borderWidth: 1,
+    borderColor: Color.border,
   },
   trackTitle: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 14.5,
+    fontWeight: "500",
     color: "#FFFFFF",
   },
   trackTitleCurrent: {
@@ -891,15 +984,16 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   trackArtist: {
-    fontSize: 12,
-    color: "#A0A0A0",
+    fontSize: 12.5,
+    color: "rgba(255, 255, 255, 0.6)",
     flexShrink: 1,
   },
   trackArtistCurrent: {
-    color: "#A0A0A0",
+    color: "rgba(255, 255, 255, 0.6)",
   },
   moreButton: {
     padding: 6,
+    marginRight: 4,
   },
   sheetOverlay: {
     flex: 1,

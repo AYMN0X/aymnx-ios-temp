@@ -18,7 +18,7 @@ interface MiniPlayerDockProps {
 }
 
 const DOCK_HEIGHT = 60;
-const DOCK_TAB_BAR_GAP = 12;
+const DOCK_TAB_BAR_GAP = 5;
 const ARTWORK_SIZE = 40;
 const BUTTON_SIZE = 40;
 const RING_STROKE = 3;
@@ -95,10 +95,10 @@ export function MiniPlayerDock({ onOpen, blurTarget }: MiniPlayerDockProps) {
         <BlurView
           blurMethod="dimezisBlurView"
           blurTarget={blurTarget}
-          intensity={65}
+          intensity={28}
           pointerEvents="none"
           style={StyleSheet.absoluteFill}
-          tint="dark"
+          tint="systemUltraThinMaterialDark"
         />
         <View style={styles.dockRow}>
           <Pressable
@@ -199,10 +199,15 @@ const styles = StyleSheet.create({
   dockCard: {
     flex: 1,
     position: 'relative',
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 24,
+    borderTopWidth: 0.8,
+    borderTopColor: 'rgba(255, 255, 255, 0.24)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.12)',
-    backgroundColor: 'rgba(24, 24, 28, 0.85)',
+    backgroundColor: 'rgba(20, 20, 24, 0.25)',
     overflow: 'hidden',
   },
   dockRow: {

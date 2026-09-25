@@ -19,9 +19,10 @@ export const TAB_BAR_BOTTOM_GAP = 12;
 const LABEL_ACTIVE = '#FFFFFF';
 const LABEL_INACTIVE = '#8E8E93';
 const TAB_ICON_SIZE = 21;
-const INDICATOR_TOP = 5;
-const INDICATOR_HEIGHT = 40;
-const INDICATOR_RADIUS = 20;
+const INDICATOR_VERTICAL_INSET = 3.5;
+const INDICATOR_TOP = INDICATOR_VERTICAL_INSET;
+const INDICATOR_HEIGHT = TAB_BAR_HEIGHT - INDICATOR_VERTICAL_INSET * 2;
+const INDICATOR_RADIUS = INDICATOR_HEIGHT / 2;
 const INDICATOR_HORIZONTAL_INSET = 20;
 
 const ACTIVE_INDEX: Record<string, number> = {
@@ -254,7 +255,7 @@ const styles = StyleSheet.create({
     right: 0,
     marginHorizontal: 16,
     height: TAB_BAR_HEIGHT,
-    borderRadius: 25,
+    borderRadius: TAB_BAR_HEIGHT / 2,
     backgroundColor: 'rgba(20, 20, 24, 0.25)',
     borderTopWidth: 0.8,
     borderTopColor: 'rgba(255, 255, 255, 0.28)',
@@ -278,9 +279,7 @@ const styles = StyleSheet.create({
     left: 0,
     height: INDICATOR_HEIGHT,
     borderRadius: INDICATOR_RADIUS,
-    backgroundColor: 'rgba(0, 0, 0, 0.48)',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     zIndex: 0,
   },
   tabs: {

@@ -707,6 +707,34 @@ export function getThumbnailArtworkUrl(url?: string | null): string {
   return url;
 }
 
+/**
+ * Looks up real album art for a track whose own artwork is missing (or was
+ * previously polluted with a playlist cover). Uses the same providers as search
+ * and prefers a title match so a same-named cover song cannot win by position.
+ */
+export async function resolveArtworkForTrack(track: Track): Promise<string> {
+  const query = [track.title, track.artist].filter(Boolean).join(' ').trim();
+  if (!query) {
+    return '';
+  }
+  const settled = await Promise.allSettled([
+    searchITunes(query, 5),
+    searchJioSaavn(query, 5),
+  ]);
+  const candidates: Track[] = [];
+  for (const result of settled) {
+    if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+      candidates.push(...result.value);
+    }
+  }
+  const withArtwork = candidates.filter((item) => Boolean(item.artwork));
+  if (withArtwork.length === 0) {
+    return '';
+  }
+  const match = withArtwork.find((item) => titleMatches(track.title, item.title));
+  return getHighResArtworkUrl((match ?? withArtwork[0]).artwork);
+}
+
 function soundCloudArtworkFor(track: SoundCloudTrack): string {
   return getHighResArtworkUrl(toHttps(track.artwork_url ?? track.user?.avatar_url ?? ''));
 }
