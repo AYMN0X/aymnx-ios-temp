@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { Pause, Play } from 'lucide-react-native';
-import { memo, useCallback, useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import type { RefObject } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -25,16 +25,6 @@ const RING_STROKE = 3;
 const RING_RADIUS = (BUTTON_SIZE - RING_STROKE) / 2;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const RING_CENTER = BUTTON_SIZE / 2;
-
-const DockProgressBar: React.FC = memo(function DockProgressBar() {
-  const { positionMs, durationMs } = useProgress();
-  const progress = durationMs > 0 ? Math.min(Math.max(positionMs / durationMs, 0), 1) : 0;
-  return (
-    <View style={styles.progressTrack}>
-      <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
-    </View>
-  );
-});
 
 export function MiniPlayerDock({ onOpen, blurTarget }: MiniPlayerDockProps) {
   const insets = useSafeAreaInsets();
@@ -174,7 +164,6 @@ export function MiniPlayerDock({ onOpen, blurTarget }: MiniPlayerDockProps) {
             </View>
           </View>
         </View>
-        <DockProgressBar />
       </View>
     </Animated.View>
   );
@@ -200,13 +189,8 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
     borderRadius: 24,
-    borderTopWidth: 0.8,
-    borderTopColor: 'rgba(255, 255, 255, 0.24)',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     backgroundColor: 'rgba(20, 20, 24, 0.25)',
     overflow: 'hidden',
   },
@@ -279,19 +263,5 @@ const styles = StyleSheet.create({
   },
   playIcon: {
     marginLeft: 1.5,
-  },
-  progressTrack: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    overflow: 'hidden',
-    zIndex: 1,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: COLORS.accent,
   },
 });

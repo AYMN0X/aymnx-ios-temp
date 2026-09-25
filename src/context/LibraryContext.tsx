@@ -115,7 +115,7 @@ interface LibraryContextValue {
   likedMeta: storage.LikedMeta;
   isLiked: (trackId: string) => boolean;
   toggleLike: (track: Track) => Promise<void>;
-  createPlaylist: (name: string) => Promise<void>;
+  createPlaylist: (name: string, meta?: storage.NewPlaylistMeta) => Promise<SavedPlaylist | null>;
   createImportedPlaylist: (name: string, coverUrl: string, tracks: Track[]) => Promise<SavedPlaylist | null>;
   removePlaylist: (playlistId: string) => Promise<void>;
   addToPlaylist: (playlistId: string, track: Track) => Promise<void>;
@@ -311,22 +311,24 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const createPlaylist = async (name: string) => {
+  const createPlaylist = async (name: string, meta?: storage.NewPlaylistMeta) => {
     if (!userId) {
-      return;
+      return null;
     }
     const trimmed = name.trim();
     if (!trimmed) {
-      return;
+      return null;
     }
-    const existingIds = new Set(playlists.map((playlist) => playlist.id));
-    const next = await guardedStorage('creating playlist', () => storage.createPlaylist(userId, trimmed));
-    if (!next) {
-      return;
+    const result = await guardedStorage('creating playlist', () =>
+      storage.createPlaylist(userId, trimmed, meta)
+    );
+    if (!result) {
+      return null;
     }
-    const created = next.find((playlist) => !existingIds.has(playlist.id));
+    const { playlists: next, created } = result;
     setPlaylists(next);
     await syncPlaylistToCloud(created);
+    return created;
   };
 
   const createImportedPlaylist = async (name: string, coverUrl: string, tracks: Track[]) => {

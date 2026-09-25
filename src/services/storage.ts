@@ -252,17 +252,34 @@ export async function savePlaylists(
   return data.playlists ?? [];
 }
 
-export async function createPlaylist(userId: string, name: string): Promise<SavedPlaylist[]> {
-  const data = await updateUserData(userId, (d) => {
-    const playlist: SavedPlaylist = {
-      id: playlistId(),
-      name,
-      tracks: [],
-      isImported: false,
-    };
-    return { ...d, playlists: [...(d.playlists ?? []), playlist] };
-  });
-  return data.playlists ?? [];
+export interface NewPlaylistMeta {
+  description?: string;
+  coverUrl?: string;
+}
+
+export async function createPlaylist(
+  userId: string,
+  name: string,
+  meta?: NewPlaylistMeta
+): Promise<{ playlists: SavedPlaylist[]; created: SavedPlaylist }> {
+  const trimmedName = name.trim();
+  const description = meta?.description?.trim();
+  const coverUrl = meta?.coverUrl;
+  const id = playlistId();
+  const created: SavedPlaylist = {
+    id,
+    name: trimmedName,
+    tracks: [],
+    isImported: false,
+    ...(description ? { description } : {}),
+    ...(coverUrl ? { coverUrl } : {}),
+  };
+  const data = await updateUserData(userId, (d) => ({
+    ...d,
+    playlists: [...(d.playlists ?? []), created],
+  }));
+  const playlists = data.playlists ?? [];
+  return { playlists, created: playlists.find((playlist) => playlist.id === id) ?? created };
 }
 
 export async function createImportedPlaylist(

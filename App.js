@@ -62,6 +62,7 @@ function AppShell() {
           <LibraryScreen
             key={tabKeys.library}
             onOpenAccount={() => setActiveTab('profile')}
+            blurTarget={blurTargetRef}
           />
         )}
       </BlurTargetView>

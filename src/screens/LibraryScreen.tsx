@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { RefObject } from 'react';
+import { Animated, Dimensions, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowUpDown, Heart } from 'lucide-react-native';
@@ -9,7 +10,9 @@ import { useDownloads } from '../context/DownloadContext';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlayer } from '../context/PlayerContext';
 import { useTrackActions } from '../context/TrackActionsContext';
+import { CreatePlaylistSheet } from '../components/modals/CreatePlaylistSheet';
 import type { Track } from '../services/musicApi';
+import type { SavedPlaylist } from '../services/storage';
 import { COLORS, TYPE } from '../theme/appTheme';
 import { PlaylistDetailScreen } from './PlaylistDetailScreen';
 
@@ -22,6 +25,7 @@ type LibraryDetail =
   | { type: 'playlist'; id: string; title: string };
 
 interface LibraryScreenProps {
+  blurTarget?: RefObject<View | null>;
   onOpenAccount: () => void;
   initialDetail?: { type: 'playlist'; id: string } | null;
   onDetailConsumed?: () => void;
@@ -37,13 +41,12 @@ interface LibraryItem {
   tracks?: Track[];
 }
 
-export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }: LibraryScreenProps) {
+export function LibraryScreen({ blurTarget, onOpenAccount, initialDetail, onDetailConsumed }: LibraryScreenProps) {
   const insets = useSafeAreaInsets();
   const {
     likedSongs,
     likedMeta,
     playlists,
-    createPlaylist,
     toggleLike,
     isLiked,
   } = useLibrary();
@@ -53,8 +56,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
   const { user } = useAuth();
   const userInitial = (user?.name || user?.username || 'S').charAt(0).toUpperCase();
   const [detail, setDetail] = useState<LibraryDetail | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   const downloadedIds = useMemo(
@@ -81,8 +83,6 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
 
   const backToRoot = () => {
     setDetail(null);
-    setCreating(false);
-    setName('');
   };
 
   const dragOffset = useRef(new Animated.Value(SCREEN_WIDTH)).current;
@@ -114,15 +114,13 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
     }
   }, [initialDetail, playlists, detail, onDetailConsumed, openDetail]);
 
-  const submitCreate = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      return;
-    }
-    await createPlaylist(trimmed);
-    setName('');
-    setCreating(false);
-  };
+  const handlePlaylistCreated = useCallback(
+    (playlist: SavedPlaylist) => {
+      setCreateSheetOpen(false);
+      openDetail({ type: 'playlist', id: playlist.id, title: playlist.name });
+    },
+    [openDetail]
+  );
 
   const libraryItems: LibraryItem[] = [
     {
@@ -188,8 +186,10 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
           </Pressable>
           <Pressable
             style={styles.libraryHeaderBtn}
-            onPress={() => setCreating((v) => !v)}
+            onPress={() => setCreateSheetOpen(true)}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="New playlist"
           >
             <Ionicons name="add" size={26} color={COLORS.white} />
           </Pressable>
@@ -211,27 +211,6 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
           />
         </Pressable>
       </View>
-      {creating ? (
-        <View style={styles.libraryCreateRow}>
-          <TextInput
-            style={styles.libraryCreateInput}
-            value={name}
-            onChangeText={setName}
-            placeholder="Playlist name"
-            placeholderTextColor={COLORS.textSecondary}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={submitCreate}
-          />
-          <Pressable
-            style={[styles.libraryCreateBtn, !name.trim() && styles.disabled]}
-            onPress={submitCreate}
-            disabled={!name.trim()}
-          >
-            <Text style={styles.libraryCreateLabel}>Create</Text>
-          </Pressable>
-        </View>
-      ) : null}
       <FlatList
         data={libraryItems}
         keyExtractor={(item) => item.key}
@@ -331,6 +310,13 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
             />
           )}
         </View>
+      ) : null}
+      {createSheetOpen ? (
+        <CreatePlaylistSheet
+          blurTarget={blurTarget}
+          onClose={() => setCreateSheetOpen(false)}
+          onCreated={handlePlaylistCreated}
+        />
       ) : null}
     </View>
   );
@@ -442,38 +428,9 @@ const styles = StyleSheet.create({
   },
   libraryList: {
   },
-  libraryCreateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    marginBottom: 8,
-    paddingHorizontal: 16,
-  },
-  libraryCreateInput: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    color: COLORS.textPrimary,
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  libraryCreateBtn: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  libraryCreateLabel: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
   libraryEmpty: {
     color: COLORS.textSecondary,
     marginTop: 16,
     textAlign: 'center',
-  },
-  disabled: {
-    opacity: 0.5,
   },
 });
