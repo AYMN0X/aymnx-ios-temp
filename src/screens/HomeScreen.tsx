@@ -302,7 +302,7 @@ export const HomeScreen: React.FC<{
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.searchListContent,
-            { paddingBottom: insets.bottom + 150 },
+            { paddingBottom: insets.bottom + 110 },
           ]}
           ListHeaderComponent={
             <Text style={styles.searchResultsTitle}>Search Results</Text>
@@ -340,7 +340,7 @@ export const HomeScreen: React.FC<{
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,
-            { paddingBottom: insets.bottom + 150 },
+            { paddingBottom: insets.bottom + 110 },
           ]}
           ListHeaderComponent={<Text style={styles.sectionTitle}>Recently Played</Text>}
           renderItem={renderCard}

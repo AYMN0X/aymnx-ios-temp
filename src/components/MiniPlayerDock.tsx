@@ -1,7 +1,9 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
+import { BlurView } from 'expo-blur';
 import { Pause, Play } from 'lucide-react-native';
 import { memo, useCallback, useEffect } from 'react';
+import type { RefObject } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
@@ -12,11 +14,10 @@ import { COLORS } from '../theme/appTheme';
 
 interface MiniPlayerDockProps {
   onOpen: () => void;
+  blurTarget?: RefObject<View | null>;
 }
 
 const DOCK_HEIGHT = 60;
-const DOCK_HORIZONTAL_MARGIN = 12;
-const DOCK_BOTTOM_GAP = 8;
 const ARTWORK_SIZE = 40;
 const BUTTON_SIZE = 40;
 const RING_STROKE = 3;
@@ -34,8 +35,9 @@ const DockProgressBar: React.FC = memo(function DockProgressBar() {
   );
 });
 
-export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
+export function MiniPlayerDock({ onOpen, blurTarget }: MiniPlayerDockProps) {
   const insets = useSafeAreaInsets();
+  const tabBottomOffset = insets.bottom > 0 ? insets.bottom : TAB_BAR_BOTTOM_GAP;
   const { currentTrack, isPlaying, togglePlayPause } = usePlayer();
   const { positionMs, durationMs } = useProgress();
   const progress = durationMs > 0 ? Math.min(Math.max(positionMs / durationMs, 0), 1) : 0;
@@ -84,11 +86,19 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
     <Animated.View
       style={[
         styles.dock,
-        { bottom: Math.max(insets.bottom, TAB_BAR_BOTTOM_GAP) + TAB_BAR_HEIGHT + DOCK_BOTTOM_GAP },
+        { bottom: tabBottomOffset + TAB_BAR_HEIGHT },
         dockAnimatedStyle,
       ]}
     >
       <View style={styles.dockCard}>
+        <BlurView
+          blurMethod="dimezisBlurView"
+          blurTarget={blurTarget}
+          intensity={65}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+          tint="dark"
+        />
         <View style={styles.dockRow}>
           <Pressable
             style={styles.openArea}
@@ -172,9 +182,12 @@ export function MiniPlayerDock({ onOpen }: MiniPlayerDockProps) {
 const styles = StyleSheet.create({
   dock: {
     position: 'absolute',
-    left: DOCK_HORIZONTAL_MARGIN,
-    right: DOCK_HORIZONTAL_MARGIN,
+    left: 0,
+    right: 0,
+    marginHorizontal: 16,
+    marginBottom: 12,
     height: DOCK_HEIGHT,
+    backgroundColor: 'transparent',
     zIndex: 999,
     elevation: 12,
     shadowColor: '#000000',
@@ -184,10 +197,11 @@ const styles = StyleSheet.create({
   },
   dockCard: {
     flex: 1,
-    borderRadius: 16,
+    position: 'relative',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    backgroundColor: '#181C1C',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(24, 24, 28, 0.85)',
     overflow: 'hidden',
   },
   dockRow: {
@@ -195,6 +209,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
+    position: 'relative',
+    zIndex: 1,
   },
   openArea: {
     flex: 1,
@@ -266,6 +282,7 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     overflow: 'hidden',
+    zIndex: 1,
   },
   progressFill: {
     height: '100%',

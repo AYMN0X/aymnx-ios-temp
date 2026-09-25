@@ -235,7 +235,7 @@ export function LibraryScreen({ onOpenAccount, initialDetail, onDetailConsumed }
       <FlatList
         data={libraryItems}
         keyExtractor={(item) => item.key}
-        contentContainerStyle={[styles.libraryList, { paddingBottom: insets.bottom + 146 }]}
+        contentContainerStyle={[styles.libraryList, { paddingBottom: insets.bottom + 110 }]}
         ListEmptyComponent={<Text style={styles.libraryEmpty}>No songs yet</Text>}
         renderItem={({ item }) => {
           if (item.type === 'liked') {

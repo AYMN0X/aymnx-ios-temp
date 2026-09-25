@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { BlurTargetView } from 'expo-blur';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { requireOptionalNativeModule } from 'expo';
@@ -31,6 +32,7 @@ function AppShell() {
   const [tabKeys, setTabKeys] = useState({ home: 0, library: 0, profile: 0 });
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [createPlaylistOpen, setCreatePlaylistOpen] = useState(false);
+  const blurTargetRef = useRef(null);
 
   useEffect(() => {
     bootLog('AppShell mounted (first screen render)');
@@ -47,7 +49,7 @@ function AppShell() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.screenContent}>
+      <BlurTargetView ref={blurTargetRef} style={styles.screenContent}>
         {activeTab === 'home' ? (
           <HomeScreen
             key={tabKeys.home}
@@ -62,9 +64,18 @@ function AppShell() {
             onOpenAccount={() => setActiveTab('profile')}
           />
         )}
+      </BlurTargetView>
+      <View pointerEvents="box-none" style={styles.navigationLayer}>
+        <MiniPlayerDock
+          onOpen={() => setNowPlayingOpen(true)}
+          blurTarget={blurTargetRef}
+        />
+        <TabBar
+          active={activeTab}
+          blurTarget={blurTargetRef}
+          onChange={handleTabChange}
+        />
       </View>
-      <MiniPlayerDock onOpen={() => setNowPlayingOpen(true)} />
-      <TabBar active={activeTab} onChange={handleTabChange} />
       <NowPlayingModal visible={nowPlayingOpen} onClose={() => setNowPlayingOpen(false)} />
       <CreatePlaylistModal
         visible={createPlaylistOpen}
@@ -171,7 +182,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#101313',
+    backgroundColor: 'transparent',
+  },
+  navigationLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
+    zIndex: 1000,
+    elevation: 0,
   },
   screenContent: {
     flex: 1,
