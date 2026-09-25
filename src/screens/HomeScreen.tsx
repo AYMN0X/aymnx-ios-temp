@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   listContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 4,
     gap: 18,
   },
@@ -412,10 +412,11 @@ const styles = StyleSheet.create({
   },
   welcome: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     letterSpacing: 1.2,
-    color: "#A0A0A0",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
   },
   searchContainer: {
     flexDirection: "row",
@@ -425,7 +426,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 44,
     marginTop: 16,
-    marginBottom: 20,
+    marginBottom: 8,
   },
   searchIcon: {
     marginLeft: 2,
@@ -480,12 +481,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   sectionTitle: {
-    fontSize: 26,
-    fontWeight: "600",
+    fontSize: 18,
+    fontWeight: "700",
     letterSpacing: -0.3,
     color: "#FFFFFF",
-    marginTop: 0,
-    marginBottom: 20,
+    marginTop: 4,
+    marginBottom: 10,
   },
   card: {
     flex: 1,
