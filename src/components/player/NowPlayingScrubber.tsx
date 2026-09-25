@@ -32,40 +32,173 @@ const BAR_GAP = 2;
 const MIN_BARS = 32;
 const MAX_BARS = 60;
 const DEFAULT_BARS = 48;
-const BAR_MIN_HEIGHT = 8;
+// Hard floor so a bar can never collapse into an invisible flat dot, and the
+// peak height for a fully loud bar.
+const BAR_MIN_HEIGHT = 4;
 const BAR_MAX_HEIGHT = 28;
+const WAVEFORM_HEIGHT = 44;
 
-const buildBarHeights = (seedKey: string, count: number): number[] => {
-  let seed = 2166136261;
+// mulberry32. Always yields [0, 1) and never depends on the sign of the state,
+// unlike the previous `Math.imul`-seeded LCG.
+const createRandom = (seedKey: string): (() => number) => {
+  let seed = 2166136261 >>> 0;
   for (let i = 0; i < seedKey.length; i += 1) {
     seed ^= seedKey.charCodeAt(i);
-    seed = Math.imul(seed, 16777619);
+    seed = Math.imul(seed, 16777619) >>> 0;
   }
-  const rand = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
+  return () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  const sample = () =>
-    BAR_MIN_HEIGHT + Math.round(rand() * (BAR_MAX_HEIGHT - BAR_MIN_HEIGHT));
-
-  const half = Math.floor(count / 2);
-  const left: number[] = [];
-  for (let i = 0; i < half; i += 1) {
-    left.push(sample());
-  }
-
-  const heights: number[] = [];
-  for (let i = 0; i < half; i += 1) {
-    heights.push(left[i]);
-  }
-  if (count % 2 === 1) {
-    heights.push(sample());
-  }
-  for (let i = half - 1; i >= 0; i -= 1) {
-    heights.push(left[i]);
-  }
-  return heights;
 };
+
+// Unsigned by construction, so unlike the original seeded LCG it can never
+// produce a negative state. Decorrelated from createRandom via a different
+// basis so the fallback shape is independent of the main curve.
+const hashString = (value: string): number => {
+  let hash = 0x9e3779b9;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash ^ value.charCodeAt(i)) >>> 0;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash >>> 0;
+};
+
+const easeInOut = (t: number): number => t * t * (3 - 2 * t);
+
+interface SectionArchetype {
+  level: number;
+  ramp: number;
+  burst: number;
+  dip: number;
+}
+
+const SECTION_ARCHETYPES: Record<string, SectionArchetype> = {
+  intro: { level: 0.42, ramp: 0.35, burst: 0.12, dip: 0 },
+  verse: { level: 0.6, ramp: 0.22, burst: 0.18, dip: 0.08 },
+  build: { level: 0.52, ramp: 0.95, burst: 0.32, dip: 0 },
+  chorus: { level: 0.94, ramp: 0.3, burst: 0.55, dip: 0.22 },
+  breakdown: { level: 0.3, ramp: 0.1, burst: 0.06, dip: 0 },
+  bridge: { level: 0.5, ramp: 0.15, burst: 0.1, dip: 0.05 },
+  outro: { level: 0.4, ramp: -0.5, burst: 0.1, dip: 0 },
+};
+
+// Degenerate-seed guard. Still per-track (skewed peak + ripple phase), so even
+// this path never renders as the same curve for every song.
+const buildFallbackAmplitudes = (seedKey: string, count: number): number[] => {
+  const hash = hashString(seedKey || 'default');
+  const skew = 0.6 + (hash % 900) / 1000;
+  const phase = ((hash >>> 9) % 1000) / 1000;
+  const cycles = 2 + (hash % 3);
+  const amplitudes: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const body = Math.sin(Math.PI * Math.pow(t, skew)) * 0.78 + 0.22;
+    const ripple = 0.82 + 0.18 * Math.sin(t * Math.PI * cycles + phase * Math.PI * 2);
+    amplitudes.push(Math.max(0, body * ripple));
+  }
+  return amplitudes;
+};
+
+// Builds a per-track musical profile: an ordered run of sections (intro, verse,
+// build, chorus, breakdown, outro) whose levels, build-up ramps, boundary
+// transients and internal dropouts are all seeded from the track id. The result
+// is intentionally NOT mirrored, so the loudest region lands in a different
+// place for every track and no two songs share an envelope.
+const buildBarAmplitudes = (seedKey: string, count: number): number[] => {
+  if (count <= 0) {
+    return [];
+  }
+  const rand = createRandom(seedKey || 'default');
+
+  const interiorCount = 2 + Math.floor(rand() * 5);
+  const pool = ['verse', 'build', 'chorus', 'breakdown', 'verse', 'chorus', 'build', 'bridge'];
+  for (let i = pool.length - 1; i > 0; i -= 1) {
+    const swap = Math.floor(rand() * (i + 1));
+    const held = pool[i];
+    pool[i] = pool[swap];
+    pool[swap] = held;
+  }
+  const order = ['intro'];
+  for (let i = 0; i < interiorCount; i += 1) {
+    order.push(pool[i % pool.length]);
+  }
+  order.push('outro');
+
+  const sections = order.map((type) => {
+    const base = SECTION_ARCHETYPES[type];
+    return {
+      level: Math.max(0.08, base.level * (0.88 + rand() * 0.24)),
+      ramp: base.ramp * (0.85 + rand() * 0.3),
+      burst: base.burst * (0.7 + rand() * 0.6),
+      dip: base.dip * (0.6 + rand() * 0.8),
+      dipAt: 0.25 + rand() * 0.4,
+    };
+  });
+
+  // Per-track mastering level and a skewed global taper, so the overall peak
+  // position is off-centre rather than fixed at the midpoint.
+  const master = 0.85 + rand() * 0.3;
+  const skew = 0.7 + rand() * 0.7;
+
+  const amplitudes: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const scaled = t * sections.length;
+    const index = Math.min(sections.length - 1, Math.floor(scaled));
+    const section = sections[index];
+    const progress = Math.min(1, Math.max(0, scaled - index));
+
+    let energy = section.level * (1 + section.ramp * (easeInOut(progress) - 1));
+
+    if (section.dip > 0) {
+      const distance = (progress - section.dipAt) / 0.1;
+      if (distance < 1) {
+        const falloff = 1 - distance * distance;
+        energy *= 1 - section.dip * falloff;
+      }
+    }
+    if (progress < 0.12) {
+      const decay = 1 - progress / 0.12;
+      energy *= 1 + section.burst * decay * decay;
+    }
+
+    const taper = Math.sin(Math.PI * Math.pow(t, skew)) * 0.34 + 0.66;
+    const detail = 0.78 + rand() * 0.44;
+    amplitudes.push(Math.max(0, energy * taper * detail * master));
+  }
+
+  const peak = amplitudes.reduce((max, amp) => (amp > max ? amp : max), 0);
+  if (!Number.isFinite(peak) || peak <= 0) {
+    return buildFallbackAmplitudes(seedKey, count);
+  }
+  return amplitudes;
+};
+
+const normalizeBarHeights = (amplitudes: number[]): number[] => {
+  const finite = amplitudes
+    .filter((amp) => Number.isFinite(amp) && amp > 0)
+    .sort((a, b) => a - b);
+  if (finite.length === 0) {
+    return amplitudes.map(() => BAR_MIN_HEIGHT);
+  }
+  // Reference a high percentile instead of the absolute peak. A single
+  // transient spike would otherwise dominate the divisor and crush every other
+  // bar down onto the minimum height, which reads as a flat line.
+  const percentile = finite[Math.min(finite.length - 1, Math.floor(finite.length * 0.92))];
+  const reference = percentile > 0 ? percentile : finite[finite.length - 1];
+  return amplitudes.map((amp) => {
+    const safeAmp = Number.isFinite(amp) && amp > 0 ? amp : 0;
+    const scaled = reference > 0 ? (safeAmp / reference) * BAR_MAX_HEIGHT : BAR_MIN_HEIGHT;
+    return Math.max(BAR_MIN_HEIGHT, Math.min(BAR_MAX_HEIGHT, Math.round(scaled)));
+  });
+};
+
+const buildBarHeights = (seedKey: string, count: number): number[] =>
+  normalizeBarHeights(buildBarAmplitudes(seedKey, count));
 
 const scrubHaptic = () => {
   if (Platform.OS !== 'web') {
@@ -197,7 +330,7 @@ const styles = StyleSheet.create({
   waveform: {
     flex: 1,
     marginHorizontal: 12,
-    height: 44,
+    height: WAVEFORM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -219,6 +352,10 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 11,
+    // Pin the line box so both labels centre identically on every platform
+    // instead of tracking the platform's font ascent/descent.
+    lineHeight: 14,
+    textAlignVertical: 'center',
     color: '#707070',
     minWidth: 34,
     fontVariant: ['tabular-nums'],
