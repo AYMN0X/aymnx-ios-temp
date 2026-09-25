@@ -7,6 +7,7 @@
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
+    "@shopify/react-native-skia": "2.6.2",
     "expo": "~57.0.20",
     "expo-application": "~57.0.3",
     "expo-audio": "~57.0.5",
@@ -42,5 +43,8 @@
     "@expo/ngrok": "^4.1.3",
     "@types/react": "^19.2.18",
     "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "@shopify/react-native-skia@2.6.2": true
   }
 }
