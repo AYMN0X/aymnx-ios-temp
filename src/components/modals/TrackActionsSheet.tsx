@@ -1,6 +1,8 @@
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ListMusic, ListPlus, RefreshCw, Trash2 } from 'lucide-react-native';
+import { useDownloads } from '../../context/DownloadContext';
 import type { Track } from '../../services/musicApi';
 import { COLORS } from '../../theme/appTheme';
 
@@ -24,6 +26,22 @@ export function TrackActionsSheet({
   destructiveLabel = 'Remove',
 }: TrackActionsSheetProps) {
   const insets = useSafeAreaInsets();
+  const { isDownloaded, downloadTrack, deleteDownload, downloadingIds } = useDownloads();
+  const downloaded = isDownloaded(track.id);
+  const isDownloading = downloadingIds.has(track.id);
+
+  const handleDownloadToggle = async () => {
+    onClose();
+    try {
+      if (downloaded) {
+        await deleteDownload(track.id);
+      } else {
+        await downloadTrack(track);
+      }
+    } catch (error) {
+      console.warn('[downloads] Track menu download action failed.', error);
+    }
+  };
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -58,6 +76,24 @@ export function TrackActionsSheet({
           <Pressable style={styles.item} onPress={onReplace}>
             <RefreshCw size={18} color={COLORS.tabInactive} />
             <Text style={styles.itemLabel}>Replace Track...</Text>
+          </Pressable>
+          <Pressable
+            style={styles.item}
+            onPress={handleDownloadToggle}
+            disabled={isDownloading}
+          >
+            <Ionicons
+              name={downloaded ? 'trash-outline' : 'arrow-down-circle-outline'}
+              size={20}
+              color={COLORS.tabInactive}
+            />
+            <Text style={styles.itemLabel}>
+              {isDownloading
+                ? 'Downloading...'
+                : downloaded
+                ? 'Remove Download'
+                : 'Download'}
+            </Text>
           </Pressable>
           {destructiveAction ? (
             <>
