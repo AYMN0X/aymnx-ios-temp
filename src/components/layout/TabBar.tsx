@@ -5,25 +5,29 @@ import { Home, User } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import Svg, { Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export const TAB_BAR_HEIGHT = 50;
+export const TAB_BAR_HEIGHT = 49;
 export const TAB_BAR_BOTTOM_GAP = 12;
 
 const LABEL_ACTIVE = '#FFFFFF';
 const LABEL_INACTIVE = '#8E8E93';
 const TAB_ICON_SIZE = 21;
-const INDICATOR_VERTICAL_INSET = 3.5;
+const TRACK_BORDER_WIDTH = 0.5;
+const INDICATOR_VERTICAL_INSET = 3;
 const INDICATOR_TOP = INDICATOR_VERTICAL_INSET;
-const INDICATOR_HEIGHT = TAB_BAR_HEIGHT - INDICATOR_VERTICAL_INSET * 2;
+const INDICATOR_HEIGHT =
+  TAB_BAR_HEIGHT - TRACK_BORDER_WIDTH * 2 - INDICATOR_VERTICAL_INSET * 2;
 const INDICATOR_RADIUS = INDICATOR_HEIGHT / 2;
-const INDICATOR_HORIZONTAL_INSET = 20;
+const INDICATOR_HORIZONTAL_INSET = 6;
 
 const ACTIVE_INDEX: Record<string, number> = {
   home: 0,
@@ -61,13 +65,15 @@ const TABS: TabConfig[] = [
 
 const TAB_KEYS = ['home', 'library', 'profile'] as const;
 
-const HEAVY_SPRING = {
-  mass: 1.6,
-  damping: 24,
-  stiffness: 110,
-  overshootClamping: false,
-  restDisplacementThreshold: 0.01,
-  restSpeedThreshold: 0.01,
+const BAR_SPRING = {
+  mass: 0.7,
+  damping: 18,
+  stiffness: 340,
+};
+
+const TOUCH_SPRING = {
+  damping: 15,
+  stiffness: 220,
 };
 
 const DRAG_SPRING = {
@@ -75,6 +81,13 @@ const DRAG_SPRING = {
   damping: 18,
   stiffness: 140,
 };
+
+const PRESS_SCALE_X = 1.12;
+const PRESS_SCALE_Y = 1.3;
+const DRAG_VELOCITY_DIVISOR = 1500;
+const DRAG_MAX_ELONGATION = 0.25;
+const TRAVEL_DURATION = 275;
+const SCALE_SETTLE_DURATION = 180;
 
 interface TabBarProps {
   active: string;
@@ -86,8 +99,9 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const [barWidth, setBarWidth] = useState(0);
   const indicatorX = useSharedValue(0);
-  const dragScaleX = useSharedValue(1);
-  const dragScaleY = useSharedValue(1);
+  const pillScaleX = useSharedValue(1);
+  const pillScaleY = useSharedValue(1);
+  const barScale = useSharedValue(1);
   const didDrag = useSharedValue(false);
   const tapHandled = useSharedValue(false);
   const didFinalize = useSharedValue(false);
@@ -100,15 +114,24 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
   const indicatorAnimatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: indicatorX.value },
-      { scaleX: dragScaleX.value },
-      { scaleY: dragScaleY.value },
+      { scaleX: pillScaleX.value },
+      { scaleY: pillScaleY.value },
     ],
+  }));
+
+  const barAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: barScale.value }],
   }));
 
   useEffect(() => {
     const activeIndex = ACTIVE_INDEX[active] ?? 0;
-    indicatorX.value = withSpring(activeIndex * tabWidth + pillOffset, HEAVY_SPRING);
-  }, [active, indicatorX, pillOffset, tabWidth]);
+    indicatorX.value = withTiming(activeIndex * tabWidth + pillOffset, {
+      duration: TRAVEL_DURATION,
+      easing: Easing.bezier(0.25, 1, 0.5, 1),
+    });
+    pillScaleX.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
+    pillScaleY.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
+  }, [active, indicatorX, pillOffset, pillScaleX, pillScaleY, tabWidth]);
 
   const handleTabPress = (tabKey: string) => {
     if (didDrag.value || didFinalize.value) {
@@ -116,7 +139,12 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
     }
     tapHandled.value = true;
     const index = ACTIVE_INDEX[tabKey] ?? 0;
-    indicatorX.value = withSpring(index * tabWidth + pillOffset, HEAVY_SPRING);
+    indicatorX.value = withTiming(index * tabWidth + pillOffset, {
+      duration: TRAVEL_DURATION,
+      easing: Easing.bezier(0.25, 1, 0.5, 1),
+    });
+    pillScaleX.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
+    pillScaleY.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
     onChange(tabKey, active === tabKey);
   };
 
@@ -128,8 +156,9 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
           didDrag.value = false;
           tapHandled.value = false;
           didFinalize.value = false;
-          dragScaleX.value = withSpring(1.05, HEAVY_SPRING);
-          dragScaleY.value = withSpring(0.96, HEAVY_SPRING);
+          barScale.value = withSpring(1.03, BAR_SPRING);
+          pillScaleX.value = withSpring(PRESS_SCALE_X, TOUCH_SPRING);
+          pillScaleY.value = withSpring(PRESS_SCALE_Y, TOUCH_SPRING);
           indicatorX.value = withSpring(
             Math.min(
               Math.max(event.x - indicatorWidth / 2, minIndicatorX),
@@ -145,6 +174,9 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
           ) {
             didDrag.value = true;
           }
+          pillScaleX.value =
+            PRESS_SCALE_X +
+            Math.min(Math.abs(event.velocityX) / DRAG_VELOCITY_DIVISOR, DRAG_MAX_ELONGATION);
           indicatorX.value = withSpring(
             Math.min(
               Math.max(event.x - indicatorWidth / 2, minIndicatorX),
@@ -155,8 +187,9 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
         })
         .onFinalize((event) => {
           didFinalize.value = true;
-          dragScaleX.value = withSpring(1, HEAVY_SPRING);
-          dragScaleY.value = withSpring(1, HEAVY_SPRING);
+          barScale.value = withSpring(1, BAR_SPRING);
+          pillScaleX.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
+          pillScaleY.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
           const tabSlotWidth = barWidth / TAB_KEYS.length;
           if (tabSlotWidth > 0) {
             const targetIndex = Math.min(
@@ -164,9 +197,12 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
               TAB_KEYS.length - 1,
             );
             const targetKey = TAB_KEYS[targetIndex];
-            indicatorX.value = withSpring(
+            indicatorX.value = withTiming(
               targetIndex * tabSlotWidth + pillOffset,
-              HEAVY_SPRING,
+              {
+                duration: TRAVEL_DURATION,
+                easing: Easing.bezier(0.25, 1, 0.5, 1),
+              },
             );
             if (!tapHandled.value && targetKey) {
               runOnJS(onChange)(targetKey, targetKey === active);
@@ -175,38 +211,42 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
         }),
     [
       active,
+      barScale,
       barWidth,
       didDrag,
       didFinalize,
-      dragScaleX,
-      dragScaleY,
       indicatorWidth,
       indicatorX,
       maxIndicatorX,
       minIndicatorX,
       onChange,
       pillOffset,
+      pillScaleX,
+      pillScaleY,
       tapHandled,
     ],
   );
 
   return (
     <GestureDetector gesture={gesture}>
-      <View
+      <Animated.View
         onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
         style={[
           styles.wrapper,
           { bottom: insets.bottom > 0 ? insets.bottom : 12 },
+          barAnimatedStyle,
         ]}
       >
-        <BlurView
-          blurMethod="dimezisBlurView"
-          blurTarget={blurTarget}
-          intensity={28}
-          pointerEvents="none"
-          style={StyleSheet.absoluteFill}
-          tint="systemUltraThinMaterialDark"
-        />
+        <View pointerEvents="none" style={styles.blurClip}>
+          <BlurView
+            blurMethod="dimezisBlurView"
+            blurTarget={blurTarget}
+            intensity={8}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+            tint="dark"
+          />
+        </View>
         <Animated.View
           pointerEvents="none"
           style={[styles.indicator, { width: indicatorWidth }, indicatorAnimatedStyle]}
@@ -243,7 +283,7 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
             );
           })}
         </View>
-      </View>
+      </Animated.View>
     </GestureDetector>
   );
 }
@@ -253,19 +293,27 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    marginHorizontal: 16,
+    marginHorizontal: 36,
     height: TAB_BAR_HEIGHT,
     borderRadius: TAB_BAR_HEIGHT / 2,
-    backgroundColor: 'rgba(20, 20, 24, 0.25)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    overflow: 'hidden',
+    backgroundColor: 'rgba(18, 18, 22, 0.65)',
+    borderWidth: TRACK_BORDER_WIDTH,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.25,
     shadowRadius: 16,
     zIndex: 1000,
-    elevation: 10,
+    elevation: 8,
+  },
+  blurClip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: TAB_BAR_HEIGHT / 2,
+    overflow: 'hidden',
   },
   indicator: {
     position: 'absolute',
@@ -273,7 +321,9 @@ const styles = StyleSheet.create({
     left: 0,
     height: INDICATOR_HEIGHT,
     borderRadius: INDICATOR_RADIUS,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     zIndex: 0,
   },
   tabs: {
