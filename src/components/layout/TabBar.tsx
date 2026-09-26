@@ -148,15 +148,20 @@ const TABS: TabConfig[] = [
 
 const TAB_KEYS = ['home', 'library', 'profile'] as const;
 
+// Settle profile shared by barScale and pillScaleX/Y on release so the pill and
+// the bar never disagree on when they arrive. zeta ~0.9, so no visible overshoot.
 const BAR_SPRING = {
-  mass: 0.7,
-  damping: 18,
-  stiffness: 340,
+  mass: 0.6,
+  damping: 27,
+  stiffness: 375,
 };
 
+// Press-down expansion only. Previously zeta 0.506 / 15.9% overshoot / 533 ms,
+// which read as a bounce rather than a snap.
 const TOUCH_SPRING = {
-  damping: 15,
-  stiffness: 220,
+  mass: 0.55,
+  damping: 26,
+  stiffness: 420,
 };
 
 const DRAG_SPRING = {
@@ -168,9 +173,14 @@ const DRAG_SPRING = {
 const PRESS_SCALE_X = 1.12;
 const PRESS_SCALE_Y = 1.3;
 const DRAG_VELOCITY_DIVISOR = 1500;
-const DRAG_MAX_ELONGATION = 0.25;
+// Height carries only a token velocity response: the lens elongates along the
+// drag axis, it does not balloon vertically.
+const DRAG_VELOCITY_DIVISOR_Y = 3000;
+// Hard ceilings, applied after the velocity term. These are the only bound that
+// matters now, so the velocity response itself is left uncapped.
+const MAX_SCALE_X = 1.25;
+const MAX_SCALE_Y = 1.34;
 const TRAVEL_DURATION = 275;
-const SCALE_SETTLE_DURATION = 180;
 
 interface TabBarProps {
   active: string;
@@ -279,9 +289,10 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
       duration: TRAVEL_DURATION,
       easing: Easing.bezier(0.25, 1, 0.5, 1),
     });
-    pillScaleX.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
-    pillScaleY.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
-  }, [active, indicatorX, pillOffset, pillScaleX, pillScaleY, tabWidth]);
+    pillScaleX.value = withSpring(1, BAR_SPRING);
+    pillScaleY.value = withSpring(1, BAR_SPRING);
+    barScale.value = withSpring(1, BAR_SPRING);
+  }, [active, barScale, indicatorX, pillOffset, pillScaleX, pillScaleY, tabWidth]);
 
   const handleTabPress = (tabKey: string) => {
     if (didDrag.value || didFinalize.value) {
@@ -293,8 +304,8 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
       duration: TRAVEL_DURATION,
       easing: Easing.bezier(0.25, 1, 0.5, 1),
     });
-    pillScaleX.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
-    pillScaleY.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
+    pillScaleX.value = withSpring(1, BAR_SPRING);
+    pillScaleY.value = withSpring(1, BAR_SPRING);
     onChange(tabKey, active === tabKey);
   };
 
@@ -324,9 +335,15 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
           ) {
             didDrag.value = true;
           }
-          pillScaleX.value =
-            PRESS_SCALE_X +
-            Math.min(Math.abs(event.velocityX) / DRAG_VELOCITY_DIVISOR, DRAG_MAX_ELONGATION);
+          const absVelocityX = Math.abs(event.velocityX);
+          pillScaleX.value = Math.min(
+            PRESS_SCALE_X + absVelocityX / DRAG_VELOCITY_DIVISOR,
+            MAX_SCALE_X,
+          );
+          pillScaleY.value = Math.min(
+            PRESS_SCALE_Y + absVelocityX / DRAG_VELOCITY_DIVISOR_Y,
+            MAX_SCALE_Y,
+          );
           indicatorX.value = withSpring(
             Math.min(
               Math.max(event.x - indicatorWidth / 2, minIndicatorX),
@@ -338,8 +355,8 @@ export function TabBar({ active, blurTarget, onChange }: TabBarProps) {
         .onFinalize((event) => {
           didFinalize.value = true;
           barScale.value = withSpring(1, BAR_SPRING);
-          pillScaleX.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
-          pillScaleY.value = withTiming(1, { duration: SCALE_SETTLE_DURATION });
+          pillScaleX.value = withSpring(1, BAR_SPRING);
+          pillScaleY.value = withSpring(1, BAR_SPRING);
           const tabSlotWidth = barWidth / TAB_KEYS.length;
           if (tabSlotWidth > 0) {
             const targetIndex = Math.min(
