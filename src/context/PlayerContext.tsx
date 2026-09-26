@@ -146,6 +146,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const playedSetRef = useRef<Set<string>>(new Set());
   const autoplayLoadingRef = useRef(false);
   const autoplayFailedForRef = useRef<string | null>(null);
+  // Bumped on every manual track selection. An autoplay fetch captures the value
+  // it started with and discards its result if it no longer matches, so a
+  // recommendation request that is already in flight when the user taps a search
+  // result can never append to — or advance into — the new selection.
+  const autoplayGenRef = useRef(0);
   const autoplayEnabledRef = useRef(true);
   const playerInitiatedRef = useRef(false);
   const downloadedRef = useRef<typeof downloadedTracks>([]);
@@ -219,6 +224,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }, 2500);
   }, []);
 
+  /**
+   * Hard stop for the one and only active player.
+   *
+   * expo-audio's AudioPlayer has no `stopAsync`/`unloadAsync` (those are expo-av
+   * names); the equivalent teardown is `pause()` to stop output immediately and
+   * `remove()` to free the native player. Pausing is done here *before* handing
+   * off to the disposer so a throwing disposer can never leave audible output
+   * running, and the refs are nulled first so a concurrent call cannot observe a
+   * half-torn-down player and skip the stop.
+   */
   const stopCurrentPlayer = useCallback(async () => {
     const player = playerRef.current;
     const dispose = playerDisposeRef.current;
@@ -228,18 +243,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
     setIsPlaying(false);
+    try {
+      player.pause();
+    } catch (error) {
+      console.warn('[player] Could not pause the previous sound.', error);
+    }
     if (dispose) {
       try {
+        // Detaches the status listener and calls remove() internally.
         dispose();
       } catch (error) {
         console.warn('[player] Could not release the previous sound.', error);
       }
       return;
-    }
-    try {
-      player.pause();
-    } catch (error) {
-      console.warn('[player] Could not pause the previous sound.', error);
     }
     try {
       player.remove();
@@ -268,10 +284,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (autoplayFailedForRef.current === attemptKey) {
       return;
     }
+    const gen = autoplayGenRef.current;
     autoplayLoadingRef.current = true;
     try {
       const played = Array.from(playedSetRef.current);
       const recommendations = await getRecommendedNextTracks(currentTrack, played);
+      // The user selected something else while these queries were running, or
+      // the queue was replaced. The result belongs to a selection that no longer
+      // exists, so it is dropped rather than merged into the new queue.
+      if (gen !== autoplayGenRef.current) {
+        return;
+      }
       const fresh = recommendations.filter(
         (item) => item.id && !playedSetRef.current.has(item.id)
       );
@@ -297,7 +320,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       console.warn('[autoplay] Failed to fetch recommendations.', error);
       autoplayFailedForRef.current = attemptKey;
     } finally {
-      autoplayLoadingRef.current = false;
+      // Only clear the in-flight flag if this request is still the current one.
+      // A newer request may have started after a manual selection reset it, and
+      // clearing the flag here would let a third duplicate request start.
+      if (gen === autoplayGenRef.current) {
+        autoplayLoadingRef.current = false;
+      }
     }
   }, []);
 
@@ -417,13 +445,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (!resolvedUrl) {
         throw new Error('No playable stream URL for this track');
       }
+      // Bound to this load's sequence. expo-audio listeners are detached on
+      // dispose, but a status event already in flight when a new track is adopted
+      // would otherwise still reach the shared handler — and a `didJustFinish`
+      // from a superseded player would advance the queue (or report an error)
+      // against the newly selected track.
+      const statusHandler = (status: AudioStatus) => {
+        if (seq !== startSeqRef.current) {
+          return;
+        }
+        playerStatusHandler(status);
+      };
       const loaded = await loadAudioSource(
         {
           uri: resolvedUrl,
           contentType: resolvedMimeType,
           userAgent: resolvedProvider === 'local' ? undefined : DEFAULT_USER_AGENT,
         },
-        playerStatusHandler
+        statusHandler
       );
       if (!isCurrent()) {
         loaded.dispose();
@@ -563,6 +602,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!current || !playerInitiatedRef.current || resolvingRef.current) {
       return;
     }
+    // Snapshot the playback generation and the finished track. Everything below
+    // awaits (recommendation fetch, stream resolution), and a manual selection
+    // during any of those awaits bumps the generation. Without this check the
+    // resume would act on the *new* queue: it would read the freshly selected
+    // track's index and start playing whatever followed it, which both
+    // interrupts the user's pick and lets the autoplay track keep playing over
+    // it. The generation token inside startTrack cannot catch this, because this
+    // continuation calls startTrack *after* the manual call, so its own sequence
+    // number is the higher one and it would win.
+    const finishedSeq = startSeqRef.current;
+    const finishedTrackId = current.id;
+    const isStillRelevant = () =>
+      startSeqRef.current === finishedSeq && currentTrackRef.current?.id === finishedTrackId;
     if (repeatModeRef.current === 'one') {
       if (!player) {
         return;
@@ -591,6 +643,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           return;
         }
         await ensureAutoplayTracks();
+        if (!isStillRelevant()) {
+          return;
+        }
         const queueAfter = queueRef.current;
         const next = indexRef.current + 1;
         if (next < queueAfter.length) {
@@ -602,6 +657,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     const target = q[nextIndex];
     if (!target || !target.id) {
+      return;
+    }
+    if (!isStillRelevant()) {
       return;
     }
     await startTrack(target, q, nextIndex);
@@ -640,6 +698,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     sessionRestoredRef.current = false;
     consecutiveFailuresRef.current = 0;
     streamFailureHandledRef.current = null;
+    // A manual selection is a hard stop for everything the autoplay/radio path
+    // had in flight: the recommendation fetch in progress is invalidated, the
+    // in-flight flag is released so the new track can start its own fetch later,
+    // and the appended-track markers are cleared. Without this, a fetch started
+    // for the previous track could still resolve against this one.
+    autoplayGenRef.current += 1;
+    autoplayLoadingRef.current = false;
+    autoplayFailedForRef.current = null;
     setAutoplayAddedIds(new Set());
     if (queue.length > 0) {
       const index = Math.max(queue.findIndex((item) => item.id === track.id), 0);
@@ -847,6 +913,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     repeatModeRef.current = 'off';
     setAutoplayAddedIds(new Set());
     playedSetRef.current = new Set();
+    autoplayGenRef.current += 1;
     autoplayLoadingRef.current = false;
     autoplayFailedForRef.current = null;
     setIsPlaying(false);
@@ -1041,6 +1108,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setQueueIndex(-1);
       setAutoplayAddedIds(new Set());
       playedSetRef.current = new Set();
+      autoplayGenRef.current += 1;
       autoplayLoadingRef.current = false;
       autoplayFailedForRef.current = null;
       setRepeatMode('off');

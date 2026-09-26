@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,12 +14,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { loadAudioSource } from '../../services/AudioService';
 import type { LoadedAudio } from '../../services/AudioService';
 import {
-  getThumbnailArtworkUrl,
   resolveSoundCloudStream,
   searchSoundCloudTracks,
 } from '../../services/musicApi';
 import type { Track } from '../../services/musicApi';
 import { usePlayer } from '../../context/PlayerContext';
+import { TrackArtwork } from '../TrackArtwork';
 import { COLORS } from '../../theme/appTheme';
 
 const REPLACE_RESULT_LIMIT = 15;
@@ -311,34 +310,20 @@ export function ReplaceTrackModal({ track, onClose, onSelect }: ReplaceTrackModa
                       onPress={() => togglePreview(item)}
                       disabled={!!replacingId}
                     >
-                      {item.artwork ? (
-                        <Image
-                          source={{
-                            uri: getThumbnailArtworkUrl(item.artwork),
-                            width: 40,
-                            height: 40,
-                          }}
-                          style={styles.artwork}
-                          contentFit="cover"
-                          cachePolicy="memory-disk"
-                          recyclingKey={item.id}
-                          transition={150}
-                        />
-                      ) : (
-                        <View style={[styles.artwork, styles.artworkFallback]} />
-                      )}
-                      <View
-                        style={[
-                          styles.artworkOverlay,
-                          isPreviewing && styles.artworkOverlayActive,
-                        ]}
-                      >
-                        {isPreviewing ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Ionicons name="play" size={15} color="#FFFFFF" />
-                        )}
-                      </View>
+                      <TrackArtwork track={item} size={40} borderRadius={6} variant="thumbnail" style={styles.artwork}>
+                        <View
+                          style={[
+                            styles.artworkOverlay,
+                            isPreviewing && styles.artworkOverlayActive,
+                          ]}
+                        >
+                          {isPreviewing ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Ionicons name="play" size={15} color="#FFFFFF" />
+                          )}
+                        </View>
+                      </TrackArtwork>
                     </Pressable>
                     <View style={styles.rowInfo}>
                       <Text style={styles.rowTitle} numberOfLines={1}>
@@ -481,13 +466,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   artwork: {
-    width: 40,
-    height: 40,
-    borderRadius: 6,
-    backgroundColor: COLORS.card,
-  },
-  artworkFallback: {
-    backgroundColor: COLORS.cardPress,
+    flexShrink: 0,
   },
   artworkOverlay: {
     position: 'absolute',

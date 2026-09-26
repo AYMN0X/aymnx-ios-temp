@@ -1,6 +1,6 @@
-import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { getThumbnailArtworkUrl, Track } from '../services/musicApi';
+import { Track } from '../services/musicApi';
+import { TrackArtwork } from './TrackArtwork';
 import { COLORS } from '../theme/appTheme';
 
 function formatDuration(totalSeconds?: number): string {
@@ -38,18 +38,13 @@ export function SoundCloudResultRow({ track, active, onPlay }: SoundCloudResultR
       ]}
       accessibilityRole="button"
     >
-      {track.artwork ? (
-        <Image
-          source={{ uri: getThumbnailArtworkUrl(track.artwork), width: 40, height: 40 }}
-          style={styles.artwork}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          recyclingKey={track.id}
-          transition={150}
-        />
-      ) : (
-        <View style={[styles.artwork, styles.artworkFallback]} />
-      )}
+      <TrackArtwork
+        track={track}
+        size={40}
+        borderRadius={6}
+        variant="thumbnail"
+        style={styles.artwork}
+      />
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={1}>
           {track.title}
@@ -83,13 +78,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
   },
   artwork: {
-    width: 40,
-    height: 40,
-    borderRadius: 6,
-    backgroundColor: COLORS.card,
-  },
-  artworkFallback: {
-    backgroundColor: COLORS.cardPress,
+    flexShrink: 0,
   },
   info: {
     flex: 1,

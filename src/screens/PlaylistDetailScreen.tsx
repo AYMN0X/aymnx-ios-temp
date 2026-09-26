@@ -1,6 +1,5 @@
 import * as React from "react";
 import {
-  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
@@ -21,8 +20,14 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ArrowDown } from "lucide-react-native";
+import AnimatedReanimated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
+import { TrackArtwork } from "../components/TrackArtwork";
 import { Color, Border } from "../theme/GlobalStyles";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
@@ -84,8 +89,15 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
     reorderLikedSongs,
     updateLikedMeta,
   } = useLibrary();
-  const { downloadedIds, isDownloaded, isBatchDownloading, batchProgress, downloadAll, deleteDownload } =
-    useDownloads();
+  const {
+    downloadedIds,
+    isDownloaded,
+    isBatchDownloading,
+    batchProgress,
+    downloadAll,
+    deleteDownload,
+    purgeDownloads,
+  } = useDownloads();
 
   const livePlaylist = playlistId ? playlists.find((playlist) => playlist.id === playlistId) : undefined;
 
@@ -257,6 +269,23 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
   const allDownloaded = displayTracks.length > 0 && pendingForDownload.length === 0;
   const isDownloading = isBatchDownloading && batchProgress !== null;
 
+  // Read through local numbers so the label and the bar stay valid on the frames
+  // where the group is faded out but still mounted (batchProgress is null then).
+  const progressDone = batchProgress?.downloaded ?? 0;
+  const progressTotal = batchProgress?.total ?? 0;
+
+  // Fade the progress group rather than unmounting it, so finishing a batch
+  // resolves smoothly instead of popping away. Reanimated's withTiming handles
+  // the interruption case too: a new batch restarts the fade from wherever the
+  // previous one left off.
+  const progressOpacity = useSharedValue(0);
+  React.useEffect(() => {
+    progressOpacity.value = withTiming(isDownloading ? 1 : 0, { duration: 220 });
+  }, [isDownloading, progressOpacity]);
+  const progressFadeStyle = useAnimatedStyle(() => ({
+    opacity: progressOpacity.value,
+  }));
+
   const playlistMetaText = React.useMemo(() => {
     const songCount = displayTracks.length;
     const songsLabel = `${songCount} ${songCount === 1 ? "song" : "songs"}`;
@@ -406,17 +435,42 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
     }
     setSheetOpen(false);
     setSheetView("options");
+    const downloadedCount = displayTracks.filter((track) =>
+      downloadedIds.has(track.id)
+    ).length;
     Alert.alert(
       "Delete playlist?",
-      `"${displayTitle}" will be permanently removed from your library.`,
+      downloadedCount > 0
+        ? `"${displayTitle}" and ${downloadedCount} downloaded ${
+            downloadedCount === 1 ? "song" : "songs"
+          } that aren't in your library anywhere else will be permanently removed.`
+        : `"${displayTitle}" will be permanently removed from your library.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            removePlaylist(playlistId);
-            animateClose(() => onBack());
+            // Awaited before navigating. removePlaylist reports which tracks are
+            // no longer referenced anywhere, and only those may be purged from
+            // disk — a track shared with another playlist or liked song has to
+            // keep its files or offline playback elsewhere would break. Closing
+            // the screen first would abandon the purge mid-way and leave orphan
+            // files that a later re-import would misread as already downloaded.
+            void (async () => {
+              const orphanedTrackIds = await removePlaylist(playlistId);
+              if (orphanedTrackIds.length > 0) {
+                try {
+                  await purgeDownloads(orphanedTrackIds);
+                } catch (error) {
+                  console.warn(
+                    "[downloads] Failed to purge downloads for deleted playlist.",
+                    error
+                  );
+                }
+              }
+              animateClose(() => onBack());
+            })();
           },
         },
       ]
@@ -508,28 +562,32 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
             accessibilityLabel={downloadButtonLabel}
             accessibilityState={{ selected: allDownloaded, disabled: isDownloading }}
           >
-            {isDownloading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <ArrowDown
-                size={16}
-                color={allDownloaded ? "#101313" : "#A7A7A7"}
-                strokeWidth={3}
-              />
-            )}
+            <ArrowDown
+              size={16}
+              color={allDownloaded ? "#101313" : "#A7A7A7"}
+              strokeWidth={3}
+            />
           </Pressable>
 
-          {isDownloading && batchProgress ? (
-            <View style={styles.headerProgressGroup}>
-              <View style={styles.headerProgressTrack}>
-                <View style={[styles.headerProgressFill, { flex: batchProgress.downloaded }]} />
-                <View style={{ flex: Math.max(batchProgress.total - batchProgress.downloaded, 0) }} />
-              </View>
-              <Text style={styles.headerProgressLabel}>
-                Downloading {batchProgress.downloaded}/{batchProgress.total}
-              </Text>
+          {/* Stays mounted so the batch can fade out instead of vanishing. The
+              fade is driven by opacity rather than a conditional render because
+              unmounting is what made the old indicator pop out abruptly.
+              Named `AnimatedReanimated` because `Animated` in this file is
+              react-native's, used by the swipe-back gesture. */}
+          <AnimatedReanimated.View
+            style={[styles.headerProgressGroup, progressFadeStyle]}
+            pointerEvents={isDownloading ? "auto" : "none"}
+            accessibilityElementsHidden={!isDownloading}
+            importantForAccessibility={isDownloading ? "auto" : "no-hide-descendants"}
+          >
+            <View style={styles.headerProgressTrack}>
+              <View style={[styles.headerProgressFill, { flex: progressDone }]} />
+              <View style={{ flex: Math.max(progressTotal - progressDone, 0) }} />
             </View>
-          ) : null}
+            <Text style={styles.headerProgressLabel} numberOfLines={1}>
+              Downloading {progressDone}/{progressTotal}
+            </Text>
+          </AnimatedReanimated.View>
         </View>
 
         <View style={styles.trackList}>
@@ -550,11 +608,14 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                     disabled={isEditing}
                     activeOpacity={0.7}
                   >
-                    {trackArtwork ? (
-                      <Image source={{ uri: trackArtwork }} style={styles.trackArtwork} />
-                    ) : (
-                      <View style={[styles.trackArtwork, styles.trackArtworkFallback]} />
-                    )}
+                    <TrackArtwork
+                      track={track}
+                      uriOverride={trackArtwork}
+                      size={48}
+                      borderRadius={6}
+                      variant="thumbnail"
+                      style={styles.trackArtwork}
+                    />
                     {isCurrent ? (
                       <Ionicons name="volume-high" size={18} color="#FFFFFF" style={styles.speakerIcon} />
                     ) : null}
@@ -959,16 +1020,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   trackArtwork: {
-    width: 48,
-    height: 48,
-    borderRadius: 4,
     marginRight: 12,
-    backgroundColor: Color.card,
-  },
-  trackArtworkFallback: {
-    backgroundColor: Color.background,
-    borderWidth: 1,
-    borderColor: Color.border,
   },
   trackTitle: {
     fontSize: 14.5,
@@ -1084,8 +1136,8 @@ const styles = StyleSheet.create({
   headerProgressTrack: {
     flex: 1,
     height: 3,
-    borderRadius: 1.5,
-    backgroundColor: Color.border,
+    borderRadius: 2,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
     flexDirection: "row",
     overflow: "hidden",
   },
@@ -1094,7 +1146,7 @@ const styles = StyleSheet.create({
   },
   headerProgressLabel: {
     marginLeft: 8,
-    fontSize: 11,
+    fontSize: 12,
     color: Color.textSecondary,
     fontVariant: ["tabular-nums"],
   },

@@ -1,9 +1,10 @@
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ListMusic, ListPlus, RefreshCw, Trash2 } from 'lucide-react-native';
 import { useDownloads } from '../../context/DownloadContext';
 import type { Track } from '../../services/musicApi';
+import { TrackArtwork } from '../TrackArtwork';
 import { COLORS } from '../../theme/appTheme';
 
 interface TrackActionsSheetProps {
@@ -50,11 +51,7 @@ export function TrackActionsSheet({
         <View style={[styles.sheet, { paddingBottom: 24 + insets.bottom }]}>
           <View style={styles.pill} />
           <View style={styles.preview}>
-            {track.artwork ? (
-              <Image source={{ uri: track.artwork }} style={styles.artwork} />
-            ) : (
-              <View style={[styles.artwork, styles.artworkFallback]} />
-            )}
+            <TrackArtwork track={track} size={40} borderRadius={6} style={styles.artwork} />
             <View style={styles.previewText}>
               <Text style={styles.previewTitle} numberOfLines={1}>
                 {track.title}
@@ -154,13 +151,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   artwork: {
-    width: 40,
-    height: 40,
-    borderRadius: 6,
-    backgroundColor: COLORS.card,
-  },
-  artworkFallback: {
-    backgroundColor: COLORS.cardPress,
+    flexShrink: 0,
   },
   previewText: {
     flex: 1,

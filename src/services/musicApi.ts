@@ -713,7 +713,71 @@ export function getThumbnailArtworkUrl(url?: string | null): string {
  * and prefers a title match so a same-named cover song cannot win by position.
  */
 export async function resolveArtworkForTrack(track: Track): Promise<string> {
-  const query = [track.title, track.artist].filter(Boolean).join(' ').trim();
+  return searchTrackArtwork(track.title, track.artist);
+}
+
+// ---------------------------------------------------------------------------
+// Artwork lookup cache
+// ---------------------------------------------------------------------------
+
+// Every track row can independently notice missing artwork and ask for a
+// lookup, and a screen can mount the same track in several places at once. Each
+// uncached lookup costs two provider round-trips, so without this a playlist of
+// artless tracks fires a burst of duplicate requests on every mount. Mirrors the
+// in-flight + TTL pattern already used by services/lyrics.ts.
+const ARTWORK_HIT_TTL_MS = 24 * 60 * 60 * 1000;
+// Misses get a much shorter lease. Artwork providers do occasionally lag a new
+// release, so a miss must be allowed to heal quickly without re-scanning the
+// providers on every single mount.
+const ARTWORK_MISS_TTL_MS = 15 * 60 * 1000;
+// Bounds the cache so a long session browsing many tracks cannot grow it
+// without limit.
+const ARTWORK_CACHE_LIMIT = 500;
+
+interface ArtworkCacheEntry {
+  savedAt: number;
+  url: string;
+}
+
+const artworkCache = new Map<string, ArtworkCacheEntry>();
+const artworkInflight = new Map<string, Promise<string>>();
+
+function artworkCacheKey(title: string, artist: string): string {
+  return `${normalizeTrackTitle(title)}|${normalizeTrackTitle(artist)}`;
+}
+
+function readArtworkCache(key: string): string | null {
+  const hit = artworkCache.get(key);
+  if (!hit) {
+    return null;
+  }
+  const ttl = hit.url ? ARTWORK_HIT_TTL_MS : ARTWORK_MISS_TTL_MS;
+  if (Date.now() - hit.savedAt > ttl) {
+    artworkCache.delete(key);
+    return null;
+  }
+  return hit.url;
+}
+
+function writeArtworkCache(key: string, url: string): void {
+  if (artworkCache.size >= ARTWORK_CACHE_LIMIT) {
+    // Map preserves insertion order, so the first key is the oldest entry.
+    const oldest = artworkCache.keys().next();
+    if (!oldest.done) {
+      artworkCache.delete(oldest.value);
+    }
+  }
+  artworkCache.set(key, { savedAt: Date.now(), url });
+}
+
+/** Test/logout seam, matching clearLyricsCache in services/lyrics.ts. */
+export function clearArtworkCache(): void {
+  artworkCache.clear();
+  artworkInflight.clear();
+}
+
+async function lookupArtwork(title: string, artist: string): Promise<string> {
+  const query = [title, artist].filter(Boolean).join(' ').trim();
   if (!query) {
     return '';
   }
@@ -731,8 +795,53 @@ export async function resolveArtworkForTrack(track: Track): Promise<string> {
   if (withArtwork.length === 0) {
     return '';
   }
-  const match = withArtwork.find((item) => titleMatches(track.title, item.title));
+  const match = withArtwork.find((item) => titleMatches(title, item.title));
   return getHighResArtworkUrl((match ?? withArtwork[0]).artwork);
+}
+
+/**
+ * Resolves cover art for a track from its title and artist alone, via iTunes and
+ * JioSaavn. Deduplicated and cached: concurrent callers asking for the same
+ * track share one request, and repeats are served from memory.
+ *
+ * Returns '' when nothing has art, which callers must treat as "still unknown"
+ * rather than "definitively none" — the short miss TTL exists so this heals.
+ */
+export async function searchTrackArtwork(
+  title: string,
+  artist: string
+): Promise<string> {
+  const cleanTitle = (title ?? '').trim();
+  const cleanArtist = (artist ?? '').trim();
+  if (!cleanTitle && !cleanArtist) {
+    return '';
+  }
+  const key = artworkCacheKey(cleanTitle, cleanArtist);
+  const cached = readArtworkCache(key);
+  if (cached !== null) {
+    return cached;
+  }
+  const pending = artworkInflight.get(key);
+  if (pending) {
+    return pending;
+  }
+  // The catch is attached before the map write so a provider outage resolves to
+  // '' instead of rejecting, and so a rejection can never poison the in-flight
+  // map for every later caller.
+  const request = lookupArtwork(cleanTitle, cleanArtist)
+    .catch((error) => {
+      console.warn('[artwork] Lookup failed for:', cleanTitle, error);
+      return '';
+    })
+    .then((url) => {
+      writeArtworkCache(key, url);
+      return url;
+    })
+    .finally(() => {
+      artworkInflight.delete(key);
+    });
+  artworkInflight.set(key, request);
+  return request;
 }
 
 function soundCloudArtworkFor(track: SoundCloudTrack): string {

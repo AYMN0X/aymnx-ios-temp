@@ -29,8 +29,24 @@ interface DownloadContextValue {
   isBatchDownloading: boolean;
   batchProgress: BatchProgress | null;
   isDownloaded: (trackId: string) => boolean;
+  /**
+   * Local artwork file for a downloaded track, or undefined when there is no
+   * usable on-disk cover. Artwork surfaces pass this into ArtworkThumbnail so a
+   * downloaded track renders its saved cover instead of an empty box when the
+   * remote URL is unreachable or absent.
+   */
+  getLocalArtworkUri: (trackId: string) => string | undefined;
   downloadTrack: (track: Track) => Promise<void>;
   deleteDownload: (trackId: string) => Promise<void>;
+  /**
+   * Deletes the audio, artwork, and sidecar for each id, then drops them from
+   * the registry. Used when a playlist is deleted and its tracks are no longer
+   * referenced anywhere: their files would otherwise linger on disk and be
+   * re-adopted as "already downloaded" if the playlist were ever re-imported.
+   *
+   * Ids with no download are skipped. Returns how many were actually purged.
+   */
+  purgeDownloads: (trackIds: string[]) => Promise<number>;
   downloadAll: (
     tracks: Track[],
     onProgress?: (progress: { done: number; total: number; failed: number }) => void
@@ -157,6 +173,28 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     [downloadedIds]
   );
 
+  // Artwork rows are memoized and can number in the hundreds (playlist + queue +
+  // search results all render the same tracks), so this is kept in a ref behind a
+  // stable callback. The map itself is memoized so it is only rebuilt when the
+  // registry actually changes, while the ref stays current for reads made during
+  // render.
+  const localArtworkById = useMemo(
+    () =>
+      new Map(
+        downloadedTracks
+          .filter((item) => item.localArtworkUri)
+          .map((item) => [item.id, item.localArtworkUri])
+      ),
+    [downloadedTracks]
+  );
+  const localArtworkByIdRef = useRef(localArtworkById);
+  localArtworkByIdRef.current = localArtworkById;
+
+  const getLocalArtworkUri = useCallback(
+    (trackId: string) => localArtworkByIdRef.current.get(trackId),
+    []
+  );
+
   const downloadTrack = useCallback(
     async (track: Track) => {
       if (!userId || downloadedIds.has(track.id) || downloadingIds.has(track.id)) {
@@ -209,6 +247,37 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       }
     },
     [userId]
+  );
+
+  const purgeDownloads = useCallback(
+    async (trackIds: string[]) => {
+      if (!userId || trackIds.length === 0) {
+        return 0;
+      }
+      // Only touch ids that are genuinely registered as downloaded. Skipping the
+      // rest avoids a pointless directory scan per track for a playlist that was
+      // never downloaded in the first place.
+      const targets = trackIds.filter((id) => downloadedIds.has(id));
+      if (targets.length === 0) {
+        return 0;
+      }
+      // Sequential rather than parallel: each delete rewrites the whole
+      // downloads registry, so concurrent calls would race on the same list and
+      // the last writer would resurrect the others' entries. Failures are
+      // isolated per track so one undeletable file cannot leave the rest of the
+      // playlist's downloads orphaned on disk.
+      let purged = 0;
+      for (const trackId of targets) {
+        try {
+          await deleteDownload(trackId);
+          purged += 1;
+        } catch (error) {
+          console.warn('[downloads] Failed to purge download.', trackId, error);
+        }
+      }
+      return purged;
+    },
+    [userId, downloadedIds, deleteDownload]
   );
 
   const downloadAll = useCallback(
@@ -366,8 +435,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       isBatchDownloading,
       batchProgress,
       isDownloaded,
+      getLocalArtworkUri,
       downloadTrack,
       deleteDownload,
+      purgeDownloads,
       downloadAll,
       toggleDownload,
       syncDownloadedFilesWithStorage,
@@ -379,8 +450,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       isBatchDownloading,
       batchProgress,
       isDownloaded,
+      getLocalArtworkUri,
       downloadTrack,
       deleteDownload,
+      purgeDownloads,
       downloadAll,
       toggleDownload,
       syncDownloadedFilesWithStorage,

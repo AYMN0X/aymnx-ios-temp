@@ -13,10 +13,24 @@ import {
   Pressable,
   ScrollView,
   Animated,
-  Easing,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+// Reanimated is aliased because `Animated` in this file is React Native's, still
+// used for the play-button pulse and the volume bar. Both must coexist.
+import AnimatedReanimated, {
+  Easing as ReanimatedEasing,
+  Extrapolation,
+  cancelAnimation,
+  interpolate,
+  interpolateColor,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -27,13 +41,35 @@ import { Color } from "../theme/GlobalStyles";
 import { getHighResArtworkUrl } from "../services/musicApi";
 import { usePlayer } from "../context/PlayerContext";
 import { useLibrary } from "../context/LibraryContext";
+import { TrackArtwork } from "../components/TrackArtwork";
+import { useTrackArtwork } from "../hooks/useTrackArtwork";
 import NowPlayingScrubber, { formatTime } from "../components/player/NowPlayingScrubber";
 import LyricsView from "../components/player/LyricsView";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-const SCRUB_DISMISS_DISTANCE = 140;
-const SCRUB_DISMISS_VELOCITY = 1.2;
+// Pull-to-dismiss tuning, matched to the feel of a native Apple Music / Spotify
+// sheet rather than a free-floating drag.
+const DISMISS_DISTANCE = 120;
+const DISMISS_VELOCITY = 800;
+// How far the card shrinks and how much its top corners round while dragging.
+// Both are cosmetic, so they stay subtle enough to read as depth rather than as
+// a second, competing animation.
+const DISMISS_MIN_SCALE = 0.92;
+const DISMISS_CORNER_RADIUS = 32;
+// Upward drags cannot move the sheet (it is already at the top), so they are
+// damped to this fraction of finger travel. Without it the card would appear to
+// stick to a ceiling; with 1.0 the user could drag it off-screen upward.
+const RUBBER_BAND_FACTOR = 0.35;
+// Drag distance at which the cosmetic effects are fully applied.
+const DISMISS_PROGRESS_DISTANCE = 220;
+// A tap must not be mistaken for the start of a drag, and a horizontal drag must
+// never be claimed — that is the scrubber and the volume bar.
+const PAN_ACTIVE_OFFSET_Y = 10;
+const PAN_FAIL_OFFSET_X = 24;
+// Crisp, slightly under-damped return. Shared by every snap-back path so the
+// sheet always settles identically no matter how the gesture ended.
+const DISMISS_SNAP_SPRING = { damping: 20, stiffness: 200, mass: 0.6 };
 
 const COLORS = {
   bgTop: "#0E1414",
@@ -103,9 +139,12 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
     currentTrack && likedSongs.some((t: any) => t.id === currentTrack.id)
   );
 
+  // Falls back to the downloaded copy so a track whose remote cover has expired
+  // (or was never resolved) still shows art in this hero while offline.
+  const currentArtwork = useTrackArtwork(currentTrack);
   const artworkUri = getHighResArtworkUrl(
-    currentTrack?.artwork || (currentTrack as any)?.coverUrl
-  );
+    currentArtwork.uri || (currentTrack as any)?.coverUrl
+  ) || currentArtwork.localUri;
 
   const contextLabel =
     (currentTrack?.album || "").trim().toUpperCase() || "NOW PLAYING";
@@ -118,30 +157,33 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
     setShowLyrics(false);
   }, [currentTrack?.id]);
 
-  const translateY = React.useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const sheetOpacity = React.useRef(new Animated.Value(1)).current;
-  const playScale = React.useRef(new Animated.Value(1)).current;
+  // Single source of truth for the sheet's position. Everything visual — the
+  // translate, scale, corner rounding and dim — is derived from this one value,
+  // so the finger, the release animation and the programmatic dismiss can never
+  // disagree about where the sheet is.
+  const dragY = useSharedValue(SCREEN_HEIGHT);
+  // Shared rather than a React ref because the gesture callbacks are worklets and
+  // cannot read refs. It is the single authority for "a dismiss is already
+  // running", consulted by onStart, onEnd and onFinalize alike.
+  const isDismissing = useSharedValue(false);
+  // Guards the JS side, so a button press landing during a gesture-driven
+  // dismiss cannot fire onClose a second time.
   const dismissingRef = React.useRef(false);
+  const playScale = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
-    translateY.setValue(SCREEN_HEIGHT);
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 320,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(sheetOpacity, {
-        toValue: 1,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Enter from below. Opacity is derived from dragY rather than animated
+    // separately, so the fade and the slide are inherently in sync.
+    isDismissing.value = false;
+    dragY.value = SCREEN_HEIGHT;
+    dragY.value = withTiming(0, {
+      duration: 320,
+      easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
+    });
     return () => {
       dismissingRef.current = false;
     };
-  }, [translateY, sheetOpacity]);
+  }, [dragY, isDismissing]);
 
   const haptic = React.useCallback((style: ImpactFeedbackStyle) => {
     if (Platform.OS !== "web") {
@@ -149,62 +191,150 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
     }
   }, []);
 
+  const completeDismiss = React.useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const beginDismiss = React.useCallback(() => {
+    dismissingRef.current = true;
+  }, []);
+
   const animateDismiss = React.useCallback(() => {
     if (dismissingRef.current) {
       return;
     }
     dismissingRef.current = true;
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: SCREEN_HEIGHT,
-        duration: 280,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(sheetOpacity, {
-        toValue: 0,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-    ]).start(() => onClose());
-  }, [translateY, sheetOpacity, onClose]);
+    isDismissing.value = true;
+    dragY.value = withTiming(
+      SCREEN_HEIGHT,
+      { duration: 280, easing: ReanimatedEasing.in(ReanimatedEasing.cubic) },
+      (finished) => {
+        if (finished) {
+          runOnJS(completeDismiss)();
+        }
+      }
+    );
+  }, [dragY, isDismissing, completeDismiss]);
 
-  const swipePanResponder = React.useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) =>
-        g.dy > 10 && Math.abs(g.dy) > Math.abs(g.dx) * 1.3,
-      onPanResponderMove: (_, g) => {
-        if (!dismissingRef.current) {
-          translateY.setValue(Math.max(0, g.dy));
-        }
-      },
-      onPanResponderRelease: (_, g) => {
-        if (dismissingRef.current) {
-          return;
-        }
-        if (g.dy > SCRUB_DISMISS_DISTANCE || g.vy > SCRUB_DISMISS_VELOCITY) {
-          animateDismiss();
-        } else {
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 0,
-            speed: 14,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        if (!dismissingRef.current) {
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 0,
-            speed: 14,
-          }).start();
-        }
-      },
-    })
-  ).current;
+  // Interactive dismissal. The gesture is intentionally inert while the lyrics
+  // view is open: that view owns a vertical ScrollView, and a bidirectional pan
+  // wrapping it would win the gesture race after 10px and make lyrics
+  // unscrollable. In lyrics mode the header chevron and the scrim tap dismiss
+  // instead, so nothing becomes unreachable.
+  const dismissPan = React.useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(!showLyrics)
+        .activeOffsetY([-PAN_ACTIVE_OFFSET_Y, PAN_ACTIVE_OFFSET_Y])
+        // Any real horizontal travel fails the gesture outright, which is what
+        // keeps the scrubber and the volume bar responsive: they are horizontal
+        // drag targets and never lose the touch to a vertical sheet drag.
+        .failOffsetX([-PAN_FAIL_OFFSET_X, PAN_FAIL_OFFSET_X])
+        .onStart(() => {
+          // Grabbing a sheet that is already animating away must not cancel the
+          // dismiss, so the in-flight animation is only interrupted when the
+          // sheet is genuinely at rest or mid-drag.
+          if (isDismissing.value) {
+            return;
+          }
+          // Otherwise stop any snap-back so the finger takes over mid-animation
+          // instead of fighting it.
+          cancelAnimation(dragY);
+        })
+        .onUpdate((event) => {
+          if (isDismissing.value) {
+            return;
+          }
+          const raw = event.translationY;
+          dragY.value = raw < 0 ? raw * RUBBER_BAND_FACTOR : raw;
+        })
+        .onEnd((event) => {
+          if (isDismissing.value) {
+            return;
+          }
+          const shouldDismiss =
+            dragY.value > DISMISS_DISTANCE || event.velocityY > DISMISS_VELOCITY;
+          if (shouldDismiss) {
+            isDismissing.value = true;
+            runOnJS(beginDismiss)();
+            dragY.value = withTiming(
+              SCREEN_HEIGHT,
+              { duration: 280, easing: ReanimatedEasing.in(ReanimatedEasing.cubic) },
+              (finished) => {
+                if (finished) {
+                  runOnJS(completeDismiss)();
+                }
+              }
+            );
+          } else {
+            dragY.value = withSpring(0, DISMISS_SNAP_SPRING);
+          }
+        })
+        .onFinalize(() => {
+          // onFinalize runs immediately after onEnd, so it must not undo a
+          // dismiss that onEnd just started — a fast flick has a small distance
+          // but a high velocity, and springing here would cancel it. Any other
+          // early exit (system stole the touch) springs back, including from the
+          // negative rubber-banded position.
+          if (isDismissing.value || dragY.value === 0) {
+            return;
+          }
+          dragY.value = withSpring(0, DISMISS_SNAP_SPRING);
+        }),
+    [dragY, isDismissing, showLyrics, beginDismiss, completeDismiss]
+  );
+
+  const sheetMotionStyle = useAnimatedStyle(() => {
+    const progress = interpolate(
+      dragY.value,
+      [0, DISMISS_PROGRESS_DISTANCE],
+      [0, 1],
+      Extrapolation.CLAMP
+    );
+    return {
+      transform: [
+        { translateY: dragY.value },
+        {
+          scale: interpolate(
+            progress,
+            [0, 1],
+            [1, DISMISS_MIN_SCALE],
+            Extrapolation.CLAMP
+          ),
+        },
+      ],
+      borderTopLeftRadius: interpolate(
+        progress,
+        [0, 1],
+        [0, DISMISS_CORNER_RADIUS],
+        Extrapolation.CLAMP
+      ),
+      borderTopRightRadius: interpolate(
+        progress,
+        [0, 1],
+        [0, DISMISS_CORNER_RADIUS],
+        Extrapolation.CLAMP
+      ),
+      // Materialises only while the card is moving. At rest this is fully
+      // transparent, which is exactly the previous appearance: the sheet sits
+      // directly on the ambient backdrop. Once it moves it needs a fill of its
+      // own, otherwise the rounded corners and the scale would be invisible
+      // against a backdrop that is already the same colour.
+      backgroundColor: interpolateColor(
+        progress,
+        [0, 1],
+        ["rgba(13, 17, 17, 0)", "rgba(13, 17, 17, 0.96)"]
+      ),
+      // Fades the card as it is pulled away, and doubles as the enter/exit fade:
+      // at rest it is fully opaque, off-screen it is fully transparent.
+      opacity: interpolate(
+        dragY.value,
+        [0, 90, SCREEN_HEIGHT],
+        [1, 0.94, 0],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
   const [queueOpen, setQueueOpen] = React.useState(false);
   const insets = useSafeAreaInsets();
@@ -319,16 +449,8 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
         pointerEvents="none"
       />
 
-      <Animated.View
-        style={[
-          styles.sheet,
-          {
-            opacity: sheetOpacity,
-            transform: [{ translateY }],
-          },
-        ]}
-        {...swipePanResponder.panHandlers}
-      >
+      <GestureDetector gesture={dismissPan}>
+        <AnimatedReanimated.View style={[styles.sheet, sheetMotionStyle]}>
         <SafeAreaView style={styles.container}>
           <StatusBar barStyle="light-content" />
 
@@ -532,7 +654,8 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
             </View>
           </View>
         </SafeAreaView>
-      </Animated.View>
+        </AnimatedReanimated.View>
+      </GestureDetector>
 
       <Modal
         transparent
@@ -572,12 +695,12 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
 
             {currentTrack ? (
               <View style={styles.queueNowPlayingRow}>
-                <Image
-                  source={{ uri: artworkUri || undefined }}
+                <TrackArtwork
+                  track={currentTrack}
+                  size={52}
+                  borderRadius={8}
+                  variant="highRes"
                   style={styles.queueNowArt}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  recyclingKey={artworkUri ?? "queue-now"}
                 />
                 <View style={styles.queueRowMeta}>
                   <Text style={styles.queueNowTitle} numberOfLines={1}>
@@ -651,9 +774,6 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
               >
                 {queue.slice(queueIndex + 1).map((item, offset) => {
                   const itemIndex = queueIndex + 1 + offset;
-                  const rowArt = getHighResArtworkUrl(
-                    item.artwork || (item as any)?.coverUrl
-                  );
                   const rowDuration = (item as any)?.duration;
                   return (
                     <TouchableOpacity
@@ -665,19 +785,13 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({ onClose }) =
                         setQueueOpen(false);
                       }}
                     >
-                      {rowArt ? (
-                        <Image
-                          source={{ uri: rowArt }}
-                          style={styles.queueRowArt}
-                          contentFit="cover"
-                          cachePolicy="memory-disk"
-                          recyclingKey={item.id}
-                        />
-                      ) : (
-                        <View style={[styles.queueRowArt, styles.queueArtFallback]}>
-                          <Ionicons name="musical-notes" size={18} color="rgba(255,255,255,0.35)" />
-                        </View>
-                      )}
+                      <TrackArtwork
+                        track={item}
+                        size={46}
+                        borderRadius={6}
+                        variant="highRes"
+                        style={styles.queueRowArt}
+                      />
                       <View style={styles.queueRowMeta}>
                         <Text style={styles.queueRowTitle} numberOfLines={1}>
                           {item.title}
@@ -745,6 +859,10 @@ const styles = StyleSheet.create({
   sheet: {
     flex: 1,
     width: "100%",
+    // Clipping only. The card's fill is animated in from fully transparent as
+    // the drag progresses (see sheetMotionStyle), so the resting appearance is
+    // unchanged while a moving card has a real edge to reveal.
+    overflow: "hidden",
   },
   container: {
     flex: 1,
@@ -982,10 +1100,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   queueNowArt: {
-    width: 52,
-    height: 52,
-    borderRadius: 8,
-    backgroundColor: "#171B1B",
+    flexShrink: 0,
   },
   queueRowMeta: {
     flex: 1,
@@ -1081,11 +1196,6 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 6,
-  },
-  queueArtFallback: {
-    backgroundColor: "#1A2120",
-    alignItems: "center",
-    justifyContent: "center",
   },
   queueDuration: {
     fontSize: 12,

@@ -114,7 +114,17 @@ interface LibraryContextValue {
   toggleLike: (track: Track) => Promise<void>;
   createPlaylist: (name: string, meta?: storage.NewPlaylistMeta) => Promise<SavedPlaylist | null>;
   createImportedPlaylist: (name: string, coverUrl: string, tracks: Track[]) => Promise<SavedPlaylist | null>;
-  removePlaylist: (playlistId: string) => Promise<void>;
+  /**
+   * Deletes a playlist and returns the ids of the tracks that are now
+   * unreferenced anywhere in the library — not in liked songs and not in any
+   * surviving playlist. Those are the only downloads that can be safely purged
+   * from disk; a track shared with another playlist must keep its files, or
+   * deleting one playlist would break offline playback for the other.
+   *
+   * Returns an empty array when the delete failed, so a caller must not purge
+   * anything in that case.
+   */
+  removePlaylist: (playlistId: string) => Promise<string[]>;
   addToPlaylist: (playlistId: string, track: Track) => Promise<void>;
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
   replaceTrack: (originalId: string, replacement: Track) => Promise<void>;
@@ -350,14 +360,42 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const removePlaylist = async (playlistId: string) => {
     if (!userId) {
-      return;
+      return [];
     }
     const next = await guardedStorage('removing playlist', () =>
       storage.removePlaylist(userId, playlistId)
     );
     if (!next) {
-      return;
+      return [];
     }
+    // Compute orphans from the post-delete playlist set rather than the
+    // pre-delete one, so a track that only this playlist referenced is correctly
+    // reported as unreferenced.
+    const deleted = playlists.find((item) => item.id === playlistId);
+    if (!deleted) {
+      // The playlist was not in the state this provider holds, so its tracks are
+      // unknown. Returning nothing keeps files that may still be referenced; a
+      // warn makes the missed purge diagnosable instead of silent.
+      console.warn('[library] Deleted playlist was not in state; skipping download purge.');
+      setPlaylists(next);
+      return [];
+    }
+    const stillReferenced = new Set<string>();
+    for (const item of next) {
+      for (const track of item.tracks) {
+        stillReferenced.add(track.id);
+      }
+    }
+    for (const track of likedSongs) {
+      stillReferenced.add(track.id);
+    }
+    const orphanedTrackIds: string[] = [];
+    for (const track of deleted.tracks) {
+      if (!stillReferenced.has(track.id) && !orphanedTrackIds.includes(track.id)) {
+        orphanedTrackIds.push(track.id);
+      }
+    }
+
     setPlaylists(next);
     if (!isGuestUser) {
       try {
@@ -366,6 +404,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         console.warn('[library] Failed to delete playlist from Firestore.', error);
       }
     }
+    return orphanedTrackIds;
   };
 
   const addToPlaylist = async (playlistId: string, track: Track) => {

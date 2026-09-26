@@ -1,5 +1,4 @@
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { Pause, Play } from 'lucide-react-native';
 import { useCallback, useEffect } from 'react';
@@ -9,6 +8,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM_GAP } from './layout/TabBar';
+import { TrackArtwork } from './TrackArtwork';
 import { usePlayer, useProgress } from '../context/PlayerContext';
 import { COLORS } from '../theme/appTheme';
 
@@ -103,18 +103,7 @@ export function MiniPlayerDock({ onOpen, blurTarget }: MiniPlayerDockProps) {
             android_ripple={{ color: 'rgba(255, 255, 255, 0.04)' }}
           >
             <Animated.View style={[styles.openAreaInner, pressAnimatedStyle]}>
-              {currentTrack.artwork ? (
-                <Image
-                  source={currentTrack.artwork}
-                  style={styles.artwork}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  recyclingKey={currentTrack.id}
-                  transition={150}
-                />
-              ) : (
-                <View style={[styles.artwork, styles.artworkFallback]} />
-              )}
+              <TrackArtwork track={currentTrack} size={ARTWORK_SIZE} borderRadius={8} style={styles.artwork} />
               <View style={styles.meta}>
                 <Text style={styles.nowPlaying}>Now Playing</Text>
                 <Text style={styles.title} numberOfLines={1}>
@@ -213,13 +202,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   artwork: {
-    width: ARTWORK_SIZE,
-    height: ARTWORK_SIZE,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-  },
-  artworkFallback: {
-    backgroundColor: COLORS.cardPress,
+    flexShrink: 0,
   },
   meta: {
     flex: 1,

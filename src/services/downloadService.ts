@@ -1,7 +1,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { resolveDownloadableStream, Track } from './musicApi';
+import { resolveDownloadableStream, searchTrackArtwork, Track } from './musicApi';
 import { canonicalizeHttpUrl } from '../utils/streamCache';
 import { extractId3Picture, base64ToBytes, bytesToBase64 } from '../utils/id3Artwork';
+import { isNetworkAvailable } from '../utils/network';
 
 export interface DownloadedTrack extends Track {
   localAudioUri: string;
@@ -20,6 +21,11 @@ const MIN_AUDIO_FILE_BYTES = 100_000;
 // the only place the full Track metadata for a file on disk survives, since the
 // filename encodes just a sanitized id.
 const TRACK_META_SUFFIX = '.meta.json';
+
+// A cover image is a few KB, so anything empty is a failed write. Kept separate
+// from the audio threshold: artwork is optional, but an empty file is worse than
+// no file because the image loader would try to decode it forever.
+const MIN_ARTWORK_FILE_BYTES = 1;
 
 // Durable record of an in-flight batch, so a terminated app can resume instead
 // of orphaning every file it had already written.
@@ -95,7 +101,10 @@ async function findLocalArtwork(trackId: string): Promise<string> {
     const candidate = artworkFileUri(trackId, ext);
     try {
       const info = await FileSystem.getInfoAsync(candidate);
-      if (info.exists) {
+      // A zero-byte file is a failed write left behind by an older version. It
+      // would be adopted here and then fail to decode at render time, so treat
+      // it as absent and let the caller re-fetch.
+      if (info.exists && (info.size ?? 0) >= MIN_ARTWORK_FILE_BYTES) {
         return candidate;
       }
     } catch (error) {
@@ -103,6 +112,61 @@ async function findLocalArtwork(trackId: string): Promise<string> {
     }
   }
   return '';
+}
+
+/**
+ * Downloads one artwork candidate to disk and returns its URI, or '' if the
+ * fetch did not produce a real image file.
+ *
+ * Three failure modes are handled explicitly, because each one previously left
+ * a URI in the download record that pointed at nothing usable:
+ *   - a non-2xx status, which FileSystem reports without throwing
+ *   - a thrown transport error (offline, DNS, TLS)
+ *   - a 2xx that wrote an empty file, which some CDNs return for a hotlink
+ *     rejection
+ * The destination is removed on every failure so a later `findLocalArtwork`
+ * cannot adopt the junk.
+ */
+async function saveArtworkFile(source: string, trackId: string): Promise<string> {
+  const destination = artworkFileUri(trackId);
+  let artSource: string;
+  try {
+    artSource = canonicalizeHttpUrl(source);
+  } catch {
+    return '';
+  }
+  try {
+    // Clear any prior file first. Downloading over an existing path that turns
+    // out to be a redirect body would otherwise leave stale bytes in place.
+    await FileSystem.deleteAsync(destination, { idempotent: true });
+    const artResult = await FileSystem.downloadAsync(artSource, destination, {
+      sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      headers: buildDownloadHeaders(artSource, 'artwork'),
+    });
+    if (!artResult || artResult.status < 200 || artResult.status >= 300) {
+      console.warn(
+        '[downloads] Artwork fetch returned status',
+        artResult?.status,
+        'for:',
+        source
+      );
+      await FileSystem.deleteAsync(destination, { idempotent: true });
+      return '';
+    }
+    // Status alone is not proof of an image. 206 and a few edge responses report
+    // success while leaving nothing on disk, so the written file is re-checked
+    // the same way the audio file is.
+    const info = await FileSystem.getInfoAsync(destination);
+    if (!info.exists || (info.size ?? 0) < MIN_ARTWORK_FILE_BYTES) {
+      await FileSystem.deleteAsync(destination, { idempotent: true });
+      return '';
+    }
+    return destination;
+  } catch (error) {
+    console.warn('[downloads] Artwork download failed; continuing without it.', error);
+    await FileSystem.deleteAsync(destination, { idempotent: true }).catch(() => undefined);
+    return '';
+  }
 }
 
 function extensionForMime(mimeType: string | undefined): string {
@@ -124,8 +188,84 @@ const hlsDirFor = (trackId: string): string =>
 const hlsManifestUri = (trackId: string): string =>
   `${hlsDirFor(trackId)}playlist.m3u8`;
 
+/**
+ * The audio CDNs this app talks to (JioSaavn, SoundCloud) reject requests that
+ * do not look like they came from a browser, and NSURLSession's default
+ * User-Agent is not one. Sending a desktop/Safari UA is what makes a signed CDN
+ * link return 200 instead of 403.
+ */
 const DOWNLOAD_USER_AGENT =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+
+type DownloadHeaderKind = 'audio' | 'artwork' | 'manifest';
+
+const ACCEPT_BY_KIND: Record<DownloadHeaderKind, string> = {
+  audio: 'audio/*,*/*;q=0.9',
+  artwork: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+  manifest: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*;q=0.8',
+};
+
+function hostOf(url: string): string {
+  return url.match(/^https?:\/\/([^/?#]+)/i)?.[1]?.toLowerCase() ?? '';
+}
+
+function originOf(url: string): string {
+  return url.match(/^(https?:\/\/[^/?#]+)/i)?.[1] ?? '';
+}
+
+/**
+ * Referer that the audio host expects. Both providers gate their media hosts on
+ * a matching Referer: SoundCloud's CDN rejects a bare cross-origin fetch, and
+ * JioSaavn checks for its own site. Anything unrecognised falls back to the
+ * resource's own origin, which is always a safe same-origin referrer.
+ */
+function refererFor(url: string): string {
+  const host = hostOf(url);
+  if (/soundcloud\.com|sndcdn\.com|sc-cdn\.net/i.test(host)) {
+    return 'https://soundcloud.com/';
+  }
+  if (/jiosaavn\.com|saavn\.com/i.test(host)) {
+    return 'https://www.jiosaavn.com/';
+  }
+  return originOf(url) ? `${originOf(url)}/` : '';
+}
+
+/**
+ * Browser-shaped headers for every file-system fetch. A file:// or otherwise
+ * unparseable source still gets the UA, since dropping it is what triggers 403.
+ */
+export function buildDownloadHeaders(
+  url: string,
+  kind: DownloadHeaderKind = 'audio'
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': DOWNLOAD_USER_AGENT,
+    Accept: ACCEPT_BY_KIND[kind],
+  };
+  const referer = refererFor(url);
+  if (referer) {
+    headers.Referer = referer;
+  }
+  return headers;
+}
+
+/**
+ * HTTP failure that carries its status, so callers can distinguish an expired
+ * signed URL (403, worth re-resolving) from a genuinely dead track (404, not
+ * worth retrying).
+ */
+class HttpStatusError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'HttpStatusError';
+    this.status = status;
+  }
+}
+
+const isForbidden = (error: unknown): boolean =>
+  error instanceof HttpStatusError && error.status === 403;
 
 const HLS_SEGMENT_BATCH_SIZE = 6;
 
@@ -155,12 +295,21 @@ async function downloadHlsTrack(
   onProgress?: (bytesWritten: number, totalBytes: number) => void
 ): Promise<{ audioUri: string; mimeType: string; totalBytes: number }> {
   const dir = hlsDirFor(trackId);
+  // Clear any previous bundle before writing. A 403 retry re-enters this
+  // function, and makeDirectoryAsync throws on an existing directory, so without
+  // this the retry would fail with a confusing "file exists" instead of a real
+  // error. It also stops a failed attempt's segments from being mixed into the
+  // retry's playlist.
+  await FileSystem.deleteAsync(dir, { idempotent: true });
   await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
   const manifestResponse = await fetch(sourceUrl, {
-    headers: { 'User-Agent': DOWNLOAD_USER_AGENT },
+    headers: buildDownloadHeaders(sourceUrl, 'manifest'),
   });
   if (!manifestResponse.ok) {
-    throw new Error(`HLS manifest download failed (HTTP ${manifestResponse.status}).`);
+    throw new HttpStatusError(
+      manifestResponse.status,
+      `HLS manifest download failed (HTTP ${manifestResponse.status}).`
+    );
   }
   const manifestText = await manifestResponse.text();
   if (!manifestText.includes('#EXTM3U')) {
@@ -197,9 +346,13 @@ async function downloadHlsTrack(
         const uri = `${dir}seg_${index}.ts`;
         const result = await FileSystem.downloadAsync(segmentUrl, uri, {
           sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+          headers: buildDownloadHeaders(segmentUrl, 'audio'),
         });
         if (!result || result.status < 200 || result.status >= 300) {
-          throw new Error(`HLS segment ${index} download failed (HTTP ${result?.status}).`);
+          throw new HttpStatusError(
+            result?.status ?? 0,
+            `HLS segment ${index} download failed (HTTP ${result?.status}).`
+          );
         }
         const info = await FileSystem.getInfoAsync(uri);
         return info.exists ? (info.size ?? 0) : 0;
@@ -288,68 +441,110 @@ async function ensureTracksDirectory(): Promise<void> {
   }
 }
 
-export async function downloadTrack(
-  track: Track,
+/**
+ * Progressive (non-HLS) audio fetch. Uses a resumable task so the progress
+ * callback still fires, and sends browser headers because the media hosts 403 a
+ * bare NSURLSession request.
+ */
+async function downloadProgressiveAudio(
+  url: string,
+  fileUri: string,
   onProgress?: (bytesWritten: number, totalBytes: number) => void
-): Promise<DownloadedTrack> {
-if (!FileSystem.documentDirectory) {
-    throw new Error('Downloads are not supported in this environment.');
-  }
-  await ensureTracksDirectory();
-
-  const ownSource = track.streamUrl && track.streamUrl.trim();
-  let audioUri = '';
-  let resolvedMime: string | undefined;
-  let isHlsBundle = false;
-  if (ownSource && isLocalSource(ownSource)) {
-    audioUri = audioFileUri(track.id, extensionFor(track));
-    await FileSystem.copyAsync({ from: ownSource, to: audioUri });
-  } else if (ownSource) {
-    const source = canonicalizeHttpUrl(ownSource);
-    if (isHlsStreamUrl(source)) {
-      isHlsBundle = true;
-      const hls = await downloadHlsTrack(track.id, source, onProgress);
-      audioUri = hls.audioUri;
-      resolvedMime = hls.mimeType;
-    } else {
-      audioUri = audioFileUri(track.id, extensionFor(track));
-      const result = await FileSystem.downloadAsync(source, audioUri, {
-        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-      });
-      if (!result || result.status < 200 || result.status >= 300) {
-        throw new Error(`Audio download failed (HTTP ${result?.status}).`);
+): Promise<void> {
+  const task = FileSystem.createDownloadResumable(
+    url,
+    fileUri,
+    {
+      sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      headers: buildDownloadHeaders(url, 'audio'),
+    },
+    (progress) => {
+      if (onProgress) {
+        onProgress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
       }
     }
-  } else {
+  );
+  const result = await task.downloadAsync();
+  if (!result) {
+    throw new HttpStatusError(0, 'Audio download failed.');
+  }
+  // A 403 leaves a 0-byte or error-page file behind, so clear it before
+  // retrying or the retry would resume onto the garbage.
+  if (result.status < 200 || result.status >= 300) {
+    await FileSystem.deleteAsync(fileUri, { idempotent: true });
+    throw new HttpStatusError(
+      result.status,
+      `Audio download failed (HTTP ${result.status}).`
+    );
+  }
+}
+
+interface ResolvedAudioSource {
+  url: string;
+  mimeType?: string;
+}
+
+/**
+ * Extension for the saved file. A freshly resolved source always carries a mime
+ * type, but the stored-URL fallback may not, in which case the original track
+ * metadata (and failing that, the URL suffix) decides it rather than blindly
+ * defaulting to .mp3.
+ */
+function extensionForSource(track: Track, source: ResolvedAudioSource): string {
+  return source.mimeType ? extensionForMime(source.mimeType) : extensionFor(track);
+}
+
+/**
+ * Resolves a downloadable URL for this track at the moment of the download.
+ *
+ * The stored `streamUrl` is deliberately NOT trusted for network sources. It is
+ * a signed, short-lived CDN link (JioSaavn hands out `dl.jiosaavn.com` URLs with
+ * an expiry in the query string) that gets persisted alongside the library, so a
+ * playlist imported last week 403s on download today. Resolving at the last
+ * possible moment is what fixes that class of failure.
+ *
+ * `allowStoredFallback` exists for the retry path only: if the providers are
+ * unreachable, retrying with the same expired URL is pointless, so the retry
+ * reports failure rather than looping.
+ */
+async function resolveAudioSource(
+  track: Track,
+  allowStoredFallback: boolean
+): Promise<ResolvedAudioSource | null> {
+  try {
     const stream = await resolveDownloadableStream(track.title, track.artist);
-    if (!stream.url) {
-      throw new Error('Could not find a downloadable source for this track.');
+    if (stream.url) {
+      return { url: canonicalizeHttpUrl(stream.url), mimeType: stream.mimeType };
     }
-    if (isHlsStreamUrl(stream.url)) {
-      isHlsBundle = true;
-      const hls = await downloadHlsTrack(track.id, stream.url, onProgress);
-      audioUri = hls.audioUri;
-      resolvedMime = hls.mimeType;
-    } else {
-      resolvedMime = stream.mimeType;
-      audioUri = audioFileUri(track.id, extensionForMime(stream.mimeType));
-      const task = FileSystem.createDownloadResumable(
-        stream.url,
-        audioUri,
-        { sessionType: FileSystem.FileSystemSessionType.BACKGROUND },
-        (progress) => {
-          if (onProgress) {
-            onProgress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
-          }
-        }
-      );
-      const result = await task.downloadAsync();
-      if (!result || !result.uri) {
-        throw new Error('Audio download failed.');
-      }
+  } catch (error) {
+    if (!allowStoredFallback) {
+      return null;
     }
+    // A provider outage should not block a download that a still-valid stored
+    // URL could satisfy, so fall through rather than failing outright.
+    console.warn('[downloads] Fresh stream resolution failed; using stored URL.', error);
   }
+  if (!allowStoredFallback) {
+    return null;
+  }
+  const stored = track.streamUrl?.trim() ?? '';
+  if (stored && !isLocalSource(stored)) {
+    return { url: canonicalizeHttpUrl(stored), mimeType: track.streamMimeType };
+  }
+  return null;
+}
 
+/**
+ * Validation, artwork, and the sidecar write for audio that is already on disk.
+ * Shared by the network paths and the local-share copy path so every download
+ * produces an identical record.
+ */
+async function finalizeTrackDownload(
+  track: Track,
+  audioUri: string,
+  resolvedMime: string | undefined,
+  isHlsBundle: boolean
+): Promise<DownloadedTrack> {
   // Validation: reject empty writes, partial/interrupted downloads and broken
   // HLS bundles so a garbage file is never marked as "downloaded". An HLS
   // playlist file itself is tiny, so its validity is measured by the total size
@@ -369,28 +564,53 @@ if (!FileSystem.documentDirectory) {
     throw new Error(`Downloaded audio too small to be a valid track: ${track.title}`);
   }
 
+  // Cover art is best-effort: a failure here must never fail the audio download.
+  // The record still has to be *true*, though. Storing a URI that was never
+  // successfully written is what leaves a track showing a broken image forever,
+  // so every path below verifies the file before it is linked into the record.
   let localArtworkUri = '';
+  // Ordered candidates: the track's own artwork, then a title/artist lookup for
+  // tracks that carry no art at all (common for Spotify imports and some
+  // SoundCloud rows). Embedded ID3 art is the last resort, below.
+  const remoteArtworkCandidates: string[] = [];
   if (track.artwork) {
     if (isLocalSource(track.artwork)) {
-      localArtworkUri = track.artwork;
-    } else {
-      try {
-        const artSource = canonicalizeHttpUrl(track.artwork);
-        const artResult = await FileSystem.downloadAsync(
-          artSource,
-          artworkFileUri(track.id),
-          { sessionType: FileSystem.FileSystemSessionType.BACKGROUND }
-        );
-        if (artResult && artResult.status === 200) {
-          localArtworkUri = artworkFileUri(track.id);
+      // Already on disk, so prefer the copy this app manages; fall back to the
+      // incoming path only once it is confirmed to exist.
+      const localArt = await findLocalArtwork(track.id);
+      if (localArt) {
+        localArtworkUri = localArt;
+      } else {
+        const info = await FileSystem.getInfoAsync(track.artwork);
+        if (info.exists) {
+          localArtworkUri = track.artwork;
         }
-      } catch (error) {
-        console.warn('[downloads] Artwork download failed; continuing without it.', error);
       }
+    } else {
+      remoteArtworkCandidates.push(track.artwork);
+    }
+  }
+  if (!localArtworkUri && (await isNetworkAvailable())) {
+    // Gated on connectivity: an artless track downloaded offline would otherwise
+    // stall on two provider timeouts before the audio could be finalized. The
+    // lookup is cached, so this costs nothing for repeat downloads.
+    const looked = await searchTrackArtwork(track.title, track.artist);
+    if (looked) {
+      remoteArtworkCandidates.push(looked);
+    }
+  }
+  for (const candidate of remoteArtworkCandidates) {
+    const saved = await saveArtworkFile(candidate, track.id);
+    if (saved) {
+      localArtworkUri = saved;
+      break;
     }
   }
   if (!localArtworkUri) {
     localArtworkUri = await extractEmbeddedArtwork(audioUri, track.id);
+  }
+  if (localArtworkUri) {
+    localArtworkUri = toLocalFileUri(localArtworkUri);
   }
 
   const meta: DownloadedTrack = {
@@ -405,6 +625,67 @@ if (!FileSystem.documentDirectory) {
   // launch can still re-adopt the file with its full Track metadata.
   await writeTrackMeta(meta);
   return meta;
+}
+
+/**
+ * Fetches the audio for an already-resolved URL and finalizes the record.
+ * Shared by the initial attempt and the 403 retry so both produce an identical
+ * `DownloadedTrack`.
+ */
+async function downloadResolvedAudio(
+  track: Track,
+  source: ResolvedAudioSource,
+  onProgress?: (bytesWritten: number, totalBytes: number) => void
+): Promise<DownloadedTrack> {
+  if (isHlsStreamUrl(source.url)) {
+    const hls = await downloadHlsTrack(track.id, source.url, onProgress);
+    return finalizeTrackDownload(track, hls.audioUri, hls.mimeType, true);
+  }
+  const audioUri = audioFileUri(track.id, extensionForSource(track, source));
+  await downloadProgressiveAudio(source.url, audioUri, onProgress);
+  return finalizeTrackDownload(track, audioUri, source.mimeType, false);
+}
+
+export async function downloadTrack(
+  track: Track,
+  onProgress?: (bytesWritten: number, totalBytes: number) => void
+): Promise<DownloadedTrack> {
+  if (!FileSystem.documentDirectory) {
+    throw new Error('Downloads are not supported in this environment.');
+  }
+  await ensureTracksDirectory();
+
+  const ownSource = track.streamUrl?.trim() ?? '';
+
+  // A LAN/library share points at a real file on disk. That file IS the media,
+  // not a resolvable pointer, so it must be copied as-is and never replaced by a
+  // network lookup or a re-resolve.
+  if (ownSource && isLocalSource(ownSource)) {
+    const localUri = audioFileUri(track.id, extensionFor(track));
+    await FileSystem.copyAsync({ from: ownSource, to: localUri });
+    return finalizeTrackDownload(track, localUri, track.streamMimeType, false);
+  }
+
+  const source = await resolveAudioSource(track, true);
+  if (!source) {
+    throw new Error('Could not find a downloadable source for this track.');
+  }
+  try {
+    return await downloadResolvedAudio(track, source, onProgress);
+  } catch (error) {
+    if (!isForbidden(error)) {
+      throw error;
+    }
+    // 403 on a signed CDN link means the URL expired between resolution and the
+    // request (or the resolver handed back a stale link). One fresh resolve and
+    // one retry is worth it; a second failure means the track is genuinely
+    // unavailable rather than transiently expired.
+    const refreshed = await resolveAudioSource(track, false);
+    if (!refreshed || refreshed.url === source.url) {
+      throw error;
+    }
+    return downloadResolvedAudio(track, refreshed, onProgress);
+  }
 }
 
 export async function deleteTrackFiles(trackId: string): Promise<void> {
