@@ -16,6 +16,21 @@ const TRACKS_DIR = `${FileSystem.documentDirectory ?? ''}tracks/`;
 // is a manifest, a partial/corrupt write, or an empty file — not playable.
 const MIN_AUDIO_FILE_BYTES = 100_000;
 
+// Per-track metadata sidecar, written as soon as a download validates. This is
+// the only place the full Track metadata for a file on disk survives, since the
+// filename encodes just a sanitized id.
+const TRACK_META_SUFFIX = '.meta.json';
+
+// Durable record of an in-flight batch, so a terminated app can resume instead
+// of orphaning every file it had already written.
+const PENDING_BATCH_FILE = '_pending_batch.json';
+
+// Sidecars and the batch journal live in the same directory as the audio, so
+// directory scans must never mistake them for playable tracks.
+function isMetadataArtifact(name: string): boolean {
+  return name.endsWith(TRACK_META_SUFFIX) || name === PENDING_BATCH_FILE;
+}
+
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9_-]/g, '_');
 
 const isLocalSource = (uri: string): boolean => {
@@ -69,6 +84,26 @@ function extensionFor(track: Track): string {
 const audioFileUri = (trackId: string, ext = '.m4a') => `${TRACKS_DIR}${sanitizeId(trackId)}${ext}`;
 const artworkFileUri = (trackId: string, ext = '.jpg') =>
   `${TRACKS_DIR}${sanitizeId(trackId)}_art${ext}`;
+
+/**
+ * Resolves an already-downloaded artwork file, if one exists. Artwork is
+ * optional, so a miss returns '' rather than throwing. Needed by re-adoption,
+ * where the caller has no in-memory record of what was written.
+ */
+async function findLocalArtwork(trackId: string): Promise<string> {
+  for (const ext of ['.jpg', '.png', '.jpeg', '.webp']) {
+    const candidate = artworkFileUri(trackId, ext);
+    try {
+      const info = await FileSystem.getInfoAsync(candidate);
+      if (info.exists) {
+        return candidate;
+      }
+    } catch (error) {
+      // Treat an unreadable candidate as absent and try the next extension.
+    }
+  }
+  return '';
+}
 
 function extensionForMime(mimeType: string | undefined): string {
   if (mimeType) {
@@ -160,7 +195,9 @@ async function downloadHlsTrack(
       batch.map(async (segmentUrl, offset) => {
         const index = start + offset;
         const uri = `${dir}seg_${index}.ts`;
-        const result = await FileSystem.downloadAsync(segmentUrl, uri);
+        const result = await FileSystem.downloadAsync(segmentUrl, uri, {
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+        });
         if (!result || result.status < 200 || result.status >= 300) {
           throw new Error(`HLS segment ${index} download failed (HTTP ${result?.status}).`);
         }
@@ -276,7 +313,9 @@ if (!FileSystem.documentDirectory) {
       resolvedMime = hls.mimeType;
     } else {
       audioUri = audioFileUri(track.id, extensionFor(track));
-      const result = await FileSystem.downloadAsync(source, audioUri);
+      const result = await FileSystem.downloadAsync(source, audioUri, {
+        sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      });
       if (!result || result.status < 200 || result.status >= 300) {
         throw new Error(`Audio download failed (HTTP ${result?.status}).`);
       }
@@ -294,11 +333,16 @@ if (!FileSystem.documentDirectory) {
     } else {
       resolvedMime = stream.mimeType;
       audioUri = audioFileUri(track.id, extensionForMime(stream.mimeType));
-      const task = FileSystem.createDownloadResumable(stream.url, audioUri, {}, (progress) => {
-        if (onProgress) {
-          onProgress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
+      const task = FileSystem.createDownloadResumable(
+        stream.url,
+        audioUri,
+        { sessionType: FileSystem.FileSystemSessionType.BACKGROUND },
+        (progress) => {
+          if (onProgress) {
+            onProgress(progress.totalBytesWritten, progress.totalBytesExpectedToWrite);
+          }
         }
-      });
+      );
       const result = await task.downloadAsync();
       if (!result || !result.uri) {
         throw new Error('Audio download failed.');
@@ -332,7 +376,11 @@ if (!FileSystem.documentDirectory) {
     } else {
       try {
         const artSource = canonicalizeHttpUrl(track.artwork);
-        const artResult = await FileSystem.downloadAsync(artSource, artworkFileUri(track.id));
+        const artResult = await FileSystem.downloadAsync(
+          artSource,
+          artworkFileUri(track.id),
+          { sessionType: FileSystem.FileSystemSessionType.BACKGROUND }
+        );
         if (artResult && artResult.status === 200) {
           localArtworkUri = artworkFileUri(track.id);
         }
@@ -345,13 +393,18 @@ if (!FileSystem.documentDirectory) {
     localArtworkUri = await extractEmbeddedArtwork(audioUri, track.id);
   }
 
-return {
+  const meta: DownloadedTrack = {
     ...track,
     streamMimeType: resolvedMime ?? track.streamMimeType,
     localAudioUri: toLocalFileUri(audioUri),
     localArtworkUri,
     downloadedAt: Date.now(),
   };
+  // Write the sidecar BEFORE returning, so the audio file on disk is never
+  // un-attributable. If the process dies immediately after this, the next
+  // launch can still re-adopt the file with its full Track metadata.
+  await writeTrackMeta(meta);
+  return meta;
 }
 
 export async function deleteTrackFiles(trackId: string): Promise<void> {
@@ -402,6 +455,12 @@ export async function filterExistingDownloads(
               { idempotent: true }
             );
           }
+          // Drop the sidecar with the audio. A sidecar for a track that no longer
+          // has a file would otherwise linger and could later resurrect a record
+          // for an id the user has effectively removed.
+          await FileSystem.deleteAsync(trackMetaFileUri(sanitizeId(track.id)), {
+            idempotent: true,
+          });
           return null;
         }
         return track;
@@ -412,6 +471,196 @@ export async function filterExistingDownloads(
     })
   );
   return results.filter((track): track is DownloadedTrack => track !== null);
+}
+
+/**
+ * Reverse half of the disk cross-check: audio artifacts that exist on disk but
+ * have no storage record. Returns SANITIZED ids, not original track ids, because
+ * the filename is the only identity on disk and `sanitizeId` is lossy for any id
+ * containing characters outside [a-zA-Z0-9_-].
+ *
+ * A returned prefix can be resolved back to a full DownloadedTrack via
+ * `resolveOrphanTrack`, which is what makes re-adoption possible without a
+ * storage record.
+ */
+export async function findOrphanedDownloadIds(tracks: DownloadedTrack[]): Promise<string[]> {
+  const known = new Set(tracks.map((track) => sanitizeId(track.id)));
+  const orphans = new Set<string>();
+  let entries: string[];
+  try {
+    entries = await FileSystem.readDirectoryAsync(TRACKS_DIR);
+  } catch (error) {
+    console.warn('[downloads] Could not list tracks directory for orphan scan.', error);
+    return [];
+  }
+  for (const name of entries) {
+    // Skip artwork sidecars, metadata artifacts, dotfiles, and the HLS manifest
+    // itself (the bundle directory entry below covers that case).
+    if (name.includes('_art') || name.startsWith('.') || isMetadataArtifact(name)) continue;
+    const dot = name.lastIndexOf('.');
+    const isBundleDir = dot === -1;
+    if (!isBundleDir && /\.m3u8?$/i.test(name)) continue;
+    const prefix = isBundleDir ? name : name.slice(0, dot);
+    if (!prefix || known.has(prefix)) continue;
+    orphans.add(prefix);
+  }
+  return [...orphans];
+}
+
+function trackMetaFileUri(sanitizedPrefix: string): string {
+  return `${TRACKS_DIR}${sanitizedPrefix}${TRACK_META_SUFFIX}`;
+}
+
+/**
+ * Persists the full Track metadata for a completed download next to its audio
+ * file. Best-effort: a failure here must not fail the download, because the
+ * storage record written by the caller is still the primary source of truth.
+ */
+export async function writeTrackMeta(track: DownloadedTrack): Promise<void> {
+  try {
+    await FileSystem.writeAsStringAsync(
+      trackMetaFileUri(sanitizeId(track.id)),
+      JSON.stringify(track),
+      { encoding: FileSystem.EncodingType.UTF8 }
+    );
+  } catch (error) {
+    console.warn('[downloads] Could not write track sidecar:', track.id, error);
+  }
+}
+
+/**
+ * Recovers a full DownloadedTrack for an on-disk file using only its sanitized
+ * id prefix. Returns null when no usable sidecar exists, which is the signal
+ * that the file genuinely cannot be re-adopted.
+ */
+export async function readTrackMeta(sanitizedPrefix: string): Promise<DownloadedTrack | null> {
+  const uri = trackMetaFileUri(sanitizedPrefix);
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) {
+      return null;
+    }
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    const parsed = JSON.parse(raw) as DownloadedTrack;
+    if (
+      !parsed ||
+      typeof parsed.id !== 'string' ||
+      parsed.id.length === 0 ||
+      typeof parsed.localAudioUri !== 'string' ||
+      parsed.localAudioUri.length === 0
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    console.warn('[downloads] Could not read track sidecar:', sanitizedPrefix, error);
+    return null;
+  }
+}
+
+/**
+ * Rebuilds a full DownloadedTrack for an orphaned on-disk file from a Track
+ * pulled out of the pending-batch journal, then writes its sidecar so the
+ * recovery only has to happen once.
+ *
+ * This is the fallback for the transfer that was in flight when the app died: it
+ * has no sidecar yet (nothing finished), but the journal still carries its
+ * metadata, and the background session may have written the audio after JS
+ * stopped running.
+ */
+async function recoverTrackFromJournal(
+  prefix: string,
+  queued: Track[]
+): Promise<DownloadedTrack | null> {
+  const queuedTrack = queued.find((track) => sanitizeId(track.id) === prefix);
+  if (!queuedTrack) {
+    return null;
+  }
+  const audioFile = await getLocalTrackFile(queuedTrack.id);
+  if (!audioFile) {
+    return null;
+  }
+  let downloadedAt = Date.now();
+  try {
+    const info = await FileSystem.getInfoAsync(audioFile);
+    if (info.exists && typeof info.modificationTime === 'number') {
+      downloadedAt = info.modificationTime;
+    }
+  } catch (error) {
+    // mtime is cosmetic (sort order only); fall through to "now".
+  }
+  const recovered: DownloadedTrack = {
+    ...queuedTrack,
+    localAudioUri: toLocalFileUri(audioFile),
+    localArtworkUri: await findLocalArtwork(queuedTrack.id),
+    downloadedAt,
+  };
+  await writeTrackMeta(recovered);
+  return recovered;
+}
+
+/**
+ * Full re-adoption path for one orphaned file, given the sanitized id prefix
+ * that was found on disk and the pending-batch queue. Tries the durable sidecar
+ * first, then the journal. Returns null when neither can supply the metadata
+ * that `DownloadedTrack` requires, which is the honest answer: the file cannot
+ * be rendered as a track without inventing a title and artist.
+ */
+export async function resolveOrphanTrack(
+  prefix: string,
+  queued: Track[]
+): Promise<DownloadedTrack | null> {
+  const fromMeta = await readTrackMeta(prefix);
+  if (fromMeta) {
+    // Guard against a sidecar whose own id doesn't hash to the prefix we found,
+    // which would mean the filename and the metadata disagree.
+    if (sanitizeId(fromMeta.id) === prefix) {
+      return fromMeta;
+    }
+    return null;
+  }
+  return recoverTrackFromJournal(prefix, queued);
+}
+
+export async function writePendingBatch(tracks: Track[]): Promise<void> {
+  try {
+    await ensureTracksDirectory();
+    await FileSystem.writeAsStringAsync(
+      `${TRACKS_DIR}${PENDING_BATCH_FILE}`,
+      JSON.stringify(tracks),
+      { encoding: FileSystem.EncodingType.UTF8 }
+    );
+  } catch (error) {
+    console.warn('[downloads] Could not persist pending batch.', error);
+  }
+}
+
+export async function readPendingBatch(): Promise<Track[] | null> {
+  try {
+    const uri = `${TRACKS_DIR}${PENDING_BATCH_FILE}`;
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) {
+      return null;
+    }
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    const parsed = JSON.parse(raw) as Track[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch (error) {
+    console.warn('[downloads] Could not read pending batch.', error);
+    return null;
+  }
+}
+
+export async function clearPendingBatch(): Promise<void> {
+  try {
+    await FileSystem.deleteAsync(`${TRACKS_DIR}${PENDING_BATCH_FILE}`, { idempotent: true });
+  } catch (error) {
+    console.warn('[downloads] Could not clear pending batch.', error);
+  }
 }
 
 /**
@@ -431,7 +680,7 @@ export async function getLocalTrackFile(trackId: string): Promise<string | null>
     console.warn('[downloads] Could not list tracks directory for local lookup.', error);
   }
   for (const name of entries) {
-    if (name.startsWith(`${prefix}.`) && !name.includes('_art')) {
+    if (name.startsWith(`${prefix}.`) && !name.includes('_art') && !isMetadataArtifact(name)) {
       if (/\.m3u8?$/i.test(name)) {
         continue;
       }

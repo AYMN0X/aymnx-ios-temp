@@ -315,8 +315,8 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
       return;
     }
     Alert.alert(
-      "Remove downloads?",
-      `This deletes the offline files for all ${displayTracks.length} songs.`,
+      "Remove Downloads",
+      "Are you sure you want to remove all downloaded songs for this playlist from your device? (Songs will remain in your playlist.)",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Remove", style: "destructive", onPress: () => handleDownloadToggle(false) },

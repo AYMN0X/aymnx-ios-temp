@@ -5,8 +5,10 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 import * as downloads from '../services/downloadService';
 import { DownloadedTrack } from '../services/downloadService';
 import { Track } from '../services/musicApi';
@@ -34,6 +36,11 @@ interface DownloadContextValue {
     onProgress?: (progress: { done: number; total: number; failed: number }) => void
   ) => Promise<void>;
   toggleDownload: (track: Track) => Promise<void>;
+  /**
+   * Returns the reconciled registry, or null when it did not run (no user, a
+   * batch in flight, or a failure). Callers must not treat null as "empty".
+   */
+  syncDownloadedFilesWithStorage: (reason?: 'launch' | 'foreground') => Promise<DownloadedTrack[] | null>;
 }
 
 const DownloadContext = createContext<DownloadContextValue | undefined>(undefined);
@@ -47,36 +54,98 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const [isBatchDownloading, setIsBatchDownloading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    if (!userId) {
-      setDownloadedTracks([]);
-      return;
-    }
-    bootLog('downloads hydration start');
-    (async () => {
-      try {
-        const tracks = await storage.getDownloadedTracks(userId);
-        const present = await downloads.filterExistingDownloads(tracks);
-        if (active) {
-          setDownloadedTracks(present);
-          bootLog('downloads hydrated', {
-            count: present.length,
-            pruned: tracks.length - present.length,
-            kb: Math.round(approximateBytes(present) / 1024),
-          });
-        }
-        if (present.length !== tracks.length) {
-          await storage.writeDownloadedTracks(userId, present);
-        }
-      } catch (error) {
-        console.warn('[downloads] Failed to load downloaded tracks.', error);
+  // Mirrors of state that the reconcile logic must read without being re-created
+  // on every render, so the AppState subscription stays stable. Assigned during
+  // render to match the existing durationRef pattern in NowPlayingScrubber.
+  const isBatchDownloadingRef = useRef(false);
+  isBatchDownloadingRef.current = isBatchDownloading;
+  const reconcileInFlight = useRef(false);
+
+  /**
+   * Cross-checks the storage registry against the filesystem and repairs it in
+   * both directions.
+   *
+   * Forward (storage -> disk): records whose audio file is missing, undersized
+   * or corrupt are pruned and rewritten, so a track whose file was removed behind
+   * the app's back stops showing a downloaded badge.
+   *
+   * Reverse (disk -> storage): an orphaned file yields only a sanitized id, but
+   * every completed download also writes a `<id>.meta.json` sidecar, so the full
+   * Track metadata is recoverable and the track is re-adopted. Files with no
+   * usable sidecar cannot be re-adopted (there is no metadata to render) and are
+   * reported instead of being guessed at.
+   *
+   * Bails out while a batch is running: batch storage records are written only
+   * once after the loop, so reconciling mid-batch would read a pre-batch registry
+   * and wipe the per-track state that the loop has already published.
+   */
+  const syncDownloadedFilesWithStorage = useCallback(
+    async (reason: 'launch' | 'foreground' = 'launch'): Promise<DownloadedTrack[] | null> => {
+      if (!userId) {
+        setDownloadedTracks([]);
+        return null;
       }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [userId]);
+      if (isBatchDownloadingRef.current) {
+        bootLog('downloads reconcile skipped (batch in flight)');
+        return null;
+      }
+      if (reconcileInFlight.current) {
+        return null;
+      }
+      reconcileInFlight.current = true;
+      try {
+        const stored = await storage.getDownloadedTracks(userId);
+        const present = await downloads.filterExistingDownloads(stored);
+        const orphans = await downloads.findOrphanedDownloadIds(present);
+        // The journal also resolves orphans, because it is the only record of
+        // the transfer that was still in flight when the app was terminated.
+        const queued = (await downloads.readPendingBatch()) ?? [];
+
+        // Re-adopt: an orphaned audio file plus recoverable metadata is a
+        // complete DownloadedTrack, so the record can be restored without the
+        // user re-downloading. Validated by filterExistingDownloads so a
+        // truncated file is never resurrected.
+        const adopted: DownloadedTrack[] = [];
+        const unrecoverable: string[] = [];
+        for (const prefix of orphans) {
+          const candidate = await downloads.resolveOrphanTrack(prefix, queued);
+          if (!candidate) {
+            unrecoverable.push(prefix);
+            continue;
+          }
+          const [verified] = await downloads.filterExistingDownloads([candidate]);
+          if (verified) {
+            adopted.push(verified);
+          } else {
+            unrecoverable.push(prefix);
+          }
+        }
+
+        const merged = [...present, ...adopted];
+        if (merged.length !== stored.length) {
+          await storage.writeDownloadedTracks(userId, merged);
+        }
+        setDownloadedTracks(merged);
+        bootLog(`downloads reconciled (${reason})`, {
+          before: stored.length,
+          after: merged.length,
+          pruned: stored.length - present.length,
+          readopted: adopted.length,
+          kb: Math.round(approximateBytes(merged) / 1024),
+          orphanFiles: orphans.length,
+          unrecoverable: unrecoverable.length,
+          sample: unrecoverable.slice(0, 3),
+        });
+        return merged;
+      } catch (error) {
+        console.warn('[downloads] Reconcile failed.', error);
+        return null;
+      } finally {
+        reconcileInFlight.current = false;
+      }
+    },
+    [userId]
+  );
 
   const downloadedIds = useMemo(
     () => new Set(downloadedTracks.map((track) => track.id)),
@@ -123,6 +192,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         return;
       }
       await downloads.deleteTrackFiles(trackId);
+      // Also drop it from any pending queue. deleteTrackFiles removes the sidecar
+      // too, so leaving the id journaled would let the next resume re-download a
+      // track the user just deleted.
+      const queued = await downloads.readPendingBatch();
+      if (queued) {
+        await downloads.writePendingBatch(queued.filter((item) => item.id !== trackId));
+      }
       try {
         const current = await storage.getDownloadedTracks(userId);
         const next = current.filter((item) => item.id !== trackId);
@@ -148,6 +224,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       let done = 0;
       let failed = 0;
       const metas: DownloadedTrack[] = [];
+      // Journal the queue up front, then leave it alone. If iOS terminates the
+      // app mid-batch this file is the only record of what was still owed, and
+      // the next launch resumes from it. It deliberately keeps already-settled
+      // tracks: the reconcile that runs before the resume re-adopts their
+      // sidecars, and the resume then filters them out. Rewriting the journal per
+      // track would be O(N^2) bytes of IO to save work the sidecars already do.
+      await downloads.writePendingBatch(tracks);
       for (const track of tracks) {
         // This loop calls the service directly, so it bypasses the context
         // downloadTrack wrapper that normally maintains `downloadingIds`. Without
@@ -197,6 +280,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.warn('[downloads] Failed to persist batch download metadata.', error);
       }
+      await downloads.clearPendingBatch();
       setIsBatchDownloading(false);
     },
     [userId, isBatchDownloading]
@@ -213,6 +297,67 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     [downloadedIds, deleteDownload, downloadTrack]
   );
 
+  /**
+   * Reconciles, then resumes any batch that iOS interrupted by terminating the
+   * app.
+   *
+   * Sequencing is load-bearing. The resume filters the journal against the
+   * registry the reconcile produced, and it uses that RETURN VALUE rather than
+   * `downloadedIds` state: the reconcile's `setDownloadedTracks` has not
+   * re-rendered yet at this point, so reading state here would miss every track
+   * just re-adopted and re-download files the reconcile had already recovered.
+   */
+  const reconcileAndResume = useCallback(
+    async (reason: 'launch' | 'foreground') => {
+      const reconciled = await syncDownloadedFilesWithStorage(reason);
+      // null means the reconcile did not complete. Resuming on a stale registry
+      // would re-download files that are already on disk, so wait for the next
+      // trigger instead.
+      if (!reconciled || isBatchDownloadingRef.current) {
+        return;
+      }
+      const queued = await downloads.readPendingBatch();
+      if (!queued) {
+        return;
+      }
+      const onDisk = new Set(reconciled.map((track) => track.id));
+      const pending = queued.filter((track) => !onDisk.has(track.id));
+      if (pending.length === 0) {
+        await downloads.clearPendingBatch();
+        return;
+      }
+      bootLog('downloads resuming interrupted batch', {
+        reason,
+        queued: queued.length,
+        pending: pending.length,
+      });
+      await downloadAll(pending);
+    },
+    [downloadAll, syncDownloadedFilesWithStorage]
+  );
+
+  useEffect(() => {
+    if (!userId) {
+      setDownloadedTracks([]);
+      return;
+    }
+    void reconcileAndResume('launch');
+  }, [userId, reconcileAndResume]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        void reconcileAndResume('foreground');
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [userId, reconcileAndResume]);
+
   const value = useMemo<DownloadContextValue>(
     () => ({
       downloadedTracks,
@@ -225,6 +370,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       deleteDownload,
       downloadAll,
       toggleDownload,
+      syncDownloadedFilesWithStorage,
     }),
     [
       downloadedTracks,
@@ -237,6 +383,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       deleteDownload,
       downloadAll,
       toggleDownload,
+      syncDownloadedFilesWithStorage,
     ]
   );
 
