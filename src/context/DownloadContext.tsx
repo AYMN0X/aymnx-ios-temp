@@ -149,13 +149,37 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       let failed = 0;
       const metas: DownloadedTrack[] = [];
       for (const track of tracks) {
+        // This loop calls the service directly, so it bypasses the context
+        // downloadTrack wrapper that normally maintains `downloadingIds`. Without
+        // this the set stays empty for the whole batch and every row/sheet reads
+        // "not downloading". Mirrors the wrapper's add/remove pair, and lives in
+        // a `finally` so a rejected download cannot leak a stuck in-flight id.
+        setDownloadingIds((current) => new Set(current).add(track.id));
         try {
           const meta = await downloads.downloadTrack(track);
           metas.push(meta);
           done += 1;
+          // Commit each finished track to React state the moment its file lands,
+          // so per-row downloaded indicators light up one by one while the rest
+          // are still in flight. Uses the functional form so concurrent updates
+          // can't clobber each other or go stale against `downloadedTracks`.
+          //
+          // Storage is deliberately still written only once after the loop:
+          // writeDownloadedTracks -> updateUserData re-serializes the ENTIRE
+          // user blob (liked songs + playlists + downloads), so committing per
+          // track would mean N full-blob rewrites for an N-track playlist.
+          setDownloadedTracks((prev) =>
+            prev.some((item) => item.id === meta.id) ? prev : [...prev, meta]
+          );
         } catch (error) {
           console.warn('[downloads] Failed to download track:', track.title, error);
           failed += 1;
+        } finally {
+          setDownloadingIds((current) => {
+            const next = new Set(current);
+            next.delete(track.id);
+            return next;
+          });
         }
         setBatchProgress({ downloaded: done, total: tracks.length, failed });
         if (onProgress) {

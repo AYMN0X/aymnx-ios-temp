@@ -518,6 +518,18 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
               />
             )}
           </Pressable>
+
+          {isDownloading && batchProgress ? (
+            <View style={styles.headerProgressGroup}>
+              <View style={styles.headerProgressTrack}>
+                <View style={[styles.headerProgressFill, { flex: batchProgress.downloaded }]} />
+                <View style={{ flex: Math.max(batchProgress.total - batchProgress.downloaded, 0) }} />
+              </View>
+              <Text style={styles.headerProgressLabel}>
+                Downloading {batchProgress.downloaded}/{batchProgress.total}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.trackList}>
@@ -656,20 +668,12 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
                   />
                   <View style={styles.sheetActionBody}>
                     <Text style={styles.sheetActionLabel}>
-                      {isDownloading
-                        ? `Downloading ${batchProgress.downloaded}/${batchProgress.total}...`
-                        : allDownloaded
+                      {allDownloaded
                         ? "Downloaded"
                         : pendingForDownload.length === displayTracks.length
                         ? "Download"
                         : `Download ${pendingForDownload.length} remaining`}
                     </Text>
-                    {isDownloading ? (
-                      <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { flex: batchProgress.downloaded }]} />
-                        <View style={{ flex: Math.max(batchProgress.total - batchProgress.downloaded, 0) }} />
-                      </View>
-                    ) : null}
                   </View>
                 </TouchableOpacity>
 
@@ -1071,16 +1075,28 @@ const styles = StyleSheet.create({
   sheetActionLabelDelete: {
     color: "#E05A47",
   },
-  progressTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#23252B",
+  headerProgressGroup: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 12,
+  },
+  headerProgressTrack: {
+    flex: 1,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Color.border,
     flexDirection: "row",
     overflow: "hidden",
-    marginTop: 8,
   },
-  progressFill: {
+  headerProgressFill: {
     backgroundColor: Color.accent,
+  },
+  headerProgressLabel: {
+    marginLeft: 8,
+    fontSize: 11,
+    color: Color.textSecondary,
+    fontVariant: ["tabular-nums"],
   },
   detailsTitle: {
     fontSize: 16,
