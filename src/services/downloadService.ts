@@ -535,35 +535,15 @@ async function resolveAudioSource(
 }
 
 /**
- * Validation, artwork, and the sidecar write for audio that is already on disk.
- * Shared by the network paths and the local-share copy path so every download
- * produces an identical record.
+ * Resolves the artwork for a track to a file on disk, without the embedded-ID3
+ * fallback, which needs the audio file to already exist.
+ *
+ * Split out of `finalizeTrackDownload` so `downloadTrack` can start this before
+ * the audio transfer begins and let the two overlap. Artwork is a small transfer
+ * behind a provider lookup, so serializing it after the audio added its full
+ * latency to every track in a batch.
  */
-async function finalizeTrackDownload(
-  track: Track,
-  audioUri: string,
-  resolvedMime: string | undefined,
-  isHlsBundle: boolean
-): Promise<DownloadedTrack> {
-  // Validation: reject empty writes, partial/interrupted downloads and broken
-  // HLS bundles so a garbage file is never marked as "downloaded". An HLS
-  // playlist file itself is tiny, so its validity is measured by the total size
-  // of the bundled segments instead.
-  const audioInfo = await FileSystem.getInfoAsync(audioUri);
-  const totalSize = isHlsBundle
-    ? await totalHlsBundleBytes(audioUri)
-    : audioInfo.exists
-      ? (audioInfo.size ?? 0)
-      : 0;
-  if (!audioInfo.exists || totalSize < MIN_AUDIO_FILE_BYTES) {
-    if (isHlsBundle) {
-      await FileSystem.deleteAsync(hlsDirFor(track.id), { idempotent: true });
-    } else {
-      await FileSystem.deleteAsync(audioUri, { idempotent: true });
-    }
-    throw new Error(`Downloaded audio too small to be a valid track: ${track.title}`);
-  }
-
+async function fetchTrackArtworkFile(track: Track): Promise<string> {
   // Cover art is best-effort: a failure here must never fail the audio download.
   // The record still has to be *true*, though. Storing a URI that was never
   // successfully written is what leaves a track showing a broken image forever,
@@ -571,7 +551,8 @@ async function finalizeTrackDownload(
   let localArtworkUri = '';
   // Ordered candidates: the track's own artwork, then a title/artist lookup for
   // tracks that carry no art at all (common for Spotify imports and some
-  // SoundCloud rows). Embedded ID3 art is the last resort, below.
+  // SoundCloud rows). Embedded ID3 art is the last resort, handled by the caller
+  // because it depends on the audio file being present.
   const remoteArtworkCandidates: string[] = [];
   if (track.artwork) {
     if (isLocalSource(track.artwork)) {
@@ -606,6 +587,48 @@ async function finalizeTrackDownload(
       break;
     }
   }
+  return localArtworkUri;
+}
+
+/**
+ * Validation, artwork, and the sidecar write for audio that is already on disk.
+ * Shared by the network paths and the local-share copy path so every download
+ * produces an identical record.
+ *
+ * `artworkPromise` is an already-in-flight `fetchTrackArtworkFile` call. When
+ * supplied it is awaited here instead of starting fresh work, so the artwork
+ * transfer overlaps the audio transfer instead of following it.
+ */
+async function finalizeTrackDownload(
+  track: Track,
+  audioUri: string,
+  resolvedMime: string | undefined,
+  isHlsBundle: boolean,
+  artworkPromise?: Promise<string>
+): Promise<DownloadedTrack> {
+  // Validation: reject empty writes, partial/interrupted downloads and broken
+  // HLS bundles so a garbage file is never marked as "downloaded". An HLS
+  // playlist file itself is tiny, so its validity is measured by the total size
+  // of the bundled segments instead.
+  const audioInfo = await FileSystem.getInfoAsync(audioUri);
+  const totalSize = isHlsBundle
+    ? await totalHlsBundleBytes(audioUri)
+    : audioInfo.exists
+      ? (audioInfo.size ?? 0)
+      : 0;
+  if (!audioInfo.exists || totalSize < MIN_AUDIO_FILE_BYTES) {
+    if (isHlsBundle) {
+      await FileSystem.deleteAsync(hlsDirFor(track.id), { idempotent: true });
+    } else {
+      await FileSystem.deleteAsync(audioUri, { idempotent: true });
+    }
+    throw new Error(`Downloaded audio too small to be a valid track: ${track.title}`);
+  }
+
+  // Artwork resolves in parallel with the audio transfer when the caller supplies
+  // an in-flight promise; otherwise it is fetched here. Either way the audio file
+  // is already on disk, so embedded ID3 art can be used as the last resort.
+  let localArtworkUri = artworkPromise ? await artworkPromise : await fetchTrackArtworkFile(track);
   if (!localArtworkUri) {
     localArtworkUri = await extractEmbeddedArtwork(audioUri, track.id);
   }
@@ -635,11 +658,12 @@ async function finalizeTrackDownload(
 async function downloadResolvedAudio(
   track: Track,
   source: ResolvedAudioSource,
-  onProgress?: (bytesWritten: number, totalBytes: number) => void
+  onProgress?: (bytesWritten: number, totalBytes: number) => void,
+  artworkPromise?: Promise<string>
 ): Promise<DownloadedTrack> {
   if (isHlsStreamUrl(source.url)) {
     const hls = await downloadHlsTrack(track.id, source.url, onProgress);
-    return finalizeTrackDownload(track, hls.audioUri, hls.mimeType, true);
+    return finalizeTrackDownload(track, hls.audioUri, hls.mimeType, true, artworkPromise);
   }
   const audioUri = audioFileUri(track.id, extensionForSource(track, source));
   await downloadProgressiveAudio(source.url, audioUri, onProgress);
@@ -666,12 +690,23 @@ export async function downloadTrack(
     return finalizeTrackDownload(track, localUri, track.streamMimeType, false);
   }
 
+  // Start the artwork transfer now, before the stream is even resolved, and do not
+  // await it. It is handed to `finalizeTrackDownload`, which awaits it once the
+  // audio has landed, so the provider lookup and the image download run
+  // concurrently with stream resolution and the audio transfer instead of adding
+  // their latency to the end of every track. A rejection is absorbed here: artwork
+  // is best-effort and must never fail an otherwise good audio download.
+  const artworkPromise = fetchTrackArtworkFile(track).catch((error) => {
+    console.warn('[downloads] Artwork lookup failed for:', track.title, error);
+    return '';
+  });
+
   const source = await resolveAudioSource(track, true);
   if (!source) {
     throw new Error('Could not find a downloadable source for this track.');
   }
   try {
-    return await downloadResolvedAudio(track, source, onProgress);
+    return await downloadResolvedAudio(track, source, onProgress, artworkPromise);
   } catch (error) {
     if (!isForbidden(error)) {
       throw error;
@@ -684,7 +719,7 @@ export async function downloadTrack(
     if (!refreshed || refreshed.url === source.url) {
       throw error;
     }
-    return downloadResolvedAudio(track, refreshed, onProgress);
+    return downloadResolvedAudio(track, refreshed, onProgress, artworkPromise);
   }
 }
 

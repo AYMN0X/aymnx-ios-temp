@@ -39,6 +39,20 @@ interface DownloadContextValue {
   downloadTrack: (track: Track) => Promise<void>;
   deleteDownload: (trackId: string) => Promise<void>;
   /**
+   * Removes many downloads as ONE atomic registry update.
+   *
+   * `deleteDownload` performs a read-modify-write of the whole downloads list per
+   * id, so calling it concurrently for several ids races on that list and the last
+   * writer resurrects the removals of the others. This performs a single read and a
+   * single write for the whole batch instead, so every row's `isDownloaded` flips
+   * to false in one state update.
+   *
+   * Clears the audio, artwork, and sidecar for each id, drops them from the
+   * pending-batch journal so a resume cannot re-download them, and rewrites both
+   * the registry and the journal. Returns how many ids were actually registered.
+   */
+  removePlaylistDownloads: (trackIds: string[]) => Promise<number>;
+  /**
    * Deletes the audio, artwork, and sidecar for each id, then drops them from
    * the registry. Used when a playlist is deleted and its tracks are no longer
    * referenced anywhere: their files would otherwise linger on disk and be
@@ -60,6 +74,13 @@ interface DownloadContextValue {
 }
 
 const DownloadContext = createContext<DownloadContextValue | undefined>(undefined);
+
+/**
+ * How many tracks may download at once. Three keeps the network busy through each
+ * track's resolve/lookup/sidecar phases without holding enough background
+ * download sessions to risk an iOS memory termination.
+ */
+const MAX_CONCURRENT_DOWNLOADS = 3;
 
 export function DownloadProvider({ children }: { children: ReactNode }) {
   bootLogOnce('DownloadProvider mounted');
@@ -249,35 +270,71 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     [userId]
   );
 
+  const removePlaylistDownloads = useCallback(
+    async (trackIds: string[]) => {
+      if (!userId || trackIds.length === 0) {
+        return 0;
+      }
+      // Only ids that are genuinely registered need work; the rest have no files
+      // and no registry entry to drop.
+      const removed = new Set(trackIds.filter((id) => downloadedIds.has(id)));
+      if (removed.size === 0) {
+        return 0;
+      }
+      // Files first, and in parallel: `deleteTrackFiles` only touches paths
+      // derived from the one id it is given, so concurrent calls cannot interfere
+      // with each other. Failures are isolated so one undeletable path cannot
+      // leave the rest of the playlist's files behind or abort the batch.
+      const fileResults = await Promise.allSettled(
+        Array.from(removed, (id) => downloads.deleteTrackFiles(id))
+      );
+      fileResults.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.warn(
+            '[downloads] Could not remove files for track.',
+            Array.from(removed)[index],
+            result.reason
+          );
+        }
+      });
+      // Drop them from the pending-batch journal in one read/write so a resume
+      // cannot re-download a track the user just removed. deleteTrackFiles already
+      // removed the sidecars, so leaving an id journaled would resurrect it.
+      try {
+        const queued = await downloads.readPendingBatch();
+        if (queued) {
+          await downloads.writePendingBatch(queued.filter((item) => !removed.has(item.id)));
+        }
+      } catch (error) {
+        console.warn('[downloads] Could not update pending batch after removal.', error);
+      }
+      // Optimistic in-memory update so the badges clear in the same commit as the
+      // click. The functional form is required: it composes with any download that
+      // finishes while the awaits above are in flight instead of overwriting it
+      // with a snapshot taken before them.
+      setDownloadedTracks((prev) => prev.filter((item) => !removed.has(item.id)));
+      // One read, one write for the whole batch — this is what the per-id
+      // `deleteDownload` path cannot do, and is the fix for rows staying lit.
+      try {
+        const current = await storage.getDownloadedTracks(userId);
+        const next = current.filter((item) => !removed.has(item.id));
+        await storage.writeDownloadedTracks(userId, next);
+      } catch (error) {
+        console.warn('[downloads] Failed to persist bulk download removal.', error);
+      }
+      return removed.size;
+    },
+    [userId, downloadedIds]
+  );
+
   const purgeDownloads = useCallback(
     async (trackIds: string[]) => {
       if (!userId || trackIds.length === 0) {
         return 0;
       }
-      // Only touch ids that are genuinely registered as downloaded. Skipping the
-      // rest avoids a pointless directory scan per track for a playlist that was
-      // never downloaded in the first place.
-      const targets = trackIds.filter((id) => downloadedIds.has(id));
-      if (targets.length === 0) {
-        return 0;
-      }
-      // Sequential rather than parallel: each delete rewrites the whole
-      // downloads registry, so concurrent calls would race on the same list and
-      // the last writer would resurrect the others' entries. Failures are
-      // isolated per track so one undeletable file cannot leave the rest of the
-      // playlist's downloads orphaned on disk.
-      let purged = 0;
-      for (const trackId of targets) {
-        try {
-          await deleteDownload(trackId);
-          purged += 1;
-        } catch (error) {
-          console.warn('[downloads] Failed to purge download.', trackId, error);
-        }
-      }
-      return purged;
+      return removePlaylistDownloads(trackIds);
     },
-    [userId, downloadedIds, deleteDownload]
+    [userId, removePlaylistDownloads]
   );
 
   const downloadAll = useCallback(
@@ -300,44 +357,67 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       // sidecars, and the resume then filters them out. Rewriting the journal per
       // track would be O(N^2) bytes of IO to save work the sidecars already do.
       await downloads.writePendingBatch(tracks);
-      for (const track of tracks) {
-        // This loop calls the service directly, so it bypasses the context
-        // downloadTrack wrapper that normally maintains `downloadingIds`. Without
-        // this the set stays empty for the whole batch and every row/sheet reads
-        // "not downloading". Mirrors the wrapper's add/remove pair, and lives in
-        // a `finally` so a rejected download cannot leak a stuck in-flight id.
-        setDownloadingIds((current) => new Set(current).add(track.id));
-        try {
-          const meta = await downloads.downloadTrack(track);
-          metas.push(meta);
-          done += 1;
-          // Commit each finished track to React state the moment its file lands,
-          // so per-row downloaded indicators light up one by one while the rest
-          // are still in flight. Uses the functional form so concurrent updates
-          // can't clobber each other or go stale against `downloadedTracks`.
-          //
-          // Storage is deliberately still written only once after the loop:
-          // writeDownloadedTracks -> updateUserData re-serializes the ENTIRE
-          // user blob (liked songs + playlists + downloads), so committing per
-          // track would mean N full-blob rewrites for an N-track playlist.
-          setDownloadedTracks((prev) =>
-            prev.some((item) => item.id === meta.id) ? prev : [...prev, meta]
-          );
-        } catch (error) {
-          console.warn('[downloads] Failed to download track:', track.title, error);
-          failed += 1;
-        } finally {
-          setDownloadingIds((current) => {
-            const next = new Set(current);
-            next.delete(track.id);
-            return next;
-          });
-        }
+      // Worker pool: a fixed number of workers pull from a shared cursor instead of
+      // the loop advancing one track at a time. Serial downloads left the link idle
+      // during every resolve/lookup/sidecar-write phase, which is most of the wall
+      // clock for a track. Capped at 3 because each worker holds a background
+      // download session, and more than that risks iOS terminating the app for
+      // memory pressure rather than going faster.
+      const workerCount = Math.min(MAX_CONCURRENT_DOWNLOADS, tracks.length);
+      let cursor = 0;
+      const publishProgress = () => {
         setBatchProgress({ downloaded: done, total: tracks.length, failed });
         if (onProgress) {
           onProgress({ done, total: tracks.length, failed });
         }
-      }
+      };
+      const runWorker = async () => {
+        for (;;) {
+          // Single-threaded, so the cursor read and increment cannot interleave
+          // with another worker's: each track is claimed by exactly one worker.
+          const index = cursor;
+          if (index >= tracks.length) {
+            return;
+          }
+          cursor += 1;
+          const track = tracks[index];
+          // This loop calls the service directly, so it bypasses the context
+          // downloadTrack wrapper that normally maintains `downloadingIds`. Without
+          // this the set stays empty for the batch and every row/sheet reads "not
+          // downloading". The add/remove pair is per worker, so the set holds the
+          // ids actually in flight and shrinks to empty as each one settles.
+          setDownloadingIds((current) => new Set(current).add(track.id));
+          try {
+            const meta = await downloads.downloadTrack(track);
+            metas.push(meta);
+            done += 1;
+            // Commit each finished track to React state the moment its file lands,
+            // so per-row downloaded indicators light up as transfers complete while
+            // others are still in flight. Uses the functional form so concurrent
+            // updates can't clobber each other or go stale against
+            // `downloadedTracks`.
+            //
+            // Storage is deliberately still written only once after the pool drains:
+            // writeDownloadedTracks -> updateUserData re-serializes the ENTIRE
+            // user blob (liked songs + playlists + downloads), so committing per
+            // track would mean N full-blob rewrites for an N-track playlist.
+            setDownloadedTracks((prev) =>
+              prev.some((item) => item.id === meta.id) ? prev : [...prev, meta]
+            );
+          } catch (error) {
+            console.warn('[downloads] Failed to download track:', track.title, error);
+            failed += 1;
+          } finally {
+            setDownloadingIds((current) => {
+              const next = new Set(current);
+              next.delete(track.id);
+              return next;
+            });
+            publishProgress();
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
       try {
         const current = await storage.getDownloadedTracks(userId);
         const merged = [
@@ -438,6 +518,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       getLocalArtworkUri,
       downloadTrack,
       deleteDownload,
+      removePlaylistDownloads,
       purgeDownloads,
       downloadAll,
       toggleDownload,
@@ -453,6 +534,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       getLocalArtworkUri,
       downloadTrack,
       deleteDownload,
+      removePlaylistDownloads,
       purgeDownloads,
       downloadAll,
       toggleDownload,

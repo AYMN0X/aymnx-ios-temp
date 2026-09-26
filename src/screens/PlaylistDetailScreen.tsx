@@ -95,7 +95,7 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
     isBatchDownloading,
     batchProgress,
     downloadAll,
-    deleteDownload,
+    removePlaylistDownloads,
     purgeDownloads,
   } = useDownloads();
 
@@ -323,8 +323,11 @@ export const PlaylistDetailScreen: React.FC<PlaylistDetailScreenProps> = ({
       }
       return;
     }
-    const downloaded = displayTracks.filter((track) => isDownloaded(track.id));
-    await Promise.all(downloaded.map((track) => deleteDownload(track.id)));
+    // One atomic bulk removal, not a parallel deleteDownload per row. deleteDownload
+    // rewrites the whole downloads registry per id, so running them concurrently
+    // races on that list and the last writer brings the other removals back —
+    // which left the per-row download badges lit after "Remove" was confirmed.
+    await removePlaylistDownloads(displayTracks.map((track) => track.id));
   };
 
   const downloadButtonLabel = isDownloading

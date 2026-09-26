@@ -403,6 +403,25 @@ const SOUNDCLOUD_PAGE_HEADERS = {
 let soundCloudClientIdCache: string | null = null;
 let soundCloudClientIdPromise: Promise<string | null> | null = null;
 
+/**
+ * Guest client_ids that answered 401/403 and are therefore presumed dead until
+ * the app is restarted. A SoundCloud-wide revocation is a global condition, not a
+ * per-track one, so remembering it turns every later resolution from "try 4 ids,
+ * then scrape the homepage and its JS bundles" (multiple seconds) into an instant
+ * miss that lets the caller's JioSaavn/preview fallback take over.
+ */
+const deadSoundCloudClientIds = new Set<string>();
+
+/**
+ * How long to stop attempting the dynamic homepage scrape after every candidate
+ * has been rejected. The scrape itself costs several seconds (homepage HTML plus
+ * a JS bundle fetch), and during a batch download it would otherwise be repeated
+ * once per track. Kept short enough that a genuinely new client_id can still be
+ * picked up within the same session.
+ */
+const SOUNDCLOUD_DYNAMIC_RETRY_COOLDOWN_MS = 60_000;
+let soundCloudDynamicBlockedUntil = 0;
+
 function extractSoundCloudHydrationClientId(html: string): string | null {
   const markerIndex = html.indexOf('window.__sc_hydration');
   if (markerIndex < 0) {
@@ -1002,7 +1021,7 @@ function soundCloudClientIdCandidates(): string[] {
   const seen = new Set<string>();
   const ordered: string[] = [];
   const push = (value: string | null | undefined) => {
-    if (value && !seen.has(value)) {
+    if (value && !seen.has(value) && !deadSoundCloudClientIds.has(value)) {
       seen.add(value);
       ordered.push(value);
     }
@@ -1030,6 +1049,9 @@ async function runSoundCloudClientIdAction<T>(
     } catch (error) {
       const status = (error as { status?: number }).status;
       if (status === 401 || status === 403) {
+        // Remember the rejection. Revocation is not track-specific, so this id is
+        // now a known-dead candidate for every later resolution in this session.
+        deadSoundCloudClientIds.add(clientId);
         console.warn(`[audio-soundcloud] ${label} client_id rejected (${status}), rotating.`);
         lastError = error;
         continue;
@@ -1037,8 +1059,18 @@ async function runSoundCloudClientIdAction<T>(
       throw error;
     }
   }
+  // Every static candidate is exhausted. Re-scraping costs seconds and, in a batch
+  // download, would repeat for each remaining track, so it is rate-limited: once a
+  // full sweep has failed the scrape is suppressed for a cooldown and this call
+  // fast-fails to the caller's fallback instead of burning the latency budget.
+  if (Date.now() < soundCloudDynamicBlockedUntil) {
+    console.warn(
+      `[audio-soundcloud] All client_ids rejected for ${label}; skipping dynamic scrape during cooldown.`
+    );
+    return null;
+  }
   const dynamicId = await fetchSoundCloudClientId();
-  if (dynamicId && !candidates.includes(dynamicId)) {
+  if (dynamicId && !candidates.includes(dynamicId) && !deadSoundCloudClientIds.has(dynamicId)) {
     try {
       const value = await action(dynamicId);
       if (value != null) {
@@ -1048,6 +1080,7 @@ async function runSoundCloudClientIdAction<T>(
     } catch (error) {
       const status = (error as { status?: number }).status;
       if (status === 401 || status === 403) {
+        deadSoundCloudClientIds.add(dynamicId);
         console.warn(`[audio-soundcloud] ${label} dynamic client_id rejected (${status}).`);
         lastError = error;
       } else {
@@ -1056,6 +1089,7 @@ async function runSoundCloudClientIdAction<T>(
     }
   }
   if (lastError) {
+    soundCloudDynamicBlockedUntil = Date.now() + SOUNDCLOUD_DYNAMIC_RETRY_COOLDOWN_MS;
     console.warn(`[audio-soundcloud] All client_ids rejected for ${label}.`, lastError);
   }
   return null;
