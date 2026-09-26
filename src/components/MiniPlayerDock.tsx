@@ -85,10 +85,10 @@ export function MiniPlayerDock({ onOpen, blurTarget }: MiniPlayerDockProps) {
         <BlurView
           blurMethod="dimezisBlurView"
           blurTarget={blurTarget}
-          intensity={28}
+          intensity={8}
           pointerEvents="none"
           style={StyleSheet.absoluteFill}
-          tint="systemUltraThinMaterialDark"
+          tint="dark"
         />
         <View style={styles.dockRow}>
           <Pressable
@@ -115,7 +115,12 @@ export function MiniPlayerDock({ onOpen, blurTarget }: MiniPlayerDockProps) {
 
           <View style={styles.controls}>
             <View style={styles.playWrap}>
-              <Svg width={BUTTON_SIZE} height={BUTTON_SIZE} style={styles.playRing}>
+              <Svg
+                width={BUTTON_SIZE}
+                height={BUTTON_SIZE}
+                style={styles.playRing}
+                pointerEvents="none"
+              >
                 <Circle
                   cx={RING_CENTER}
                   cy={RING_CENTER}
@@ -177,10 +182,10 @@ const styles = StyleSheet.create({
   dockCard: {
     flex: 1,
     position: 'relative',
-    borderRadius: 24,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    backgroundColor: 'rgba(20, 20, 24, 0.25)',
+    borderRadius: 20,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(18, 18, 22, 0.65)',
     overflow: 'hidden',
   },
   dockRow: {
@@ -231,12 +236,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+    zIndex: 1,
   },
   playButton: {
     width: BUTTON_SIZE,
     height: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
-    borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderWidth: 0.5,
     borderColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
